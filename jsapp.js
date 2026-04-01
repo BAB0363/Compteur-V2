@@ -273,20 +273,65 @@ const app = {
     exportSaveFile() {
         let truckSessions = JSON.parse(localStorage.getItem('truckSessions')) || [];
         let carSessions = JSON.parse(localStorage.getItem('carSessions')) || [];
+
+        // 📊 1. On enrichit les sessions Camions avec les stats calculées
+        let enrichedTruckSessions = truckSessions.map(s => {
+            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
+            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
+            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
+            return { ...s, sessionType: 'trucks', totalCount: count, camionsParKm: vehPerKm, frequenceMinutes: freqMin };
+        });
+
+        // 🚗 2. On enrichit les sessions Véhicules avec les stats calculées
+        let enrichedCarSessions = carSessions.map(s => {
+            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
+            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
+            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
+            return { ...s, sessionType: 'cars', totalCount: count, vehiculesParKm: vehPerKm, frequenceMinutes: freqMin };
+        });
+
+        let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
+
+        // 🔍 3. On extrait les détails par catégorie pour les véhicules
+        let vehicleDetails = { Voitures: 0, Camions: 0, Tracteurs: 0, Motos: 0 };
+        carSessions.forEach(s => {
+            if (s.summary) {
+                vehicleDetails.Voitures += s.summary["Voitures"] || 0;
+                vehicleDetails.Camions += s.summary["Camions"] || 0;
+                vehicleDetails.Tracteurs += s.summary["Tracteurs"] || 0;
+                vehicleDetails.Motos += s.summary["Motos"] || 0;
+            }
+        });
+
+        // 🧮 4. Calculs des totaux globaux pour le résumé
+        let totalTrucksMain = enrichedTruckSessions.reduce((acc, s) => acc + s.totalCount, 0);
+        let totalTruckDist = enrichedTruckSessions.reduce((acc, s) => acc + (s.distanceKm || 0), 0);
         
-        let allSessions = [
-            ...truckSessions.map(s => ({...s, sessionType: 'trucks'})), 
-            ...carSessions.map(s => ({...s, sessionType: 'cars'}))
-        ];
+        let totalVehiclesTab = enrichedCarSessions.reduce((acc, s) => acc + s.totalCount, 0);
+        let totalCarDist = enrichedCarSessions.reduce((acc, s) => acc + (s.distanceKm || 0), 0);
 
         let globalSummary = {
             totalSessions: allSessions.length,
-            totalDistanceKm: allSessions.reduce((acc, s) => acc + (s.distanceKm || 0), 0),
-            totalTrucks: truckSessions.reduce((acc, s) => acc + (s.history ? s.history.filter(h => !h.isEvent).length : 0), 0),
-            totalCars: carSessions.reduce((acc, s) => acc + (s.history ? s.history.filter(h => !h.isEvent).length : 0), 0)
+            totalDistanceKm: +(totalTruckDist + totalCarDist).toFixed(2),
+            
+            // Stats globales Camions
+            totalOngletCamions: totalTrucksMain,
+            moyenneGlobaleCamionsParKm: totalTruckDist > 0 ? +(totalTrucksMain / totalTruckDist).toFixed(2) : 0,
+            
+            // Stats globales Véhicules
+            totalOngletVehicules: totalVehiclesTab,
+            moyenneGlobaleVehiculesParKm: totalCarDist > 0 ? +(totalVehiclesTab / totalCarDist).toFixed(2) : 0,
+            detailsVehicles: vehicleDetails
         };
 
-        let exportData = { appVersion: "Gégé v2.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
+        // 📝 5. Génération et téléchargement du fichier
+        let exportData = { 
+            appVersion: "Gégé v2.0", 
+            exportDate: new Date().toISOString(), 
+            globalSummary: globalSummary, 
+            sessions: allSessions 
+        };
+        
         const data = JSON.stringify(exportData, null, 2);
         
         const blob = new Blob([data], { type: "text/plain" });
@@ -295,7 +340,7 @@ const app = {
         a.href = url; 
         a.download = `Gege_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a); 
-        if(window.ui) window.ui.showToast("💾 Export global réussi !");
+        if(window.ui) window.ui.showToast("💾 Export global enrichi réussi !");
     },
     
     exportSingleSession(event, type, reversedIndex) {
