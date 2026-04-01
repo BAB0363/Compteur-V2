@@ -266,18 +266,20 @@ const app = {
 
         let exportData = { appVersion: "Gégé v2.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
         const data = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([data], { type: "application/json" });
+        
+        // Modification : export en .txt
+        const blob = new Blob([data], { type: "text/plain" });
         const url = URL.createObjectURL(blob); 
         const a = document.createElement("a"); 
         a.href = url; 
-        a.download = `Gege_Export_Global_${new Date().toISOString().slice(0,10)}.json`;
+        a.download = `Gege_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a); 
         if(window.ui) window.ui.showToast("💾 Export global réussi !");
     },
     
     // NOUVELLE FONCTION : Exporter une seule session
     exportSingleSession(event, type, reversedIndex) {
-        event.stopPropagation(); // Empêche d'ouvrir la modale en même temps qu'on clique sur le bouton
+        event.stopPropagation();
         let sessions = JSON.parse(localStorage.getItem(type === 'trucks' ? 'truckSessions' : 'carSessions')) || [];
         let realIndex = sessions.length - 1 - reversedIndex;
         let session = sessions[realIndex];
@@ -291,13 +293,14 @@ const app = {
         };
         
         const data = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([data], { type: "application/json" });
+        
+        // Modification : export en .txt
+        const blob = new Blob([data], { type: "text/plain" });
         const url = URL.createObjectURL(blob); 
         const a = document.createElement("a"); 
         a.href = url; 
-        // Formate la date pour le nom du fichier
         let safeDate = session.date.replace(/[\/ :]/g, '_');
-        a.download = `Gege_Session_${type}_${safeDate}.json`;
+        a.download = `Gege_Session_${type}_${safeDate}.txt`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a); 
         if(window.ui) window.ui.showToast("📤 Session exportée !");
     },
@@ -314,7 +317,7 @@ const app = {
                     localStorage.setItem('truckSessions', JSON.stringify(tSess));
                     localStorage.setItem('carSessions', JSON.stringify(cSess));
                     alert("✅ Historique importé avec succès ! Redémarrage..."); location.reload();
-                } else if(!data.sessions) { alert("❌ Format JSON non reconnu."); }
+                } else if(!data.sessions) { alert("❌ Format non reconnu."); }
             } catch (err) { alert("❌ Fichier invalide ou corrompu !"); }
         }; reader.readAsText(file);
     },
@@ -467,7 +470,6 @@ const app = {
                 let itemsCount = session.history ? session.history.length : 0;
                 let durationTxt = session.durationSec ? this.formatTime(session.durationSec) : "00:00:00";
                 
-                // MÀJ : Ajout du bouton d'export dans la ligne de la session
                 sessionsContainer.innerHTML += `
                     <div class="history-item clickable" onclick="window.app.showSessionDetails('${type}', ${reversedIndex})" style="cursor: pointer; background: var(--card-bg); padding: 10px; border-radius: 6px; margin-bottom: 5px; box-shadow: 0 1px 2px var(--shadow); position: relative;">
                         <div class="history-item-header" style="pointer-events: none; padding-right: 40px;">

@@ -144,9 +144,9 @@
     <div id="section-save" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #34495e;">
             <h3 style="margin-top: 0; color: #2c3e50;">💾 Sauvegarde & Export IA</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Exporte tes compteurs au format JSON optimisé pour l'analyse par Gemini ou restaure tes données.</p>
-            <button class="share-btn" style="width: 100%; margin-bottom: 10px; background-color: #2980b9; padding: 15px; font-size: 1.1em;" onclick="window.app.exportSaveFile()">📤 Exporter pour Analyse (.json)</button>
-            <input type="file" id="import-save-file" accept=".json,.gege" style="display:none;" onchange="window.app.importSaveFile(event)">
+            <p style="font-size: 0.85em; color: #7f8c8d;">Exporte tes compteurs au format texte optimisé pour l'analyse par une IA, ou restaure tes données.</p>
+            <button class="share-btn" style="width: 100%; margin-bottom: 10px; background-color: #2980b9; padding: 15px; font-size: 1.1em;" onclick="window.app.exportSaveFile()">📤 Exporter pour Analyse (.txt)</button>
+            <input type="file" id="import-save-file" accept=".json,.gege,.txt" style="display:none;" onchange="window.app.importSaveFile(event)">
             <button class="share-btn" style="width: 100%; background-color: #27ae60; padding: 15px; font-size: 1.1em;" onclick="document.getElementById('import-save-file').click()">📥 Importer des Données</button>
         </div>
     </div>
