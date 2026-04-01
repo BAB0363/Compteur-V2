@@ -401,11 +401,27 @@ const app = {
         this.vehicleTypes.forEach(v => grandTotal += (this.vehicleCounters[v] || 0)); 
         let cgt = document.getElementById('car-grand-total'); if(cgt) cgt.innerText = grandTotal;
 
+        // Dictionnaire pour lier les noms exacts aux ID HTML sans erreur
+        const slugMap = {
+            "Voitures": "voitures",
+            "Utilitaires": "utilitaires",
+            "Camions": "camions",
+            "Engins agricoles": "engins",
+            "Bus/Car": "bus",
+            "Camping-cars": "camping",
+            "Motos": "motos",
+            "Vélos": "velos"
+        };
+
         this.vehicleTypes.forEach(v => {
             let pct = grandTotal === 0 ? (100 / this.vehicleTypes.length) : Math.round(((this.vehicleCounters[v]||0) / grandTotal) * 100); 
-            let slug = v.toLowerCase().split('/')[0].split(' ')[0]; // Gère "Bus/Car" -> "bus", "Engins agricoles" -> "engins"
+            let slug = slugMap[v];
             let bar = document.getElementById(`bar-${slug}`);
-            if (bar) { bar.style.width = pct + '%'; bar.innerText = (grandTotal > 0 && this.vehicleCounters[v] > 0) ? `${pct}%` : ''; }
+            if (bar) { 
+                bar.style.width = pct + '%'; 
+                // On affiche le texte seulement si le total > 0 ET que ce véhicule a été compté
+                bar.innerText = (grandTotal > 0 && this.vehicleCounters[v] > 0) ? `${pct}%` : ''; 
+            }
         });
 
         const icons = { Voitures: "🚗", Utilitaires: "🚐", Camions: "🚛", "Engins agricoles": "🚜", "Bus/Car": "🚌", "Camping-cars": "🏕️", Motos: "🏍️", Vélos: "🚲" };
