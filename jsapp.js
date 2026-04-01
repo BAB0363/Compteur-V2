@@ -11,7 +11,6 @@ const app = {
     truckCounters: {}, vehicleCounters: {},
     truckHistory: [], carHistory: [],
     
-    // Nouveaux chronos fiables
     truckSeconds: parseInt(localStorage.getItem('truckChronoSec')) || 0,
     truckAccumulatedTime: parseInt(localStorage.getItem('truckAccumulatedTime')) || 0,
     truckStartTime: parseInt(localStorage.getItem('truckStartTime')) || 0,
@@ -36,7 +35,6 @@ const app = {
         if(Object.keys(this.truckCounters).length === 0) this.brands.forEach(b => this.truckCounters[b] = { fr: 0, etr: 0 });
         if(Object.keys(this.vehicleCounters).length === 0) this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0);
 
-        // Reprise des chronos
         if (!this.isTruckRunning) { this.truckAccumulatedTime = this.truckSeconds; }
         if (!this.isCarRunning) { this.carAccumulatedTime = this.carSeconds; }
 
@@ -272,11 +270,38 @@ const app = {
         const url = URL.createObjectURL(blob); 
         const a = document.createElement("a"); 
         a.href = url; 
-        a.download = `Gege_Export_${new Date().toISOString().slice(0,10)}.json`;
+        a.download = `Gege_Export_Global_${new Date().toISOString().slice(0,10)}.json`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a); 
-        if(window.ui) window.ui.showToast("💾 JSON généré avec succès !");
+        if(window.ui) window.ui.showToast("💾 Export global réussi !");
     },
     
+    // NOUVELLE FONCTION : Exporter une seule session
+    exportSingleSession(event, type, reversedIndex) {
+        event.stopPropagation(); // Empêche d'ouvrir la modale en même temps qu'on clique sur le bouton
+        let sessions = JSON.parse(localStorage.getItem(type === 'trucks' ? 'truckSessions' : 'carSessions')) || [];
+        let realIndex = sessions.length - 1 - reversedIndex;
+        let session = sessions[realIndex];
+        if(!session) return;
+
+        let exportData = { 
+            appVersion: "Gégé v2.0", 
+            exportDate: new Date().toISOString(), 
+            sessionType: type,
+            session: session 
+        };
+        
+        const data = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([data], { type: "application/json" });
+        const url = URL.createObjectURL(blob); 
+        const a = document.createElement("a"); 
+        a.href = url; 
+        // Formate la date pour le nom du fichier
+        let safeDate = session.date.replace(/[\/ :]/g, '_');
+        a.download = `Gege_Session_${type}_${safeDate}.json`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); 
+        if(window.ui) window.ui.showToast("📤 Session exportée !");
+    },
+
     importSaveFile(event) {
         const file = event.target.files[0]; if (!file) return;
         const reader = new FileReader();
@@ -441,14 +466,17 @@ const app = {
             sessions.slice().reverse().forEach((session, reversedIndex) => {
                 let itemsCount = session.history ? session.history.length : 0;
                 let durationTxt = session.durationSec ? this.formatTime(session.durationSec) : "00:00:00";
+                
+                // MÀJ : Ajout du bouton d'export dans la ligne de la session
                 sessionsContainer.innerHTML += `
-                    <div class="history-item clickable" onclick="window.app.showSessionDetails('${type}', ${reversedIndex})" style="cursor: pointer; background: var(--card-bg); padding: 10px; border-radius: 6px; margin-bottom: 5px; box-shadow: 0 1px 2px var(--shadow);">
-                        <div class="history-item-header" style="pointer-events: none;">
+                    <div class="history-item clickable" onclick="window.app.showSessionDetails('${type}', ${reversedIndex})" style="cursor: pointer; background: var(--card-bg); padding: 10px; border-radius: 6px; margin-bottom: 5px; box-shadow: 0 1px 2px var(--shadow); position: relative;">
+                        <div class="history-item-header" style="pointer-events: none; padding-right: 40px;">
                             <strong>📅 ${session.date.split(' ')[0]}</strong>
                             <span class="history-meta" style="color: #2980b9; font-weight: bold;">
                                 ⏱️ ${durationTxt} | 📍 ${session.distanceKm || 0} km | 👁️ ${itemsCount} comptés
                             </span>
                         </div>
+                        <button onclick="window.app.exportSingleSession(event, '${type}', ${reversedIndex})" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: #2980b9; color: white; border: none; border-radius: 4px; padding: 6px 10px; font-size: 1.1em; cursor: pointer; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📤</button>
                     </div>`;
             });
         }
