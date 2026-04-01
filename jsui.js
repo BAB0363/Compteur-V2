@@ -1,9 +1,34 @@
 // jsui.js
 export const ui = {
     activeTab: 'trucks',
+    deferredPrompt: null,
 
     init() {
         this.applyTheme();
+        this.initPWAInstall();
+    },
+
+    initPWAInstall() {
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Empêche Chrome d'afficher automatiquement l'invite
+            e.preventDefault();
+            this.deferredPrompt = e;
+            // Affiche ton propre bouton
+            const installBtn = document.getElementById('btn-install-pwa');
+            if(installBtn) {
+                installBtn.style.display = 'block';
+                installBtn.addEventListener('click', async () => {
+                    if (this.deferredPrompt !== null) {
+                        this.deferredPrompt.prompt();
+                        const { outcome } = await this.deferredPrompt.userChoice;
+                        if (outcome === 'accepted') {
+                            installBtn.style.display = 'none';
+                        }
+                        this.deferredPrompt = null;
+                    }
+                });
+            }
+        });
     },
 
     applyTheme() {
@@ -68,17 +93,6 @@ export const ui = {
             if(sec) sec.style.display = tab === t ? 'block' : 'none';
             if(btn) btn.classList.toggle('active', tab === t);
         });
-    },
-
-    toggleMinimalMode() {
-        let minimalUI = document.getElementById('minimal-mode-ui');
-        if(!minimalUI) return;
-        if (minimalUI.style.display === 'none') {
-            minimalUI.style.display = 'flex';
-            if(window.app) window.app.renderMinimalGrid();
-        } else {
-            minimalUI.style.display = 'none';
-        }
     },
 
     toggleTruckStats() {

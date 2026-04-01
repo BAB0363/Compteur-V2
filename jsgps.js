@@ -3,6 +3,7 @@ export const gps = {
     currentPos: { lat: null, lon: null },
     currentSpeed: 0,
     lastTrackedPos: null,
+    currentWeatherLabel: "Inconnue", // Nouvelle variable pour l'export JSON
 
     init() {
         this.startTracking();
@@ -10,7 +11,7 @@ export const gps = {
         setInterval(() => this.fetchWeather(), 900000); 
     },
 
-        startTracking() {
+    startTracking() {
         const gpsStatus = document.getElementById('gps-status');
         if ("geolocation" in navigator) {
             navigator.geolocation.watchPosition(
@@ -29,12 +30,10 @@ export const gps = {
                         let linearD = parseFloat(this.calculateDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon));
                         let speedKmh = this.currentSpeed * 3.6;
 
-                        // BOUCLIER 1 : On ignore les sauts aberrants (ex: plus de 2 km d'un coup en ligne droite)
                         if (linearD > 0.015 && linearD < 2.0 && accuracy <= 50 && (speedKmh > 3 || pos.coords.speed === null)) { 
                             let realD = await this.getRealDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon);
                             let d = parseFloat(realD);
                             
-                            // BOUCLIER 2 : Si OSRM délire et donne un trajet routier > 3 fois la ligne droite, on garde la ligne droite
                             if (isNaN(d) || d > linearD * 3) {
                                 d = linearD;
                             }
@@ -58,12 +57,10 @@ export const gps = {
                     }
                 },
                 (err) => { if(gpsStatus) { gpsStatus.innerText = "❌ GPS Désactivé"; gpsStatus.style.color = "#e74c3c"; } },
-                // BOUCLIER 3 : On baisse le maximumAge pour exiger du GPS plus "frais"
                 { enableHighAccuracy: true, maximumAge: 2000, timeout: 5000 }
             );
         }
     },
-
 
     async fetchWeather() {
         if (!this.currentPos.lat) return;
@@ -74,13 +71,19 @@ export const gps = {
             let wStatus = document.getElementById('weather-status');
             
             if(code === 0 || code === 1) {
+                this.currentWeatherLabel = "Dégagée";
                 if(wStatus) { wStatus.innerText = "☀️ Météo Dégagée"; wStatus.style.color = "#f39c12"; }
             } else if (code > 1 && code < 50) {
+                this.currentWeatherLabel = "Nuageuse";
                 if(wStatus) { wStatus.innerText = "☁️ Météo Nuageuse"; wStatus.style.color = "#bdc3c7"; }
             } else {
+                this.currentWeatherLabel = "Pluie / Difficile";
                 if(wStatus) { wStatus.innerText = "🌧️ Météo Difficile"; wStatus.style.color = "#3498db"; }
             }
-        } catch(e) { console.warn("Impossible de récupérer la météo locale."); }
+        } catch(e) { 
+            console.warn("Impossible de récupérer la météo locale."); 
+            this.currentWeatherLabel = "Inconnue";
+        }
     },
 
     calculateDistance(lat1, lon1, lat2, lon2) {

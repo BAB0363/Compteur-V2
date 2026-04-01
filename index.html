@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteurs Gégé</title>
-    <link rel="manifest" href="manifest.json?v=5">
+    <link rel="manifest" href="manifest.json?v=6">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 
@@ -17,18 +17,9 @@
         <button id="btn-undo" onclick="window.app.undoLast()">↩️ Annuler</button>
     </div>
 
-    <button id="btn-voice-command" class="no-print" onclick="window.speech.toggleVoiceCommand()" style="width: 100%; margin-bottom: 5px; padding: 10px; background-color: #3498db; color: white; border-radius: 6px; font-weight: bold;">
-        🎤 Activer la Commande Vocale
+    <button id="btn-install-pwa" class="no-print" style="display: none; width: 100%; margin-bottom: 15px; padding: 12px; background-color: #27ae60; color: white; border-radius: 6px; font-weight: bold; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+        📲 Installer Gégé sur l'écran d'accueil
     </button>
-
-    <button id="btn-minimal-mode" class="no-print" onclick="window.ui.toggleMinimalMode()" style="width: 100%; margin-bottom: 10px; padding: 10px; background-color: #e74c3c; color: white; border-radius: 6px; font-weight: bold;">
-        🚘 Activer le Mode Conduite Minimale
-    </button>
-
-    <div id="minimal-mode-ui" style="display: none;">
-        <button class="btn-quit-minimal" onclick="window.ui.toggleMinimalMode()">❌ Quitter le Mode Conduite</button>
-        <div id="minimal-grid"></div>
-    </div>
 
     <div class="main-tabs no-print">
         <button id="tab-trucks" class="active" onclick="window.ui.switchTab('trucks')">🚛 Camions</button>
@@ -39,7 +30,7 @@
     <div class="status-row no-print">
         <div id="wake-lock-status">⚙️ Écran...</div>
         <div id="gps-status">📍 GPS en attente...</div>
-        <div id="weather-status" style="color: #3498db;">☀️ Météo</div>
+        <div id="weather-status" style="color: #3498db;">☀️ Météo en cours...</div>
     </div>
 
     <div id="section-trucks">
@@ -68,8 +59,11 @@
         <div id="truck-main-view">
             <div id="truck-container"></div>
             
-            <div class="km-stats-container" id="truck-km-stats">
-                <h4>📊 Statistiques au kilomètre</h4>
+            <div class="km-stats-container" id="truck-adv-stats">
+                <h4>📈 Statistiques de la session</h4>
+                <div id="truck-live-stats" class="km-stats-grid" style="margin-bottom: 15px;">
+                    </div>
+                <h4>📊 Détails au kilomètre</h4>
                 <div id="truck-km-list" class="km-stats-grid"></div>
             </div>
         </div>
@@ -77,10 +71,8 @@
         <div id="truck-stats-view" style="display: none;">
             <button class="btn-return-large no-print" onclick="window.ui.toggleTruckStats()">⬅️ Retour aux compteurs</button>
             
-            <div class="actions-container no-print" style="margin-bottom: 20px;">
-                <button class="share-btn" style="background-color: #2c3e50;" onclick="window.app.shareScore('trucks')">📱 Partager mon Score</button>
-                <button class="share-btn" style="background-color: #8e44ad;" onclick="window.app.exportAllTrucksCSV()">📊 CSV Global</button>
-                <button class="reset-btn" onclick="window.app.resetTrucks()">🗑️ Effacer</button>
+            <div class="actions-container no-print" style="margin-bottom: 20px; justify-content: flex-end;">
+                <button class="reset-btn" style="flex: none; width: 100%;" onclick="window.app.resetTrucks()">🗑️ Effacer tout l'historique Camions</button>
             </div>
 
             <div id="map-trucks" class="mini-map no-print"></div>
@@ -89,6 +81,7 @@
             <div class="history-list no-print" id="truck-history-container"></div>
             
             <h3 class="no-print">Sessions Précédentes</h3>
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top: -10px;">Clique sur une session pour voir les détails.</p>
             <div class="history-list no-print" id="truck-sessions-container"></div>
         </div>
     </div>
@@ -121,8 +114,11 @@
         <div id="car-main-view">
             <div id="car-container"></div>
 
-            <div class="km-stats-container" id="car-km-stats">
-                <h4>📊 Statistiques au kilomètre</h4>
+            <div class="km-stats-container" id="car-adv-stats">
+                <h4>📈 Statistiques de la session</h4>
+                <div id="car-live-stats" class="km-stats-grid" style="margin-bottom: 15px;">
+                     </div>
+                <h4>📊 Détails au kilomètre</h4>
                 <div id="car-km-list" class="km-stats-grid"></div>
             </div>
         </div>
@@ -130,10 +126,8 @@
         <div id="car-stats-view" style="display: none;">
             <button class="btn-return-large no-print" onclick="window.ui.toggleCarStats()">⬅️ Retour aux compteurs</button>
             
-            <div class="actions-container no-print" style="margin-bottom: 20px;">
-                <button class="share-btn" style="background-color: #2c3e50;" onclick="window.app.shareScore('cars')">📱 Partager mon Score</button>
-                <button class="share-btn" style="background-color: #8e44ad;" onclick="window.app.exportAllCarsCSV()">📊 CSV Global</button>
-                <button class="reset-btn" onclick="window.app.resetCars()">🗑️ Effacer</button>
+            <div class="actions-container no-print" style="margin-bottom: 20px; justify-content: flex-end;">
+                <button class="reset-btn" style="flex: none; width: 100%;" onclick="window.app.resetCars()">🗑️ Effacer tout l'historique Véhicules</button>
             </div>
 
             <div id="map-cars" class="mini-map no-print"></div>
@@ -142,24 +136,33 @@
             <div class="history-list no-print" id="car-history-container"></div>
             
             <h3 class="no-print">Sessions Précédentes</h3>
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top: -10px;">Clique sur une session pour voir les détails.</p>
             <div class="history-list no-print" id="car-sessions-container"></div>
         </div>
     </div>
 
     <div id="section-save" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #34495e;">
-            <h3 style="margin-top: 0; color: #2c3e50;">💾 Sauvegarde & Export</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Exporte tes compteurs pour ne rien perdre ou les transférer sur un autre appareil.</p>
-            <button class="share-btn" style="width: 100%; margin-bottom: 10px; background-color: #2980b9;" onclick="window.app.exportSaveFile()">📤 Exporter mes Données (.gege)</button>
-            <input type="file" id="import-save-file" accept=".gege" style="display:none;" onchange="window.app.importSaveFile(event)">
-            <button class="share-btn" style="width: 100%; background-color: #27ae60;" onclick="document.getElementById('import-save-file').click()">📥 Importer des Données</button>
+            <h3 style="margin-top: 0; color: #2c3e50;">💾 Sauvegarde & Export IA</h3>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Exporte tes compteurs au format JSON optimisé pour l'analyse par Gemini ou restaure tes données.</p>
+            <button class="share-btn" style="width: 100%; margin-bottom: 10px; background-color: #2980b9; padding: 15px; font-size: 1.1em;" onclick="window.app.exportSaveFile()">📤 Exporter pour Analyse (.json)</button>
+            <input type="file" id="import-save-file" accept=".json,.gege" style="display:none;" onchange="window.app.importSaveFile(event)">
+            <button class="share-btn" style="width: 100%; background-color: #27ae60; padding: 15px; font-size: 1.1em;" onclick="document.getElementById('import-save-file').click()">📥 Importer des Données</button>
+        </div>
+    </div>
+
+    <div id="session-detail-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; padding:20px; box-sizing:border-box; overflow-y:auto; align-items: center; justify-content: center;">
+        <div style="background:var(--card-bg); padding:20px; border-radius:10px; width:100%; max-width:500px; position:relative; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+            <button onclick="document.getElementById('session-detail-modal').style.display='none'" style="position:absolute; top:15px; right:15px; background:#e74c3c; color:white; border:none; border-radius:50%; width:30px; height:30px; cursor:pointer; font-weight:bold;">X</button>
+            <h3 id="modal-session-title" style="margin-top:0; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; color: var(--text-color);">Détails de la session</h3>
+            <div id="modal-session-content" style="color: var(--text-color); font-size: 0.95em; line-height: 1.5;"></div>
         </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=5"></script>
+    <script type="module" src="jsapp.js?v=6"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
