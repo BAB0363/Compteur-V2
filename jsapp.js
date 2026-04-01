@@ -86,6 +86,14 @@ const app = {
     toggleTruckChrono() {
         this.isTruckRunning = !this.isTruckRunning; localStorage.setItem('truckChronoRun', this.isTruckRunning);
         const btn = document.getElementById('btn-truck-chrono'); if(!btn) return;
+        
+        // Enregistrement de l'événement Pause/Reprise
+        let eventType = this.isTruckRunning ? "▶️ Reprise" : "⏸️ Pause";
+        let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
+        this.truckHistory.push(histItem);
+        localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
+        if (document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
+
         if (this.isTruckRunning) { 
             btn.innerText = "⏸️ Pause"; btn.classList.add('running'); 
             this.truckStartTime = Date.now(); localStorage.setItem('truckStartTime', this.truckStartTime);
@@ -107,6 +115,14 @@ const app = {
     toggleCarChrono() {
         this.isCarRunning = !this.isCarRunning; localStorage.setItem('carChronoRun', this.isCarRunning);
         const btn = document.getElementById('btn-car-chrono'); if(!btn) return;
+        
+        // Enregistrement de l'événement Pause/Reprise
+        let eventType = this.isCarRunning ? "▶️ Reprise" : "⏸️ Pause";
+        let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
+        this.carHistory.push(histItem);
+        localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
+        if (document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
+
         if (this.isCarRunning) { 
             btn.innerText = "⏸️ Pause"; btn.classList.add('running'); 
             this.carStartTime = Date.now(); localStorage.setItem('carStartTime', this.carStartTime);
@@ -143,7 +159,7 @@ const app = {
                 this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
             } else if (amount < 0) {
                 for (let i = this.truckHistory.length - 1; i >= 0; i--) {
-                    if (this.truckHistory[i].brand === brand && this.truckHistory[i].type === type) {
+                    if (!this.truckHistory[i].isEvent && this.truckHistory[i].brand === brand && this.truckHistory[i].type === type) {
                         this.deleteTruckHistoryItem(i);
                         return;
                     }
@@ -171,7 +187,7 @@ const app = {
                 this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
             } else if (amount < 0) {
                 for (let i = this.carHistory.length - 1; i >= 0; i--) {
-                    if (this.carHistory[i].type === type) {
+                    if (!this.carHistory[i].isEvent && this.carHistory[i].type === type) {
                         this.deleteCarHistoryItem(i);
                         return;
                     }
@@ -182,20 +198,20 @@ const app = {
 
     deleteTruckHistoryItem(index) {
         let item = this.truckHistory[index];
-        if (this.truckCounters[item.brand] && this.truckCounters[item.brand][item.type] > 0) this.truckCounters[item.brand][item.type]--;
+        if (!item.isEvent && this.truckCounters[item.brand] && this.truckCounters[item.brand][item.type] > 0) this.truckCounters[item.brand][item.type]--;
         this.truckHistory.splice(index, 1);
         localStorage.setItem('truckCounters', JSON.stringify(this.truckCounters)); localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
-        if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast("❌ Camion supprimé"); }
+        if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast(item.isEvent ? "🗑️ Événement supprimé" : "❌ Camion supprimé"); }
         this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
         if (document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
     },
 
     deleteCarHistoryItem(index) {
         let item = this.carHistory[index];
-        if (this.vehicleCounters[item.type] > 0) this.vehicleCounters[item.type]--;
+        if (!item.isEvent && this.vehicleCounters[item.type] > 0) this.vehicleCounters[item.type]--;
         this.carHistory.splice(index, 1);
         localStorage.setItem('vehicleCounters', JSON.stringify(this.vehicleCounters)); localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
-        if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast("❌ Véhicule supprimé"); }
+        if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast(item.isEvent ? "🗑️ Événement supprimé" : "❌ Véhicule supprimé"); }
         this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
         if (document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
     },
@@ -266,8 +282,8 @@ const app = {
         let globalSummary = {
             totalSessions: allSessions.length,
             totalDistanceKm: allSessions.reduce((acc, s) => acc + (s.distanceKm || 0), 0),
-            totalTrucks: truckSessions.reduce((acc, s) => acc + (s.history ? s.history.length : 0), 0),
-            totalCars: carSessions.reduce((acc, s) => acc + (s.history ? s.history.length : 0), 0)
+            totalTrucks: truckSessions.reduce((acc, s) => acc + (s.history ? s.history.filter(h => !h.isEvent).length : 0), 0),
+            totalCars: carSessions.reduce((acc, s) => acc + (s.history ? s.history.filter(h => !h.isEvent).length : 0), 0)
         };
 
         let exportData = { appVersion: "Gégé v2.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
@@ -373,7 +389,7 @@ const app = {
         if (!container) return;
         
         let sec = type === 'trucks' ? this.truckSeconds : this.carSeconds;
-        let count = type === 'trucks' ? this.truckHistory.length : this.carHistory.length;
+        let count = type === 'trucks' ? this.truckHistory.filter(h => !h.isEvent).length : this.carHistory.filter(h => !h.isEvent).length;
         
         let freq = (count > 0 && sec > 0) ? (sec / 60 / count).toFixed(1) + " min" : "-";
         let speed = (sec > 0) ? (count / (sec / 3600)).toFixed(1) + " /h" : "-";
@@ -390,7 +406,8 @@ const app = {
         let tContainer = document.getElementById('truck-km-list');
         if (tContainer) {
             if (this.liveTruckDistance > 0) {
-                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(this.truckHistory.length / this.liveTruckDistance).toFixed(1)} /km</span></div>`;
+                let truckCount = this.truckHistory.filter(h => !h.isEvent).length;
+                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(truckCount / this.liveTruckDistance).toFixed(1)} /km</span></div>`;
                 this.brands.forEach(brand => {
                     let count = this.truckCounters[brand] ? (this.truckCounters[brand].fr + this.truckCounters[brand].etr) : 0;
                     if (count > 0) html += `<div class="km-stat-card"><span class="km-stat-title">${brand}</span><span class="km-stat-value">${(count / this.liveTruckDistance).toFixed(1)} /km</span></div>`;
@@ -402,7 +419,8 @@ const app = {
         let cContainer = document.getElementById('car-km-list');
         if (cContainer) {
             if (this.liveCarDistance > 0) {
-                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(this.carHistory.length / this.liveCarDistance).toFixed(1)} /km</span></div>`;
+                let carCount = this.carHistory.filter(h => !h.isEvent).length;
+                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(carCount / this.liveCarDistance).toFixed(1)} /km</span></div>`;
                 this.vehicleTypes.forEach(v => {
                     let count = this.vehicleCounters[v] || 0;
                     if (count > 0) html += `<div class="km-stat-card"><span class="km-stat-title">${v}</span><span class="km-stat-value">${(count / this.liveCarDistance).toFixed(1)} /km</span></div>`;
@@ -418,7 +436,7 @@ const app = {
         let session = sessions[realIndex];
         if(!session) return;
 
-        let itemsCount = session.history ? session.history.length : 0;
+        let itemsCount = session.history ? session.history.filter(h => !h.isEvent).length : 0;
         let freq = itemsCount > 0 && session.durationSec > 0 ? (session.durationSec / 60 / itemsCount).toFixed(1) : '-';
         let speed = session.durationSec > 0 ? (itemsCount / (session.durationSec / 3600)).toFixed(1) : '-';
         let dist = session.distanceKm || 0;
@@ -451,11 +469,12 @@ const app = {
         } else {
             currentHistory.slice().reverse().forEach((item, index) => {
                 let realIndex = currentHistory.length - 1 - index;
-                let title = type === 'trucks' ? `${item.brand} (${item.type === 'fr' ? '🇫🇷' : '🌍'})` : item.type;
+                let title = item.isEvent ? item.eventType : (type === 'trucks' ? `${item.brand} (${item.type === 'fr' ? '🇫🇷' : '🌍'})` : item.type);
+                let titleStyle = item.isEvent ? 'color: #f39c12;' : '';
                 historyContainer.innerHTML += `
                     <div class="history-item">
                         <div class="history-item-header">
-                            <strong>${title}</strong>
+                            <strong style="${titleStyle}">${title}</strong>
                             <span class="history-meta">⏱️ ${item.chronoTime} | 📍 ${item.lat ? parseFloat(item.lat).toFixed(4) : '?'}</span>
                             <button class="btn-del-history" onclick="window.app.${type === 'trucks' ? 'deleteTruckHistoryItem' : 'deleteCarHistoryItem'}(${realIndex})">🗑️</button>
                         </div>
@@ -470,7 +489,7 @@ const app = {
             sessionsContainer.innerHTML = '<div class="history-item">Aucune session sauvegardée. 🚦</div>';
         } else {
             sessions.slice().reverse().forEach((session, reversedIndex) => {
-                let itemsCount = session.history ? session.history.length : 0;
+                let itemsCount = session.history ? session.history.filter(h => !h.isEvent).length : 0;
                 let durationTxt = session.durationSec ? this.formatTime(session.durationSec) : "00:00:00";
                 
                 sessionsContainer.innerHTML += `

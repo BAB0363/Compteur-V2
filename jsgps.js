@@ -23,7 +23,6 @@ export const gps = {
 
                     if(gpsStatus) { 
                         gpsStatus.innerText = `📍 GPS Actif (${accuracy}m)`; 
-                        // On exige désormais une précision de 30m pour être dans le "vert"
                         gpsStatus.style.color = accuracy > 30 ? "#f39c12" : "#27ae60"; 
                     }
                     
@@ -31,15 +30,10 @@ export const gps = {
                         let linearD = parseFloat(this.calculateDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon));
                         let speedKmh = this.currentSpeed * 3.6;
 
-                        // CORRECTION DU DRIFT GPS : 
-                        // linearD > 0.025 (25 mètres min au lieu de 15)
-                        // accuracy <= 30 (précision max 30m au lieu de 50m)
-                        // speedKmh > 5 (vitesse min 5 km/h au lieu de 3)
                         if (linearD > 0.025 && linearD < 2.0 && accuracy <= 30 && (speedKmh > 5 || pos.coords.speed === null)) { 
                             let realD = await this.getRealDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon);
                             let d = parseFloat(realD);
                             
-                            // On limite l'erreur de calcul OSRM à 1.5x la distance linéaire (au lieu de 3x)
                             if (isNaN(d) || d > linearD * 1.5) {
                                 d = linearD;
                             }
@@ -59,7 +53,6 @@ export const gps = {
                             this.lastTrackedPos = { lat: this.currentPos.lat, lon: this.currentPos.lon };
                         }
                     } else { 
-                        // On n'initialise le point de départ que si le signal est très bon
                         if (accuracy <= 30) {
                             this.lastTrackedPos = { lat: this.currentPos.lat, lon: this.currentPos.lon }; 
                         }
@@ -127,14 +120,26 @@ export const gps = {
         
         let sessions = []; try { sessions = JSON.parse(localStorage.getItem(mapType === 'trucks' ? 'truckSessions' : 'carSessions')) || []; } catch(e){}
         sessions.forEach(s => {
-            if(s.history) { s.history.forEach(h => { if(h.lat && h.lon) heatData.push([h.lat, h.lon, 0.5]); }); }
+            if(s.history) { 
+                s.history.forEach(h => { 
+                    if(h.lat && h.lon && !h.isEvent) heatData.push([h.lat, h.lon, 0.5]); 
+                }); 
+            }
         });
 
         currentHistory.forEach(h => {
             if(h.lat && h.lon) {
-                latlngs.push([h.lat, h.lon]); heatData.push([h.lat, h.lon, 1]);
-                let iconStr = h.brand ? "🚛" : (h.type === "Motos" ? "🏍️" : (h.type === "Tracteurs" ? "🚜" : "🚗"));
-                let markerHtml = `<div style="font-size: 20px;">${iconStr}</div>`;
+                latlngs.push([h.lat, h.lon]); 
+                if(!h.isEvent) heatData.push([h.lat, h.lon, 1]); // On ne fait pas chauffer la HeatMap pour une pause
+                
+                let iconStr;
+                if (h.isEvent) {
+                    iconStr = h.eventType.includes("Pause") ? "⏸️" : "▶️";
+                } else {
+                    iconStr = h.brand ? "🚛" : (h.type === "Motos" ? "🏍️" : (h.type === "Tracteurs" ? "🚜" : "🚗"));
+                }
+                
+                let markerHtml = `<div style="font-size: ${h.isEvent ? '16px' : '20px'}; opacity: ${h.isEvent ? '0.8' : '1'};">${iconStr}</div>`;
                 let customIcon = L.divIcon({className: 'custom-icon', html: markerHtml, iconSize: [30, 30]});
                 L.marker([h.lat, h.lon], {icon: customIcon}).addTo(mapInstance);
             }
