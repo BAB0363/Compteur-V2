@@ -130,6 +130,9 @@ const app = {
         if (!this.truckCounters[brand]) this.truckCounters[brand] = { fr: 0, etr: 0 };
         
         if (this.truckCounters[brand][type] + amount >= 0) {
+            
+            if (window.ui) window.ui.playBeep(amount > 0);
+
             if (amount > 0) {
                 this.truckCounters[brand][type] += amount;
                 let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
@@ -154,6 +157,9 @@ const app = {
         if (typeof this.vehicleCounters[type] === 'undefined') this.vehicleCounters[type] = 0;
         
         if (this.vehicleCounters[type] + amount >= 0) {
+            
+            if (window.ui) window.ui.playBeep(amount > 0);
+
             if (amount > 0) {
                 this.vehicleCounters[type] += amount; 
                 let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
@@ -267,7 +273,6 @@ const app = {
         let exportData = { appVersion: "Gégé v2.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
         const data = JSON.stringify(exportData, null, 2);
         
-        // Modification : export en .txt
         const blob = new Blob([data], { type: "text/plain" });
         const url = URL.createObjectURL(blob); 
         const a = document.createElement("a"); 
@@ -277,7 +282,6 @@ const app = {
         if(window.ui) window.ui.showToast("💾 Export global réussi !");
     },
     
-    // NOUVELLE FONCTION : Exporter une seule session
     exportSingleSession(event, type, reversedIndex) {
         event.stopPropagation();
         let sessions = JSON.parse(localStorage.getItem(type === 'trucks' ? 'truckSessions' : 'carSessions')) || [];
@@ -294,7 +298,6 @@ const app = {
         
         const data = JSON.stringify(exportData, null, 2);
         
-        // Modification : export en .txt
         const blob = new Blob([data], { type: "text/plain" });
         const url = URL.createObjectURL(blob); 
         const a = document.createElement("a"); 

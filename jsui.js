@@ -2,6 +2,36 @@
 export const ui = {
     activeTab: 'trucks',
     deferredPrompt: null,
+    audioCtx: null,
+
+    playBeep(isAdding) {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            if (!this.audioCtx) this.audioCtx = new AudioContext();
+            
+            if (this.audioCtx.state === 'suspended') {
+                this.audioCtx.resume();
+            }
+            
+            const oscillator = this.audioCtx.createOscillator();
+            const gainNode = this.audioCtx.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(this.audioCtx.destination);
+            
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(isAdding ? 800 : 300, this.audioCtx.currentTime);
+            
+            gainNode.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, this.audioCtx.currentTime + 0.1);
+            
+            oscillator.start();
+            oscillator.stop(this.audioCtx.currentTime + 0.1);
+        } catch(e) { 
+            console.warn("Audio non supporté"); 
+        }
+    },
 
     init() {
         this.applyTheme();
@@ -10,10 +40,8 @@ export const ui = {
 
     initPWAInstall() {
         window.addEventListener('beforeinstallprompt', (e) => {
-            // Empêche Chrome d'afficher automatiquement l'invite
             e.preventDefault();
             this.deferredPrompt = e;
-            // Affiche ton propre bouton
             const installBtn = document.getElementById('btn-install-pwa');
             if(installBtn) {
                 installBtn.style.display = 'block';
