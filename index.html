@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteurs Gégé</title>
-    <link rel="manifest" href="manifest.json?v=6">
+    <link rel="manifest" href="manifest.json?v=7">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=6">
+    <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -103,11 +103,15 @@
             <div class="totals-row">
                 Total : <span id="car-grand-total" style="color:#27ae60;">0</span>
             </div>
-            <div class="proportion-bar">
-                <div id="bar-voitures">25%</div>
-                <div id="bar-camions">25%</div>
-                <div id="bar-tracteurs">25%</div>
-                <div id="bar-motos">25%</div>
+            <div class="proportion-bar" style="font-size: 0.65em;">
+                <div id="bar-voitures">12%</div>
+                <div id="bar-utilitaires">12%</div>
+                <div id="bar-camions">12%</div>
+                <div id="bar-engins">13%</div>
+                <div id="bar-bus">13%</div>
+                <div id="bar-camping">13%</div>
+                <div id="bar-motos">13%</div>
+                <div id="bar-velos">12%</div>
             </div>
         </div>
         
@@ -162,7 +166,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=6"></script>
+    <script type="module" src="jsapp.js?v=7"></script>
     
     <script>
       if ('serviceWorker' in navigator) {

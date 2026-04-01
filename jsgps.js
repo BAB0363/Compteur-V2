@@ -88,6 +88,27 @@ export const gps = {
         }
     },
 
+    // NOUVEAU : Fonction de Reverse Geocoding pour trouver l'adresse
+    async getAddress(lat, lon) {
+        if (!lat || !lon) return "Position inconnue";
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`);
+            const data = await response.json();
+            if (data && data.address) {
+                let city = data.address.city || data.address.town || data.address.village || data.address.municipality || "";
+                let road = data.address.road || "";
+                if (road && city) return `${road}, ${city}`;
+                if (city) return city;
+                if (road) return road;
+                return data.display_name.split(',').slice(0, 2).join(', ');
+            }
+            return "Adresse introuvable";
+        } catch (e) {
+            console.warn("Erreur Reverse Geocoding", e);
+            return "Position inconnue";
+        }
+    },
+
     calculateDistance(lat1, lon1, lat2, lon2) {
         if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
         const R = 6371; 
@@ -136,7 +157,15 @@ export const gps = {
                 if (h.isEvent) {
                     iconStr = h.eventType.includes("Pause") ? "⏸️" : "▶️";
                 } else {
-                    iconStr = h.brand ? "🚛" : (h.type === "Motos" ? "🏍️" : (h.type === "Tracteurs" ? "🚜" : "🚗"));
+                    // Nouvelles icônes intégrées à la carte
+                    if (h.brand) iconStr = "🚛";
+                    else if (h.type === "Motos") iconStr = "🏍️";
+                    else if (h.type === "Vélos") iconStr = "🚲";
+                    else if (h.type === "Engins agricoles") iconStr = "🚜";
+                    else if (h.type === "Bus/Car") iconStr = "🚌";
+                    else if (h.type === "Utilitaires") iconStr = "🚐";
+                    else if (h.type === "Camping-cars") iconStr = "🏕️";
+                    else iconStr = "🚗";
                 }
                 
                 let markerHtml = `<div style="font-size: ${h.isEvent ? '16px' : '20px'}; opacity: ${h.isEvent ? '0.8' : '1'};">${iconStr}</div>`;

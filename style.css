@@ -56,11 +56,17 @@ body {
 .btn-stats-toggle.active { background-color: #e67e22; }
 
 .totals-row { text-align: center; font-size: 1.1em; margin-bottom: 8px; font-weight: bold; }
-.proportion-bar { display: flex; height: 22px; border-radius: 11px; overflow: hidden; background: #7f8c8d; font-size: 0.8em; color: white; line-height: 22px; font-weight: bold; text-align: center; }
+.proportion-bar { display: flex; height: 22px; border-radius: 11px; overflow: hidden; background: #7f8c8d; font-size: 0.7em; color: white; line-height: 22px; font-weight: bold; text-align: center; }
 #bar-fr, #bar-voitures { background-color: #3498db; transition: width 0.3s; overflow: hidden; }
 #bar-etr, #bar-camions { background-color: #e67e22; transition: width 0.3s; overflow: hidden; }
-#bar-tracteurs { background-color: #27ae60; transition: width 0.3s; overflow: hidden; }
+/* Nouvelles couleurs pour les catégories véhicules */
+#bar-utilitaires { background-color: #1abc9c; transition: width 0.3s; overflow: hidden; }
+#bar-engins { background-color: #27ae60; transition: width 0.3s; overflow: hidden; }
+#bar-bus { background-color: #f1c40f; color: #333; transition: width 0.3s; overflow: hidden; }
+#bar-camping { background-color: #d35400; transition: width 0.3s; overflow: hidden; }
 #bar-motos { background-color: #9b59b6; transition: width 0.3s; overflow: hidden; }
+#bar-velos { background-color: #e74c3c; transition: width 0.3s; overflow: hidden; }
+
 .status-row { display: flex; justify-content: space-between; font-size: 0.75em; color: #7f8c8d; margin-bottom: 10px; background: var(--card-bg); padding: 5px 10px; border-radius: 5px; box-shadow: 0 1px 2px var(--shadow);}
 #truck-container, #car-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
 .brand-card, .vehicle-card { background: var(--card-bg); padding: 8px; border-radius: 6px; box-shadow: 0 1px 2px var(--shadow); display: flex; flex-direction: column; justify-content: space-between; transition: 0.3s;}
