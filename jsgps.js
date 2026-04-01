@@ -1,0 +1,147 @@
+// jsgps.js
+export const gps = {
+    currentPos: { lat: null, lon: null },
+    currentSpeed: 0,
+    lastTrackedPos: null,
+
+    init() {
+        this.startTracking();
+        setTimeout(() => this.fetchWeather(), 2000);
+        setInterval(() => this.fetchWeather(), 900000); 
+    },
+
+        startTracking() {
+        const gpsStatus = document.getElementById('gps-status');
+        if ("geolocation" in navigator) {
+            navigator.geolocation.watchPosition(
+                async (pos) => { 
+                    this.currentPos = { lat: pos.coords.latitude, lon: pos.coords.longitude }; 
+                    this.currentSpeed = pos.coords.speed || 0; 
+                    
+                    let accuracy = Math.round(pos.coords.accuracy);
+
+                    if(gpsStatus) { 
+                        gpsStatus.innerText = `📍 GPS Actif (${accuracy}m)`; 
+                        gpsStatus.style.color = accuracy > 50 ? "#f39c12" : "#27ae60"; 
+                    }
+                    
+                    if (this.lastTrackedPos) {
+                        let linearD = parseFloat(this.calculateDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon));
+                        let speedKmh = this.currentSpeed * 3.6;
+
+                        // BOUCLIER 1 : On ignore les sauts aberrants (ex: plus de 2 km d'un coup en ligne droite)
+                        if (linearD > 0.015 && linearD < 2.0 && accuracy <= 50 && (speedKmh > 3 || pos.coords.speed === null)) { 
+                            let realD = await this.getRealDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon);
+                            let d = parseFloat(realD);
+                            
+                            // BOUCLIER 2 : Si OSRM délire et donne un trajet routier > 3 fois la ligne droite, on garde la ligne droite
+                            if (isNaN(d) || d > linearD * 3) {
+                                d = linearD;
+                            }
+
+                            if (window.app && window.app.isTruckRunning) { 
+                                window.app.liveTruckDistance += d; 
+                                localStorage.setItem('liveTruckDist', window.app.liveTruckDistance); 
+                                window.app.updateTruckChronoDisp(); 
+                                window.app.renderKmStats(); 
+                            }
+                            if (window.app && window.app.isCarRunning) { 
+                                window.app.liveCarDistance += d; 
+                                localStorage.setItem('liveCarDist', window.app.liveCarDistance); 
+                                window.app.updateCarChronoDisp(); 
+                                window.app.renderKmStats(); 
+                            }
+                            this.lastTrackedPos = { lat: this.currentPos.lat, lon: this.currentPos.lon };
+                        }
+                    } else { 
+                        this.lastTrackedPos = { lat: this.currentPos.lat, lon: this.currentPos.lon }; 
+                    }
+                },
+                (err) => { if(gpsStatus) { gpsStatus.innerText = "❌ GPS Désactivé"; gpsStatus.style.color = "#e74c3c"; } },
+                // BOUCLIER 3 : On baisse le maximumAge pour exiger du GPS plus "frais"
+                { enableHighAccuracy: true, maximumAge: 2000, timeout: 5000 }
+            );
+        }
+    },
+
+
+    async fetchWeather() {
+        if (!this.currentPos.lat) return;
+        try {
+            let res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${this.currentPos.lat}&longitude=${this.currentPos.lon}&current_weather=true`);
+            let data = await res.json();
+            let code = data.current_weather.weathercode;
+            let wStatus = document.getElementById('weather-status');
+            
+            if(code === 0 || code === 1) {
+                if(wStatus) { wStatus.innerText = "☀️ Météo Dégagée"; wStatus.style.color = "#f39c12"; }
+            } else if (code > 1 && code < 50) {
+                if(wStatus) { wStatus.innerText = "☁️ Météo Nuageuse"; wStatus.style.color = "#bdc3c7"; }
+            } else {
+                if(wStatus) { wStatus.innerText = "🌧️ Météo Difficile"; wStatus.style.color = "#3498db"; }
+            }
+        } catch(e) { console.warn("Impossible de récupérer la météo locale."); }
+    },
+
+    calculateDistance(lat1, lon1, lat2, lon2) {
+        if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+        const R = 6371; 
+        const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+        return (R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)))).toFixed(3); 
+    },
+
+    async getRealDistance(lat1, lon1, lat2, lon2) {
+        if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+        try {
+            const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`);
+            const data = await response.json();
+            if (data.routes && data.routes.length > 0) return (data.routes[0].distance / 1000).toFixed(3);
+        } catch (e) { console.warn("Pas de réseau OSRM, fallback sur calcul basique"); }
+        return this.calculateDistance(lat1, lon1, lat2, lon2);
+    },
+
+    initMap(mapId, currentHistory, mapType) {
+        if(!document.getElementById(mapId)) return;
+        let mapInstance = mapType === 'trucks' ? window.app.truckMap : window.app.carMap;
+        if(mapInstance) { mapInstance.remove(); }
+        
+        let defaultPos = this.currentPos.lat ? [this.currentPos.lat, this.currentPos.lon] : [46.603354, 1.888334]; 
+        mapInstance = L.map(mapId).setView(defaultPos, 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
+        
+        let latlngs = []; 
+        let heatData = []; 
+        
+        let sessions = []; try { sessions = JSON.parse(localStorage.getItem(mapType === 'trucks' ? 'truckSessions' : 'carSessions')) || []; } catch(e){}
+        sessions.forEach(s => {
+            if(s.history) { s.history.forEach(h => { if(h.lat && h.lon) heatData.push([h.lat, h.lon, 0.5]); }); }
+        });
+
+        currentHistory.forEach(h => {
+            if(h.lat && h.lon) {
+                latlngs.push([h.lat, h.lon]); heatData.push([h.lat, h.lon, 1]);
+                let iconStr = h.brand ? "🚛" : (h.type === "Motos" ? "🏍️" : (h.type === "Tracteurs" ? "🚜" : "🚗"));
+                let markerHtml = `<div style="font-size: 20px;">${iconStr}</div>`;
+                let customIcon = L.divIcon({className: 'custom-icon', html: markerHtml, iconSize: [30, 30]});
+                L.marker([h.lat, h.lon], {icon: customIcon}).addTo(mapInstance);
+            }
+        });
+
+        if(latlngs.length > 1) {
+            L.polyline(latlngs, {color: '#e74c3c', weight: 3}).addTo(mapInstance);
+            mapInstance.fitBounds(L.polyline(latlngs).getBounds());
+        } else if (heatData.length > 0) {
+            mapInstance.fitBounds(L.latLngBounds(heatData.map(h => [h[0], h[1]])));
+        }
+
+        if (typeof L.heatLayer !== 'undefined' && heatData.length > 0) {
+            L.heatLayer(heatData, {radius: 20, blur: 15, maxZoom: 10, minOpacity: 0.4}).addTo(mapInstance);
+        }
+
+        setTimeout(() => { mapInstance.invalidateSize(); }, 200);
+        
+        if (mapType === 'trucks') window.app.truckMap = mapInstance;
+        else window.app.carMap = mapInstance;
+    }
+};
