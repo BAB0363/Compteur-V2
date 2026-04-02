@@ -33,7 +33,6 @@ const app = {
     liveCarDistance: parseFloat(localStorage.getItem('liveCarDist')) || 0,
     wakeLock: null, 
     
-    // Instances de graphiques pour pouvoir les détruire/recréer
     truckChart: null, carChart: null,
     temporalChart: null, weeklyChart: null, altitudeChart: null,
 
@@ -484,8 +483,8 @@ const app = {
             container.innerHTML += `<div class="vehicle-card"><div class="vehicle-name">${icons[v] || "🚘"} ${v}</div><div class="vehicle-controls"><button class="btn-corr" onclick="window.app.updateVehicle(event, '${v}', -1)">-</button><span class="vehicle-score">${score}</span><button class="btn-add btn-add-fr" onclick="window.app.updateVehicle(event, '${v}', 1)">+</button></div></div>`;
         });
     },
-    
-    // --- NOUVEAUTÉ: Statistiques en Temps Réel Boostées ---
+
+    // TOUTES LES STATS SONT LÀ ! ANCIENNES + NOUVELLES
     renderLiveStats(type) {
         let container = document.getElementById(type === 'trucks' ? 'truck-live-stats' : 'car-live-stats');
         if (!container) return;
@@ -497,28 +496,30 @@ const app = {
         let items = hist.filter(h => !h.isEvent);
         let count = items.length;
         
+        // Anciennes statistiques
         let avgSpeed = (sec > 0) ? (dist / (sec / 3600)).toFixed(1) + " km/h" : "-";
-        
-        // Espacement Moyen (Temps et Distance)
+        let freqApp = (count > 0 && sec > 0) ? (sec / 60 / count).toFixed(1) + " min" : "-";
+        let rythmeHeure = (sec > 0) ? (count / (sec / 3600)).toFixed(1) + " /h" : "-";
+        let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
+
+        // Nouvelles statistiques
         let espTemps = count > 1 ? (sec / count).toFixed(1) + " s" : "-";
         let espDist = (count > 1 && dist > 0) ? ((dist * 1000) / count).toFixed(0) + " m" : "-";
-        
-        // Moyenne Mobile (Tendance sur les 10 dernières minutes)
         let nowTimestamp = Date.now();
         let tenMinsAgo = nowTimestamp - 600000;
         let recentItems = items.filter(h => h.timestamp >= tenMinsAgo);
-        // On multiplie par 6 pour avoir un rythme ramené à l'heure
         let mobilePace = recentItems.length > 0 ? (recentItems.length * 6) + " /h" : "-";
-        
-        // Projection (+1h à ce rythme)
         let ratePerSec = count / (sec || 1);
         let proj = sec > 0 ? Math.round(count + (ratePerSec * 3600)) : "-";
 
         container.innerHTML = `
+            <div class="km-stat-card"><span class="km-stat-title">Météo</span><span class="km-stat-value" style="color:#e67e22;">${weather}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Vitesse Moy.</span><span class="km-stat-value" style="color:#8e44ad;">${avgSpeed}</span></div>
+            <div class="km-stat-card"><span class="km-stat-title">Fréq. Apparition</span><span class="km-stat-value">${freqApp}</span></div>
+            <div class="km-stat-card"><span class="km-stat-title">Rythme / Heure</span><span class="km-stat-value">${rythmeHeure}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Tendance (10m)</span><span class="km-stat-value" style="color:#e67e22;">${mobilePace}</span></div>
-            <div class="km-stat-card" style="grid-column: span 2;"><span class="km-stat-title">Espacement Moyen</span><span class="km-stat-value">${espTemps} / ${espDist}</span></div>
-            <div class="km-stat-card" style="grid-column: span 2; border-color: #27ae60;"><span class="km-stat-title">Projection (+1h)</span><span class="km-stat-value" style="color:#27ae60;">${proj} estimés</span></div>
+            <div class="km-stat-card"><span class="km-stat-title">Espacement Moyen</span><span class="km-stat-value">${espTemps} / ${espDist}</span></div>
+            <div class="km-stat-card" style="border-color: #27ae60;"><span class="km-stat-title">Projection (+1h)</span><span class="km-stat-value" style="color:#27ae60;">${proj} estimés</span></div>
         `;
     },
 
@@ -550,194 +551,51 @@ const app = {
         }
     },
 
-    // --- NOUVEAUTÉ: Onglet Analyses Avancées ---
-    async renderAnalytics(type) {
-        let btn1 = document.getElementById('btn-ana-trucks');
-        let btn2 = document.getElementById('btn-ana-cars');
-        if(btn1 && btn2) {
-            btn1.style.backgroundColor = type === 'trucks' ? '#e67e22' : 'var(--btn-bg)';
-            btn1.style.color = type === 'trucks' ? 'white' : 'var(--btn-text)';
-            btn2.style.backgroundColor = type === 'cars' ? '#e67e22' : 'var(--btn-bg)';
-            btn2.style.color = type === 'cars' ? 'white' : 'var(--btn-text)';
-        }
+    // LA FONCTION MANQUANTE EST DE RETOUR
+    showGlobalDetails(type, key) {
+        let count = 0, time = 0, dist = 0;
+        let title = "";
 
-        let sessions = await this.idb.getAll(type);
-        
-        let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
-        let dayKeys = Object.keys(days);
-        let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
-        let seqs = {};
-
-        sessions.forEach(s => {
-            // Le timestamp de la session est généralement utilisé comme ID
-            let d = new Date(parseInt(s.id));
-            let dayName = dayKeys[d.getDay()];
-            
-            let hist = s.history ? s.history.filter(h => !h.isEvent) : [];
-            days[dayName] += hist.length;
-
-            for(let i = 0; i < hist.length; i++) {
-                // Analyse Altitude
-                let a = hist[i].alt || 0;
-                if(a < 200) alts["< 200m"]++;
-                else if(a < 500) alts["200-500m"]++;
-                else if(a < 1000) alts["500-1000m"]++;
-                else alts["> 1000m"]++;
-
-                // Analyse Séquences (Probabilités)
-                if(i < hist.length - 1) {
-                    let cur = type === 'trucks' ? hist[i].brand : hist[i].type;
-                    let nxt = type === 'trucks' ? hist[i+1].brand : hist[i+1].type;
-                    let pair = `${cur} ➡️ ${nxt}`;
-                    seqs[pair] = (seqs[pair] || 0) + 1;
-                }
+        if (type === 'trucks') {
+            time = this.globalTruckTime; dist = this.globalTruckDistance;
+            if (key === 'Total') {
+                title = "🚛 Total toutes Marques";
+                this.brands.forEach(b => count += (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0));
+            } else {
+                title = `🚛 ${key}`;
+                count = (this.globalTruckCounters[key]?.fr || 0) + (this.globalTruckCounters[key]?.etr || 0);
             }
-        });
-
-        const isDark = document.body.classList.contains('dark-mode');
-        const textColor = isDark ? '#d2dae2' : '#2c3e50';
-
-        // 1. Graphique Hebdomadaire
-        let ctxW = document.getElementById('weeklyChart');
-        if(ctxW) {
-            if(this.weeklyChart) this.weeklyChart.destroy();
-            this.weeklyChart = new Chart(ctxW, {
-                type: 'line',
-                data: { 
-                    labels: Object.keys(days), 
-                    datasets: [{ label: 'Total cumulé', data: Object.values(days), borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', fill: true, tension: 0.4 }] 
-                },
-                options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { color: textColor } }, x: { ticks: { color: textColor } } } }
-            });
+        } else {
+            time = this.globalCarTime; dist = this.globalCarDistance;
+            if (key === 'Total') {
+                title = "🚗 Total tous Véhicules";
+                this.vehicleTypes.forEach(v => count += (this.globalCarCounters[v] || 0));
+            } else {
+                title = `🚘 ${key}`;
+                count = this.globalCarCounters[key] || 0;
+            }
         }
 
-        // 2. Graphique Altitude
-        let ctxA = document.getElementById('altitudeChart');
-        if(ctxA) {
-            if(this.altitudeChart) this.altitudeChart.destroy();
-            this.altitudeChart = new Chart(ctxA, {
-                type: 'pie',
-                data: { 
-                    labels: Object.keys(alts), 
-                    datasets: [{ data: Object.values(alts), backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] 
-                },
-                options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
-            });
-        }
-
-        // 3. Affichage Séquences
-        let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5); // Top 5
-        let seqHtml = '';
-        if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
-        seqArr.forEach(item => {
-            seqHtml += `<div class="sequence-item"><span class="sequence-flow">${item[0]}</span><span class="sequence-count">${item[1]}x</span></div>`;
-        });
-        document.getElementById('sequence-container').innerHTML = seqHtml;
-    },
-
-    async showSessionDetails(type, sessionId) {
-        let session = await this.idb.getById(sessionId);
-        if(!session) return;
-
-        let items = session.history ? session.history.filter(h => !h.isEvent) : [];
-        let itemsCount = items.length;
-        let freq = itemsCount > 0 && session.durationSec > 0 ? (session.durationSec / 60 / itemsCount).toFixed(1) : '-';
-        let speed = session.durationSec > 0 ? (itemsCount / (session.durationSec / 3600)).toFixed(1) : '-';
-        let dist = session.distanceKm || 0;
-        let avgSpeedKmh = session.durationSec > 0 ? (dist / (session.durationSec / 3600)).toFixed(1) : '-';
+        let freq = (count > 0 && time > 0) ? (time / 60 / count).toFixed(1) + " min/véh." : "-";
+        let speed = (time > 0) ? (count / (time / 3600)).toFixed(1) + " /h" : "-";
+        let avgKm = (dist > 0) ? (count / dist).toFixed(2) + " /km" : "-";
 
         let html = `
-            <div class="session-detail-row"><span class="session-detail-label">Date</span><span class="session-detail-value">${session.date}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label" style="color:#27ae60;">🟢 Départ</span><span class="session-detail-value">${session.startAddress || "Inconnue"}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label" style="color:#c0392b;">🔴 Arrivée</span><span class="session-detail-value">${session.endAddress || "Inconnue"}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Durée</span><span class="session-detail-value">${this.formatTime(session.durationSec || 0)}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Distance</span><span class="session-detail-value">${dist} km</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Météo</span><span class="session-detail-value">${session.weather || 'Inconnue'}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Véhicules comptés</span><span class="session-detail-value">${itemsCount}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Rythme horaire</span><span class="session-detail-value">${speed} /h</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Temps total cumulé</span><span class="session-detail-value">${this.formatTime(time)}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Distance totale cumulée</span><span class="session-detail-value">${dist.toFixed(2)} km</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne Globale</span><span class="session-detail-value" style="color:#f39c12;">${time > 0 ? (dist / (time/3600)).toFixed(1) : '-'} km/h</span></div>
+            <div style="border-top: 2px dashed #eee; margin: 15px 0;"></div>
+            <div class="session-detail-row"><span class="session-detail-label">Quantité globale comptée</span><span class="session-detail-value" style="color:#27ae60; font-size:1.1em;">${count}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Moyenne par km</span><span class="session-detail-value" style="color:#8e44ad;">${avgKm}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Fréquence d'apparition</span><span class="session-detail-value">${freq}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Rythme par heure</span><span class="session-detail-value">${speed}</span></div>
         `;
-        document.getElementById('modal-session-title').innerText = type === 'trucks' ? '🚛 Détails Session Camions' : '🚗 Détails Session Véhicules';
+
+        document.getElementById('modal-session-title').innerText = `🌍 Stats Globales : ${title}`;
         document.getElementById('modal-session-content').innerHTML = html;
         document.getElementById('session-detail-modal').style.display = 'flex';
-
-        // --- NOUVEAUTÉ: Graphique de Densité Temporelle ---
-        let ctxD = document.getElementById('temporalDensityChart');
-        if(ctxD) {
-            if(this.temporalChart) this.temporalChart.destroy();
-            
-            if(itemsCount > 0) {
-                let firstTime = items[0].timestamp;
-                let blocks = {};
-                
-                // Groupement par tranches de 5 minutes
-                items.forEach(h => {
-                    let minOffset = Math.floor((h.timestamp - firstTime) / 60000);
-                    let blockIndex = Math.floor(minOffset / 5) * 5; 
-                    let label = `+${blockIndex}m`;
-                    blocks[label] = (blocks[label] || 0) + 1;
-                });
-                
-                let isDark = document.body.classList.contains('dark-mode');
-                let tColor = isDark ? '#d2dae2' : '#333';
-                
-                this.temporalChart = new Chart(ctxD, {
-                    type: 'bar',
-                    data: {
-                        labels: Object.keys(blocks),
-                        datasets: [{ label: 'Véhicules / 5 min', data: Object.values(blocks), backgroundColor: '#3498db', borderRadius: 4 }]
-                    },
-                    options: { 
-                        maintainAspectRatio: false, 
-                        plugins: { legend: { display: false } }, 
-                        scales: { 
-                            y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, 
-                            x: { ticks: { color: tColor } } 
-                        } 
-                    }
-                });
-            }
-        }
     },
 
-    // --- MISE A JOUR DES EXPORTS ---
-    async exportSaveFile() {
-        let truckSessions = await this.idb.getAll('trucks');
-        let carSessions = await this.idb.getAll('cars');
-
-        let enrichedTruckSessions = truckSessions.map(s => {
-            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
-            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
-            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
-            let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
-            let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
-            return { ...s, totalCount: count, camionsParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps };
-        });
-
-        let enrichedCarSessions = carSessions.map(s => {
-            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
-            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
-            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
-            let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
-            let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
-            return { ...s, totalCount: count, vehiculesParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps };
-        });
-
-        let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
-        
-        let globalSummary = {
-            totalSessions: allSessions.length,
-            globalDonneesBrutesCamions: this.globalTruckCounters,
-            globalDonneesBrutesVehicules: this.globalCarCounters
-        };
-
-        let exportData = { appVersion: "Compteur Trafic v4.0 (Analytics)", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
-        const dataStr = JSON.stringify(exportData, null, 2);
-        const fileName = `Compteur_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
-        
-        await this.triggerDownloadOrShare(dataStr, fileName);
-    },
-
-    // Méthodes techniques conservées à l'identique (Graphiques Globaux, Historiques, etc...)
     renderGlobalStats() {
         let gTruckTotal = 0;
         let truckDataForChart = [];
@@ -804,6 +662,136 @@ const app = {
         }
     },
 
+    async renderAnalytics(type) {
+        let btn1 = document.getElementById('btn-ana-trucks');
+        let btn2 = document.getElementById('btn-ana-cars');
+        if(btn1 && btn2) {
+            btn1.style.backgroundColor = type === 'trucks' ? '#e67e22' : 'var(--btn-bg)';
+            btn1.style.color = type === 'trucks' ? 'white' : 'var(--btn-text)';
+            btn2.style.backgroundColor = type === 'cars' ? '#e67e22' : 'var(--btn-bg)';
+            btn2.style.color = type === 'cars' ? 'white' : 'var(--btn-text)';
+        }
+
+        let sessions = await this.idb.getAll(type);
+        
+        let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
+        let dayKeys = Object.keys(days);
+        let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
+        let seqs = {};
+
+        sessions.forEach(s => {
+            let d = new Date(parseInt(s.id));
+            let dayName = dayKeys[d.getDay()];
+            
+            let hist = s.history ? s.history.filter(h => !h.isEvent) : [];
+            days[dayName] += hist.length;
+
+            for(let i = 0; i < hist.length; i++) {
+                let a = hist[i].alt || 0;
+                if(a < 200) alts["< 200m"]++;
+                else if(a < 500) alts["200-500m"]++;
+                else if(a < 1000) alts["500-1000m"]++;
+                else alts["> 1000m"]++;
+
+                if(i < hist.length - 1) {
+                    let cur = type === 'trucks' ? hist[i].brand : hist[i].type;
+                    let nxt = type === 'trucks' ? hist[i+1].brand : hist[i+1].type;
+                    let pair = `${cur} ➡️ ${nxt}`;
+                    seqs[pair] = (seqs[pair] || 0) + 1;
+                }
+            }
+        });
+
+        const isDark = document.body.classList.contains('dark-mode');
+        const textColor = isDark ? '#d2dae2' : '#2c3e50';
+
+        let ctxW = document.getElementById('weeklyChart');
+        if(ctxW) {
+            if(this.weeklyChart) this.weeklyChart.destroy();
+            this.weeklyChart = new Chart(ctxW, {
+                type: 'line',
+                data: { labels: Object.keys(days), datasets: [{ label: 'Total cumulé', data: Object.values(days), borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', fill: true, tension: 0.4 }] },
+                options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { color: textColor } }, x: { ticks: { color: textColor } } } }
+            });
+        }
+
+        let ctxA = document.getElementById('altitudeChart');
+        if(ctxA) {
+            if(this.altitudeChart) this.altitudeChart.destroy();
+            this.altitudeChart = new Chart(ctxA, {
+                type: 'pie',
+                data: { labels: Object.keys(alts), datasets: [{ data: Object.values(alts), backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
+                options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
+            });
+        }
+
+        let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
+        let seqHtml = '';
+        if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
+        seqArr.forEach(item => {
+            seqHtml += `<div class="sequence-item"><span class="sequence-flow">${item[0]}</span><span class="sequence-count">${item[1]}x</span></div>`;
+        });
+        document.getElementById('sequence-container').innerHTML = seqHtml;
+    },
+
+    // TOUTES LES ANCIENNES STATS DÉTAILLÉES SONT DE RETOUR
+    async showSessionDetails(type, sessionId) {
+        let session = await this.idb.getById(sessionId);
+        if(!session) return;
+
+        let items = session.history ? session.history.filter(h => !h.isEvent) : [];
+        let itemsCount = items.length;
+        
+        let freq = itemsCount > 0 && session.durationSec > 0 ? (session.durationSec / 60 / itemsCount).toFixed(1) : '-';
+        let speed = session.durationSec > 0 ? (itemsCount / (session.durationSec / 3600)).toFixed(1) : '-';
+        let dist = session.distanceKm || 0;
+        let avgSpeedKmh = session.durationSec > 0 ? (dist / (session.durationSec / 3600)).toFixed(1) : '-';
+        let avgKm = dist > 0 ? (itemsCount / dist).toFixed(1) : '-';
+
+        let html = `
+            <div class="session-detail-row"><span class="session-detail-label">Date</span><span class="session-detail-value">${session.date}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label" style="color:#27ae60;">🟢 Départ</span><span class="session-detail-value">${session.startAddress || "Inconnue"}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label" style="color:#c0392b;">🔴 Arrivée</span><span class="session-detail-value">${session.endAddress || "Inconnue"}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Durée</span><span class="session-detail-value">${this.formatTime(session.durationSec || 0)}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Distance</span><span class="session-detail-value">${dist} km</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne</span><span class="session-detail-value" style="color:#8e44ad;">${avgSpeedKmh} km/h</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Météo</span><span class="session-detail-value">${session.weather || 'Inconnue'}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Véhicules comptés</span><span class="session-detail-value">${itemsCount}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Fréquence</span><span class="session-detail-value">${freq} min/véh.</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Rythme</span><span class="session-detail-value">${speed} /h</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Moyenne</span><span class="session-detail-value">${avgKm} /km</span></div>
+        `;
+        document.getElementById('modal-session-title').innerText = type === 'trucks' ? '🚛 Détails Session Camions' : '🚗 Détails Session Véhicules';
+        document.getElementById('modal-session-content').innerHTML = html;
+        document.getElementById('session-detail-modal').style.display = 'flex';
+
+        let ctxD = document.getElementById('temporalDensityChart');
+        if(ctxD) {
+            if(this.temporalChart) this.temporalChart.destroy();
+            
+            if(itemsCount > 0) {
+                let firstTime = items[0].timestamp;
+                let blocks = {};
+                
+                items.forEach(h => {
+                    let minOffset = Math.floor((h.timestamp - firstTime) / 60000);
+                    let blockIndex = Math.floor(minOffset / 5) * 5; 
+                    let label = `+${blockIndex}m`;
+                    blocks[label] = (blocks[label] || 0) + 1;
+                });
+                
+                let isDark = document.body.classList.contains('dark-mode');
+                let tColor = isDark ? '#d2dae2' : '#333';
+                
+                this.temporalChart = new Chart(ctxD, {
+                    type: 'bar',
+                    data: { labels: Object.keys(blocks), datasets: [{ label: 'Véhicules / 5 min', data: Object.values(blocks), backgroundColor: '#3498db', borderRadius: 4 }] },
+                    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, x: { ticks: { color: tColor } } } }
+                });
+            }
+        }
+    },
+
     async triggerDownloadOrShare(dataString, fileName) {
         const file = new File([dataString], fileName, { type: "text/plain" });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -823,6 +811,39 @@ const app = {
         const dataStr = JSON.stringify(exportData, null, 2);
         let safeDate = session.date.replace(/[\/ :]/g, '_');
         await this.triggerDownloadOrShare(dataStr, `Compteur_Session_${type}_${safeDate}.txt`);
+    },
+
+    async exportSaveFile() {
+        let truckSessions = await this.idb.getAll('trucks');
+        let carSessions = await this.idb.getAll('cars');
+
+        let enrichedTruckSessions = truckSessions.map(s => {
+            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
+            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
+            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
+            let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
+            let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
+            return { ...s, totalCount: count, camionsParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps };
+        });
+
+        let enrichedCarSessions = carSessions.map(s => {
+            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
+            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
+            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
+            let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
+            let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
+            return { ...s, totalCount: count, vehiculesParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps };
+        });
+
+        let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
+        
+        let globalSummary = { totalSessions: allSessions.length, globalDonneesBrutesCamions: this.globalTruckCounters, globalDonneesBrutesVehicules: this.globalCarCounters };
+
+        let exportData = { appVersion: "Compteur Trafic v4.0 (Analytics)", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const fileName = `Compteur_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
+        
+        await this.triggerDownloadOrShare(dataStr, fileName);
     },
 
     importSaveFile(event) {
