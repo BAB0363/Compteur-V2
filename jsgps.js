@@ -1,6 +1,6 @@
 // jsgps.js
 export const gps = {
-    currentPos: { lat: null, lon: null },
+    currentPos: { lat: null, lon: null, alt: null },
     currentSpeed: 0,
     lastTrackedPos: null,
     currentWeatherLabel: "Inconnue",
@@ -16,27 +16,28 @@ export const gps = {
         if ("geolocation" in navigator) {
             navigator.geolocation.watchPosition(
                 async (pos) => { 
-                    this.currentPos = { lat: pos.coords.latitude, lon: pos.coords.longitude }; 
+                    this.currentPos = { 
+                        lat: pos.coords.latitude, 
+                        lon: pos.coords.longitude, 
+                        alt: pos.coords.altitude ? Math.round(pos.coords.altitude) : null 
+                    }; 
                     this.currentSpeed = pos.coords.speed || 0; 
                     
                     let accuracy = Math.round(pos.coords.accuracy);
 
                     if(gpsStatus) { 
                         gpsStatus.innerText = `📍 GPS Actif (${accuracy}m)`; 
-                        gpsStatus.style.color = accuracy > 30 ? "#f39c12" : "#27ae60"; 
+                        gpsStatus.style.color = accuracy > 20 ? "#f39c12" : "#27ae60"; 
                     }
                     
                     if (this.lastTrackedPos) {
                         let linearD = parseFloat(this.calculateDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon));
                         let speedKmh = this.currentSpeed * 3.6;
 
-                        if (linearD > 0.025 && linearD < 2.0 && accuracy <= 30 && (speedKmh > 5 || pos.coords.speed === null)) { 
-                            let realD = await this.getRealDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon);
-                            let d = parseFloat(realD);
-                            
-                            if (isNaN(d) || d > linearD * 1.5) {
-                                d = linearD;
-                            }
+                        // CORRECTION : Filtre anti-zigzag (100m minimum, précision <= 20m)
+                        if (linearD > 0.1 && linearD < 3.0 && accuracy <= 20 && (speedKmh > 5 || pos.coords.speed === null)) { 
+                            // On utilise directement la distance de Haversine lissée
+                            let d = linearD;
 
                             if (window.app && window.app.isTruckRunning) { 
                                 window.app.liveTruckDistance += d; 
@@ -53,7 +54,7 @@ export const gps = {
                             this.lastTrackedPos = { lat: this.currentPos.lat, lon: this.currentPos.lon };
                         }
                     } else { 
-                        if (accuracy <= 30) {
+                        if (accuracy <= 20) {
                             this.lastTrackedPos = { lat: this.currentPos.lat, lon: this.currentPos.lon }; 
                         }
                     }
@@ -88,7 +89,6 @@ export const gps = {
         }
     },
 
-    // NOUVEAU : Fonction de Reverse Geocoding pour trouver l'adresse
     async getAddress(lat, lon) {
         if (!lat || !lon) return "Position inconnue";
         try {
@@ -117,16 +117,6 @@ export const gps = {
         return (R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)))).toFixed(3); 
     },
 
-    async getRealDistance(lat1, lon1, lat2, lon2) {
-        if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
-        try {
-            const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`);
-            const data = await response.json();
-            if (data.routes && data.routes.length > 0) return (data.routes[0].distance / 1000).toFixed(3);
-        } catch (e) { console.warn("Pas de réseau OSRM, fallback sur calcul basique"); }
-        return this.calculateDistance(lat1, lon1, lat2, lon2);
-    },
-
     initMap(mapId, currentHistory, mapType) {
         if(!document.getElementById(mapId)) return;
         let mapInstance = mapType === 'trucks' ? window.app.truckMap : window.app.carMap;
@@ -151,13 +141,12 @@ export const gps = {
         currentHistory.forEach(h => {
             if(h.lat && h.lon) {
                 latlngs.push([h.lat, h.lon]); 
-                if(!h.isEvent) heatData.push([h.lat, h.lon, 1]); // On ne fait pas chauffer la HeatMap pour une pause
+                if(!h.isEvent) heatData.push([h.lat, h.lon, 1]); 
                 
                 let iconStr;
                 if (h.isEvent) {
                     iconStr = h.eventType.includes("Pause") ? "⏸️" : "▶️";
                 } else {
-                    // Nouvelles icônes intégrées à la carte
                     if (h.brand) iconStr = "🚛";
                     else if (h.type === "Motos") iconStr = "🏍️";
                     else if (h.type === "Vélos") iconStr = "🚲";

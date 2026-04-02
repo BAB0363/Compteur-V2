@@ -96,7 +96,7 @@ const app = {
         const btn = document.getElementById('btn-truck-chrono'); if(!btn) return;
         
         let eventType = this.isTruckRunning ? "▶️ Reprise" : "⏸️ Pause";
-        let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
+        let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
         this.truckHistory.push(histItem);
         localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
         if (document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
@@ -124,7 +124,7 @@ const app = {
         const btn = document.getElementById('btn-car-chrono'); if(!btn) return;
         
         let eventType = this.isCarRunning ? "▶️ Reprise" : "⏸️ Pause";
-        let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
+        let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
         this.carHistory.push(histItem);
         localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
         if (document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
@@ -155,7 +155,8 @@ const app = {
             if (window.ui) window.ui.playBeep(amount > 0);
             if (amount > 0) {
                 this.truckCounters[brand][type] += amount;
-                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
+                // AJOUT DE L'ALTITUDE ICI
+                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
                 this.truckHistory.push(histItem);
                 
                 if(window.ui && e) { window.ui.triggerHapticFeedback('truck'); window.ui.showClickParticle(e, `+1`); }
@@ -179,7 +180,8 @@ const app = {
             if (window.ui) window.ui.playBeep(amount > 0);
             if (amount > 0) {
                 this.vehicleCounters[type] += amount; 
-                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
+                // AJOUT DE L'ALTITUDE ICI
+                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
                 this.carHistory.push(histItem);
                 
                 let hapticType = 'car';
