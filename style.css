@@ -42,6 +42,7 @@ body {
 .main-tabs button { flex: 1; min-width: 75px; padding: 10px 2px; font-size: 0.9em; background-color: var(--btn-bg); color: var(--btn-text); border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; white-space: nowrap;}
 .main-tabs button.active { background-color: #34495e; color: white; }
 #tab-global.active { background-color: #27ae60; color: white; }
+#tab-analytics.active { background-color: #e67e22; color: white; }
 #tab-save.active { background-color: #8e44ad; color: white; }
 
 .header-dashboard { background: var(--card-bg); padding: 10px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px var(--shadow); transition: 0.3s; }
@@ -59,17 +60,15 @@ body {
 .totals-row { text-align: center; font-size: 1.1em; margin-bottom: 8px; font-weight: bold; }
 .proportion-bar { display: flex; height: 22px; border-radius: 11px; overflow: hidden; background: #7f8c8d; font-size: 0.7em; color: white; line-height: 22px; font-weight: bold; text-align: center; }
 
-/* Largeur à 0% par défaut pour éviter les bugs visuels */
-#bar-fr { background-color: #3498db; transition: width 0.3s; overflow: hidden; width: 0%; }
-#bar-etr { background-color: #e67e22; transition: width 0.3s; overflow: hidden; width: 0%; }
-#bar-voitures { background-color: #3498db; transition: width 0.3s; overflow: hidden; width: 0%; }
-#bar-camions { background-color: #e67e22; transition: width 0.3s; overflow: hidden; width: 0%; }
-#bar-utilitaires { background-color: #1abc9c; transition: width 0.3s; overflow: hidden; width: 0%; }
-#bar-engins { background-color: #27ae60; transition: width 0.3s; overflow: hidden; width: 0%; }
-#bar-bus { background-color: #f1c40f; color: #333; transition: width 0.3s; overflow: hidden; width: 0%; }
-#bar-camping { background-color: #d35400; transition: width 0.3s; overflow: hidden; width: 0%; }
-#bar-motos { background-color: #9b59b6; transition: width 0.3s; overflow: hidden; width: 0%; }
-#bar-velos { background-color: #e74c3c; transition: width 0.3s; overflow: hidden; width: 0%; }
+#bar-fr, #bar-etr, #bar-voitures, #bar-camions, #bar-utilitaires, #bar-engins, #bar-bus, #bar-camping, #bar-motos, #bar-velos { transition: width 0.3s; overflow: hidden; width: 0%; }
+#bar-fr, #bar-voitures { background-color: #3498db; }
+#bar-etr, #bar-camions { background-color: #e67e22; }
+#bar-utilitaires { background-color: #1abc9c; }
+#bar-engins { background-color: #27ae60; }
+#bar-bus { background-color: #f1c40f; color: #333; }
+#bar-camping { background-color: #d35400; }
+#bar-motos { background-color: #9b59b6; }
+#bar-velos { background-color: #e74c3c; }
 
 .status-row { display: flex; justify-content: space-between; font-size: 0.75em; color: #7f8c8d; margin-bottom: 10px; background: var(--card-bg); padding: 5px 10px; border-radius: 5px; box-shadow: 0 1px 2px var(--shadow);}
 #truck-container, #car-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
@@ -110,8 +109,13 @@ button:active { transform: scale(0.95); }
 .km-stat-title { font-size: 0.85em; color: #7f8c8d; font-weight: bold; display: block; margin-bottom: 5px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .km-stat-value { font-size: 1.2em; font-weight: bold; color: #2980b9; }
 
-/* Styles pour les détails de la session (Modale) */
 .session-detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border-color); }
 .session-detail-row:last-child { border-bottom: none; }
 .session-detail-label { font-weight: bold; color: #7f8c8d; }
 .session-detail-value { font-weight: bold; color: var(--text-color); text-align: right; }
+
+/* Nouveaux styles pour les graphiques avancés */
+.chart-wrapper { position: relative; height: 200px; width: 100%; margin-bottom: 15px; }
+.sequence-item { display: flex; justify-content: space-between; background: var(--bg-color); padding: 8px; border-radius: 6px; margin-bottom: 5px; border: 1px solid var(--border-color); }
+.sequence-flow { font-weight: bold; color: var(--text-color); }
+.sequence-count { background: #34495e; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; }

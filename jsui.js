@@ -22,8 +22,6 @@ export const ui = {
             
             oscillator.type = 'sine';
             oscillator.frequency.setValueAtTime(isAdding ? 800 : 300, this.audioCtx.currentTime);
-            
-            // Volume augmenté au maximum (1.0 au lieu de 0.1) pour un bip bien fort !
             gainNode.gain.setValueAtTime(1.0, this.audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.1);
             
@@ -116,16 +114,15 @@ export const ui = {
 
     switchTab(tab) {
         this.activeTab = tab;
-        ['trucks', 'cars', 'global', 'save'].forEach(t => {
+        ['trucks', 'cars', 'global', 'analytics', 'save'].forEach(t => {
             let sec = document.getElementById(`section-${t}`);
             let btn = document.getElementById(`tab-${t}`);
             if(sec) sec.style.display = tab === t ? 'block' : 'none';
             if(btn) btn.classList.toggle('active', tab === t);
         });
         
-        if(tab === 'global' && window.app) {
-            window.app.renderGlobalStats();
-        }
+        if(tab === 'global' && window.app) window.app.renderGlobalStats();
+        if(tab === 'analytics' && window.app) window.app.renderAnalytics('trucks');
     },
 
     toggleTruckStats() {

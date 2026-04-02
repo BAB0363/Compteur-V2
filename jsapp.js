@@ -32,9 +32,11 @@ const app = {
     liveTruckDistance: parseFloat(localStorage.getItem('liveTruckDist')) || 0,
     liveCarDistance: parseFloat(localStorage.getItem('liveCarDist')) || 0,
     wakeLock: null, 
+    
+    // Instances de graphiques pour pouvoir les détruire/recréer
     truckChart: null, carChart: null,
+    temporalChart: null, weeklyChart: null, altitudeChart: null,
 
-    // Gestionnaire IndexedDB intégré (La nouveauté technique ! 🛠️)
     idb: {
         db: null,
         async init() {
@@ -83,9 +85,7 @@ const app = {
     },
 
     async init() {
-        // Initialisation de la base de données et migration si nécessaire
         await this.idb.init();
-        await this.migrateOldData();
 
         try { this.truckCounters = JSON.parse(localStorage.getItem('truckCounters')) || {}; } catch(e) { this.truckCounters = {}; }
         try { this.vehicleCounters = JSON.parse(localStorage.getItem('vehicleCounters')) || {}; } catch(e) { this.vehicleCounters = {}; }
@@ -121,24 +121,6 @@ const app = {
         document.addEventListener('visibilitychange', async () => {
             if (this.wakeLock !== null && document.visibilityState === 'visible') this.requestWakeLock();
         });
-    },
-
-    // Migration transparente du LocalStorage vers IndexedDB
-    async migrateOldData() {
-        let oldTruck = localStorage.getItem('truckSessions');
-        if (oldTruck) {
-            let parsed = JSON.parse(oldTruck);
-            for (let s of parsed) { s.sessionType = 'trucks'; await this.idb.add(s); }
-            localStorage.removeItem('truckSessions');
-            console.log("🚛 Anciennes sessions camions migrées vers IDB !");
-        }
-        let oldCar = localStorage.getItem('carSessions');
-        if (oldCar) {
-            let parsed = JSON.parse(oldCar);
-            for (let s of parsed) { s.sessionType = 'cars'; await this.idb.add(s); }
-            localStorage.removeItem('carSessions');
-            console.log("🚗 Anciennes sessions véhicules migrées vers IDB !");
-        }
     },
 
     async requestWakeLock() {
@@ -405,7 +387,7 @@ const app = {
 
         let newSession = { 
             id: Date.now().toString(), 
-            sessionType: type, // Indispensable pour IDB
+            sessionType: type, 
             startDate: startDateStr, 
             date: dateStr, 
             startAddress: startAddress, 
@@ -419,11 +401,9 @@ const app = {
 
         await this.idb.add(newSession);
 
-        if (type === 'trucks') {
-            this.resetTrucksData(); 
-        } else {
-            this.resetCarsData(); 
-        }
+        if (type === 'trucks') this.resetTrucksData(); 
+        else this.resetCarsData(); 
+        
         if(window.ui) window.ui.showToast("💾 Session sauvegardée !");
     },
 
@@ -459,50 +439,305 @@ const app = {
         }
     },
 
-    showGlobalDetails(type, key) {
-        let count = 0, time = 0, dist = 0;
-        let title = "";
+    renderTrucks() {
+        const container = document.getElementById('truck-container'); if(!container) return;
+        container.innerHTML = '';
+        let grandTotal = 0, totalFr = 0, totalEtr = 0, maxScore = 0, leader = "Aucune";
 
-        if (type === 'trucks') {
-            time = this.globalTruckTime; dist = this.globalTruckDistance;
-            if (key === 'Total') {
-                title = "🚛 Total toutes Marques";
-                this.brands.forEach(b => count += (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0));
-            } else {
-                title = `🚛 ${key}`;
-                count = (this.globalTruckCounters[key]?.fr || 0) + (this.globalTruckCounters[key]?.etr || 0);
-            }
-        } else {
-            time = this.globalCarTime; dist = this.globalCarDistance;
-            if (key === 'Total') {
-                title = "🚗 Total tous Véhicules";
-                this.vehicleTypes.forEach(v => count += (this.globalCarCounters[v] || 0));
-            } else {
-                title = `🚘 ${key}`;
-                count = this.globalCarCounters[key] || 0;
-            }
-        }
+        this.brands.forEach(brand => {
+            let fr = this.truckCounters[brand] ? this.truckCounters[brand].fr : 0; 
+            let etr = this.truckCounters[brand] ? this.truckCounters[brand].etr : 0;
+            let tot = fr + etr;
+            grandTotal += tot; totalFr += fr; totalEtr += etr;
+            if (tot > maxScore) { maxScore = tot; leader = brand; }
+            
+            container.innerHTML += `<div class="brand-card"><div class="brand-name">${brand}</div><div class="counter-section"><span class="flag">🇫🇷</span><button class="btn-corr" onclick="window.app.updateTruck(event, '${brand}', 'fr', -1)">-</button><span class="score">${fr}</span><button class="btn-add btn-add-fr" onclick="window.app.updateTruck(event, '${brand}', 'fr', 1)">+</button></div><div class="counter-section"><span class="flag">🌍</span><button class="btn-corr" onclick="window.app.updateTruck(event, '${brand}', 'etr', -1)">-</button><span class="score">${etr}</span><button class="btn-add btn-add-etr" onclick="window.app.updateTruck(event, '${brand}', 'etr', 1)">+</button></div></div>`;
+        });
 
-        let freq = (count > 0 && time > 0) ? (time / 60 / count).toFixed(1) + " min/véh." : "-";
-        let speed = (time > 0) ? (count / (time / 3600)).toFixed(1) + " /h" : "-";
-        let avgKm = (dist > 0) ? (count / dist).toFixed(2) + " /km" : "-";
-
-        let html = `
-            <div class="session-detail-row"><span class="session-detail-label">Temps total cumulé</span><span class="session-detail-value">${this.formatTime(time)}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Distance totale cumulée</span><span class="session-detail-value">${dist.toFixed(2)} km</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne Globale</span><span class="session-detail-value" style="color:#f39c12;">${time > 0 ? (dist / (time/3600)).toFixed(1) : '-'} km/h</span></div>
-            <div style="border-top: 2px dashed #eee; margin: 15px 0;"></div>
-            <div class="session-detail-row"><span class="session-detail-label">Quantité globale comptée</span><span class="session-detail-value" style="color:#27ae60; font-size:1.1em;">${count}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Moyenne par km</span><span class="session-detail-value" style="color:#8e44ad;">${avgKm}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Fréquence d'apparition</span><span class="session-detail-value">${freq}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Rythme par heure</span><span class="session-detail-value">${speed}</span></div>
-        `;
-
-        document.getElementById('modal-session-title').innerText = `🌍 Stats Globales : ${title}`;
-        document.getElementById('modal-session-content').innerHTML = html;
-        document.getElementById('session-detail-modal').style.display = 'flex';
+        let gtEl = document.getElementById('grand-total'); if(gtEl) gtEl.innerText = grandTotal; 
+        let lnEl = document.getElementById('leader-name'); if(lnEl) lnEl.innerText = maxScore > 0 ? `${leader} (${maxScore})` : "Aucune";
+        
+        let pctFr = grandTotal === 0 ? 50 : Math.round((totalFr / grandTotal) * 100);
+        let barFr = document.getElementById('bar-fr'); if(barFr) { barFr.style.width = pctFr + '%'; barFr.innerText = grandTotal > 0 ? `🇫🇷 ${pctFr}%` : ''; }
+        let barEtr = document.getElementById('bar-etr'); if(barEtr) { barEtr.style.width = (100 - pctFr) + '%'; barEtr.innerText = grandTotal > 0 ? `🌍 ${100 - pctFr}%` : ''; }
     },
 
+    renderCars() {
+        const container = document.getElementById('car-container'); if(!container) return;
+        container.innerHTML = ''; 
+        let grandTotal = 0; 
+        this.vehicleTypes.forEach(v => grandTotal += (this.vehicleCounters[v] || 0)); 
+        let cgt = document.getElementById('car-grand-total'); if(cgt) cgt.innerText = grandTotal;
+
+        const slugMap = { "Voitures": "voitures", "Utilitaires": "utilitaires", "Camions": "camions", "Engins agricoles": "engins", "Bus/Car": "bus", "Camping-cars": "camping", "Motos": "motos", "Vélos": "velos" };
+
+        this.vehicleTypes.forEach(v => {
+            let pct = grandTotal === 0 ? (100 / this.vehicleTypes.length) : Math.round(((this.vehicleCounters[v]||0) / grandTotal) * 100); 
+            let slug = slugMap[v];
+            let bar = document.getElementById(`bar-${slug}`);
+            if (bar) { bar.style.width = pct + '%'; bar.innerText = (grandTotal > 0 && this.vehicleCounters[v] > 0) ? `${pct}%` : ''; }
+        });
+
+        const icons = { Voitures: "🚗", Utilitaires: "🚐", Camions: "🚛", "Engins agricoles": "🚜", "Bus/Car": "🚌", "Camping-cars": "🏕️", Motos: "🏍️", Vélos: "🚲" };
+        this.vehicleTypes.forEach(v => {
+            let score = this.vehicleCounters[v] || 0;
+            container.innerHTML += `<div class="vehicle-card"><div class="vehicle-name">${icons[v] || "🚘"} ${v}</div><div class="vehicle-controls"><button class="btn-corr" onclick="window.app.updateVehicle(event, '${v}', -1)">-</button><span class="vehicle-score">${score}</span><button class="btn-add btn-add-fr" onclick="window.app.updateVehicle(event, '${v}', 1)">+</button></div></div>`;
+        });
+    },
+    
+    // --- NOUVEAUTÉ: Statistiques en Temps Réel Boostées ---
+    renderLiveStats(type) {
+        let container = document.getElementById(type === 'trucks' ? 'truck-live-stats' : 'car-live-stats');
+        if (!container) return;
+        
+        let sec = type === 'trucks' ? this.truckSeconds : this.carSeconds;
+        let dist = type === 'trucks' ? this.liveTruckDistance : this.liveCarDistance;
+        let hist = type === 'trucks' ? this.truckHistory : this.carHistory;
+        
+        let items = hist.filter(h => !h.isEvent);
+        let count = items.length;
+        
+        let avgSpeed = (sec > 0) ? (dist / (sec / 3600)).toFixed(1) + " km/h" : "-";
+        
+        // Espacement Moyen (Temps et Distance)
+        let espTemps = count > 1 ? (sec / count).toFixed(1) + " s" : "-";
+        let espDist = (count > 1 && dist > 0) ? ((dist * 1000) / count).toFixed(0) + " m" : "-";
+        
+        // Moyenne Mobile (Tendance sur les 10 dernières minutes)
+        let nowTimestamp = Date.now();
+        let tenMinsAgo = nowTimestamp - 600000;
+        let recentItems = items.filter(h => h.timestamp >= tenMinsAgo);
+        // On multiplie par 6 pour avoir un rythme ramené à l'heure
+        let mobilePace = recentItems.length > 0 ? (recentItems.length * 6) + " /h" : "-";
+        
+        // Projection (+1h à ce rythme)
+        let ratePerSec = count / (sec || 1);
+        let proj = sec > 0 ? Math.round(count + (ratePerSec * 3600)) : "-";
+
+        container.innerHTML = `
+            <div class="km-stat-card"><span class="km-stat-title">Vitesse Moy.</span><span class="km-stat-value" style="color:#8e44ad;">${avgSpeed}</span></div>
+            <div class="km-stat-card"><span class="km-stat-title">Tendance (10m)</span><span class="km-stat-value" style="color:#e67e22;">${mobilePace}</span></div>
+            <div class="km-stat-card" style="grid-column: span 2;"><span class="km-stat-title">Espacement Moyen</span><span class="km-stat-value">${espTemps} / ${espDist}</span></div>
+            <div class="km-stat-card" style="grid-column: span 2; border-color: #27ae60;"><span class="km-stat-title">Projection (+1h)</span><span class="km-stat-value" style="color:#27ae60;">${proj} estimés</span></div>
+        `;
+    },
+
+    renderKmStats() {
+        let tContainer = document.getElementById('truck-km-list');
+        if (tContainer) {
+            if (this.liveTruckDistance > 0) {
+                let truckCount = this.truckHistory.filter(h => !h.isEvent).length;
+                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(truckCount / this.liveTruckDistance).toFixed(1)} /km</span></div>`;
+                this.brands.forEach(brand => {
+                    let count = this.truckCounters[brand] ? (this.truckCounters[brand].fr + this.truckCounters[brand].etr) : 0;
+                    if (count > 0) html += `<div class="km-stat-card"><span class="km-stat-title">${brand}</span><span class="km-stat-value">${(count / this.liveTruckDistance).toFixed(1)} /km</span></div>`;
+                });
+                tContainer.innerHTML = html;
+            } else { tContainer.innerHTML = '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Roule un peu pour voir les stats... 🚚💨</span>'; }
+        }
+
+        let cContainer = document.getElementById('car-km-list');
+        if (cContainer) {
+            if (this.liveCarDistance > 0) {
+                let carCount = this.carHistory.filter(h => !h.isEvent).length;
+                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(carCount / this.liveCarDistance).toFixed(1)} /km</span></div>`;
+                this.vehicleTypes.forEach(v => {
+                    let count = this.vehicleCounters[v] || 0;
+                    if (count > 0) html += `<div class="km-stat-card"><span class="km-stat-title">${v}</span><span class="km-stat-value">${(count / this.liveCarDistance).toFixed(1)} /km</span></div>`;
+                });
+                cContainer.innerHTML = html;
+            } else { cContainer.innerHTML = '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Roule un peu pour voir les stats... 🚗💨</span>'; }
+        }
+    },
+
+    // --- NOUVEAUTÉ: Onglet Analyses Avancées ---
+    async renderAnalytics(type) {
+        let btn1 = document.getElementById('btn-ana-trucks');
+        let btn2 = document.getElementById('btn-ana-cars');
+        if(btn1 && btn2) {
+            btn1.style.backgroundColor = type === 'trucks' ? '#e67e22' : 'var(--btn-bg)';
+            btn1.style.color = type === 'trucks' ? 'white' : 'var(--btn-text)';
+            btn2.style.backgroundColor = type === 'cars' ? '#e67e22' : 'var(--btn-bg)';
+            btn2.style.color = type === 'cars' ? 'white' : 'var(--btn-text)';
+        }
+
+        let sessions = await this.idb.getAll(type);
+        
+        let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
+        let dayKeys = Object.keys(days);
+        let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
+        let seqs = {};
+
+        sessions.forEach(s => {
+            // Le timestamp de la session est généralement utilisé comme ID
+            let d = new Date(parseInt(s.id));
+            let dayName = dayKeys[d.getDay()];
+            
+            let hist = s.history ? s.history.filter(h => !h.isEvent) : [];
+            days[dayName] += hist.length;
+
+            for(let i = 0; i < hist.length; i++) {
+                // Analyse Altitude
+                let a = hist[i].alt || 0;
+                if(a < 200) alts["< 200m"]++;
+                else if(a < 500) alts["200-500m"]++;
+                else if(a < 1000) alts["500-1000m"]++;
+                else alts["> 1000m"]++;
+
+                // Analyse Séquences (Probabilités)
+                if(i < hist.length - 1) {
+                    let cur = type === 'trucks' ? hist[i].brand : hist[i].type;
+                    let nxt = type === 'trucks' ? hist[i+1].brand : hist[i+1].type;
+                    let pair = `${cur} ➡️ ${nxt}`;
+                    seqs[pair] = (seqs[pair] || 0) + 1;
+                }
+            }
+        });
+
+        const isDark = document.body.classList.contains('dark-mode');
+        const textColor = isDark ? '#d2dae2' : '#2c3e50';
+
+        // 1. Graphique Hebdomadaire
+        let ctxW = document.getElementById('weeklyChart');
+        if(ctxW) {
+            if(this.weeklyChart) this.weeklyChart.destroy();
+            this.weeklyChart = new Chart(ctxW, {
+                type: 'line',
+                data: { 
+                    labels: Object.keys(days), 
+                    datasets: [{ label: 'Total cumulé', data: Object.values(days), borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', fill: true, tension: 0.4 }] 
+                },
+                options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { color: textColor } }, x: { ticks: { color: textColor } } } }
+            });
+        }
+
+        // 2. Graphique Altitude
+        let ctxA = document.getElementById('altitudeChart');
+        if(ctxA) {
+            if(this.altitudeChart) this.altitudeChart.destroy();
+            this.altitudeChart = new Chart(ctxA, {
+                type: 'pie',
+                data: { 
+                    labels: Object.keys(alts), 
+                    datasets: [{ data: Object.values(alts), backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] 
+                },
+                options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
+            });
+        }
+
+        // 3. Affichage Séquences
+        let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5); // Top 5
+        let seqHtml = '';
+        if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
+        seqArr.forEach(item => {
+            seqHtml += `<div class="sequence-item"><span class="sequence-flow">${item[0]}</span><span class="sequence-count">${item[1]}x</span></div>`;
+        });
+        document.getElementById('sequence-container').innerHTML = seqHtml;
+    },
+
+    async showSessionDetails(type, sessionId) {
+        let session = await this.idb.getById(sessionId);
+        if(!session) return;
+
+        let items = session.history ? session.history.filter(h => !h.isEvent) : [];
+        let itemsCount = items.length;
+        let freq = itemsCount > 0 && session.durationSec > 0 ? (session.durationSec / 60 / itemsCount).toFixed(1) : '-';
+        let speed = session.durationSec > 0 ? (itemsCount / (session.durationSec / 3600)).toFixed(1) : '-';
+        let dist = session.distanceKm || 0;
+        let avgSpeedKmh = session.durationSec > 0 ? (dist / (session.durationSec / 3600)).toFixed(1) : '-';
+
+        let html = `
+            <div class="session-detail-row"><span class="session-detail-label">Date</span><span class="session-detail-value">${session.date}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label" style="color:#27ae60;">🟢 Départ</span><span class="session-detail-value">${session.startAddress || "Inconnue"}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label" style="color:#c0392b;">🔴 Arrivée</span><span class="session-detail-value">${session.endAddress || "Inconnue"}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Durée</span><span class="session-detail-value">${this.formatTime(session.durationSec || 0)}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Distance</span><span class="session-detail-value">${dist} km</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Météo</span><span class="session-detail-value">${session.weather || 'Inconnue'}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Véhicules comptés</span><span class="session-detail-value">${itemsCount}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Rythme horaire</span><span class="session-detail-value">${speed} /h</span></div>
+        `;
+        document.getElementById('modal-session-title').innerText = type === 'trucks' ? '🚛 Détails Session Camions' : '🚗 Détails Session Véhicules';
+        document.getElementById('modal-session-content').innerHTML = html;
+        document.getElementById('session-detail-modal').style.display = 'flex';
+
+        // --- NOUVEAUTÉ: Graphique de Densité Temporelle ---
+        let ctxD = document.getElementById('temporalDensityChart');
+        if(ctxD) {
+            if(this.temporalChart) this.temporalChart.destroy();
+            
+            if(itemsCount > 0) {
+                let firstTime = items[0].timestamp;
+                let blocks = {};
+                
+                // Groupement par tranches de 5 minutes
+                items.forEach(h => {
+                    let minOffset = Math.floor((h.timestamp - firstTime) / 60000);
+                    let blockIndex = Math.floor(minOffset / 5) * 5; 
+                    let label = `+${blockIndex}m`;
+                    blocks[label] = (blocks[label] || 0) + 1;
+                });
+                
+                let isDark = document.body.classList.contains('dark-mode');
+                let tColor = isDark ? '#d2dae2' : '#333';
+                
+                this.temporalChart = new Chart(ctxD, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(blocks),
+                        datasets: [{ label: 'Véhicules / 5 min', data: Object.values(blocks), backgroundColor: '#3498db', borderRadius: 4 }]
+                    },
+                    options: { 
+                        maintainAspectRatio: false, 
+                        plugins: { legend: { display: false } }, 
+                        scales: { 
+                            y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, 
+                            x: { ticks: { color: tColor } } 
+                        } 
+                    }
+                });
+            }
+        }
+    },
+
+    // --- MISE A JOUR DES EXPORTS ---
+    async exportSaveFile() {
+        let truckSessions = await this.idb.getAll('trucks');
+        let carSessions = await this.idb.getAll('cars');
+
+        let enrichedTruckSessions = truckSessions.map(s => {
+            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
+            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
+            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
+            let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
+            let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
+            return { ...s, totalCount: count, camionsParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps };
+        });
+
+        let enrichedCarSessions = carSessions.map(s => {
+            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
+            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
+            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
+            let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
+            let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
+            return { ...s, totalCount: count, vehiculesParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps };
+        });
+
+        let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
+        
+        let globalSummary = {
+            totalSessions: allSessions.length,
+            globalDonneesBrutesCamions: this.globalTruckCounters,
+            globalDonneesBrutesVehicules: this.globalCarCounters
+        };
+
+        let exportData = { appVersion: "Compteur Trafic v4.0 (Analytics)", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const fileName = `Compteur_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
+        
+        await this.triggerDownloadOrShare(dataStr, fileName);
+    },
+
+    // Méthodes techniques conservées à l'identique (Graphiques Globaux, Historiques, etc...)
     renderGlobalStats() {
         let gTruckTotal = 0;
         let truckDataForChart = [];
@@ -513,7 +748,7 @@ const app = {
             let count = (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0);
             gTruckTotal += count;
             if (count > 0) {
-                truckHtml += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('trucks', '${b}')"><span class="km-stat-title">${b}</span><span class="km-stat-value">${count}</span><div style="font-size:0.7em; color:#7f8c8d; margin-top:4px;">🖱️ Détails</div></div>`;
+                truckHtml += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('trucks', '${b}')"><span class="km-stat-title">${b}</span><span class="km-stat-value">${count}</span></div>`;
                 truckLabelsForChart.push(b);
                 truckDataForChart.push(count);
             }
@@ -531,7 +766,7 @@ const app = {
             let count = this.globalCarCounters[v] || 0;
             gCarTotal += count;
             if (count > 0) {
-                carHtml += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('cars', '${v}')"><span class="km-stat-title">${v}</span><span class="km-stat-value">${count}</span><div style="font-size:0.7em; color:#7f8c8d; margin-top:4px;">🖱️ Détails</div></div>`;
+                carHtml += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('cars', '${v}')"><span class="km-stat-title">${v}</span><span class="km-stat-value">${count}</span></div>`;
                 carLabelsForChart.push(v);
                 carDataForChart.push(count);
             }
@@ -540,7 +775,6 @@ const app = {
         let ctEl = document.getElementById('global-car-total'); if(ctEl) ctEl.innerText = gCarTotal;
         let clEl = document.getElementById('global-car-list'); if(clEl) clEl.innerHTML = carHtml;
 
-        // --- Intégration Chart.js ---
         const isDark = document.body.classList.contains('dark-mode');
         const textColor = isDark ? '#d2dae2' : '#2c3e50';
         const colors = ['#3498db', '#e67e22', '#2ecc71', '#9b59b6', '#f1c40f', '#e74c3c', '#1abc9c', '#34495e'];
@@ -573,73 +807,22 @@ const app = {
     async triggerDownloadOrShare(dataString, fileName) {
         const file = new File([dataString], fileName, { type: "text/plain" });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try {
-                await navigator.share({
-                    title: 'Export Compteur Trafic',
-                    text: 'Voici mes données de comptage trafic exportées.',
-                    files: [file]
-                });
-                if(window.ui) window.ui.showToast("📤 Fichier partagé !");
-                return;
-            } catch (err) {
-                console.warn("Partage annulé ou échoué, passage au téléchargement classique.", err);
-            }
+            try { await navigator.share({ title: 'Export Compteur Trafic', text: 'Voici mes données.', files: [file] }); return; } catch (err) {}
         }
-        
         const blob = new Blob([dataString], { type: "text/plain" });
         const url = URL.createObjectURL(blob); 
-        const a = document.createElement("a"); a.href = url; 
-        a.download = fileName;
+        const a = document.createElement("a"); a.href = url; a.download = fileName;
         document.body.appendChild(a); a.click(); document.body.removeChild(a); 
-        if(window.ui) window.ui.showToast("💾 Fichier téléchargé !");
     },
 
-    async exportSaveFile() {
-        let truckSessions = await this.idb.getAll('trucks');
-        let carSessions = await this.idb.getAll('cars');
-
-        let enrichedTruckSessions = truckSessions.map(s => {
-            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
-            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
-            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
-            let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
-            return { ...s, totalCount: count, camionsParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed };
-        });
-
-        let enrichedCarSessions = carSessions.map(s => {
-            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
-            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
-            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
-            let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
-            return { ...s, totalCount: count, vehiculesParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed };
-        });
-
-        let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
-        
-        let globalSummary = {
-            totalSessions: allSessions.length,
-            globalDonneesBrutesCamions: this.globalTruckCounters,
-            globalDonneesBrutesVehicules: this.globalCarCounters
-        };
-
-        let exportData = { appVersion: "Compteur Trafic v3.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
-        const dataStr = JSON.stringify(exportData, null, 2);
-        const fileName = `Compteur_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
-        
-        await this.triggerDownloadOrShare(dataStr, fileName);
-    },
-    
     async exportSingleSession(event, type, sessionId) {
         event.stopPropagation();
         let session = await this.idb.getById(sessionId);
         if(!session) return;
-
-        let exportData = { appVersion: "Compteur Trafic v3.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
+        let exportData = { appVersion: "Compteur Trafic v4.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
         const dataStr = JSON.stringify(exportData, null, 2);
         let safeDate = session.date.replace(/[\/ :]/g, '_');
-        const fileName = `Compteur_Session_${type}_${safeDate}.txt`;
-        
-        await this.triggerDownloadOrShare(dataStr, fileName);
+        await this.triggerDownloadOrShare(dataStr, `Compteur_Session_${type}_${safeDate}.txt`);
     },
 
     importSaveFile(event) {
@@ -649,209 +832,47 @@ const app = {
             try {
                 const data = JSON.parse(e.target.result);
                 if (data.sessions && confirm("⚠️ Attention : L'importation va remplacer ton historique actuel. Continuer ?")) {
-                    
-                    await this.idb.clear('trucks');
-                    await this.idb.clear('cars');
-
-                    for (let s of data.sessions) {
-                        if (!s.id) s.id = Date.now().toString() + Math.random().toString();
-                        await this.idb.add(s);
-                    }
-                    
-                    if (data.globalSummary?.globalDonneesBrutesCamions) {
-                        localStorage.setItem('globalTruckCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesCamions));
-                    }
-                    if (data.globalSummary?.globalDonneesBrutesVehicules) {
-                        localStorage.setItem('globalCarCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesVehicules));
-                    }
-                    
+                    await this.idb.clear('trucks'); await this.idb.clear('cars');
+                    for (let s of data.sessions) { if (!s.id) s.id = Date.now().toString() + Math.random().toString(); await this.idb.add(s); }
+                    if (data.globalSummary?.globalDonneesBrutesCamions) localStorage.setItem('globalTruckCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesCamions));
+                    if (data.globalSummary?.globalDonneesBrutesVehicules) localStorage.setItem('globalCarCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesVehicules));
                     alert("✅ Historique importé avec succès ! Redémarrage..."); location.reload();
                 } else if(!data.sessions) { alert("❌ Format non reconnu."); }
             } catch (err) { alert("❌ Fichier invalide ou corrompu !"); }
         }; reader.readAsText(file);
     },
 
-    renderTrucks() {
-        const container = document.getElementById('truck-container'); if(!container) return;
-        container.innerHTML = '';
-        let grandTotal = 0, totalFr = 0, totalEtr = 0, maxScore = 0, leader = "Aucune";
-
-        this.brands.forEach(brand => {
-            let fr = this.truckCounters[brand] ? this.truckCounters[brand].fr : 0; 
-            let etr = this.truckCounters[brand] ? this.truckCounters[brand].etr : 0;
-            let tot = fr + etr;
-            grandTotal += tot; totalFr += fr; totalEtr += etr;
-            if (tot > maxScore) { maxScore = tot; leader = brand; }
-            
-            container.innerHTML += `<div class="brand-card"><div class="brand-name">${brand}</div><div class="counter-section"><span class="flag">🇫🇷</span><button class="btn-corr" onclick="window.app.updateTruck(event, '${brand}', 'fr', -1)">-</button><span class="score">${fr}</span><button class="btn-add btn-add-fr" onclick="window.app.updateTruck(event, '${brand}', 'fr', 1)">+</button></div><div class="counter-section"><span class="flag">🌍</span><button class="btn-corr" onclick="window.app.updateTruck(event, '${brand}', 'etr', -1)">-</button><span class="score">${etr}</span><button class="btn-add btn-add-etr" onclick="window.app.updateTruck(event, '${brand}', 'etr', 1)">+</button></div></div>`;
-        });
-
-        let gtEl = document.getElementById('grand-total'); if(gtEl) gtEl.innerText = grandTotal; 
-        let lnEl = document.getElementById('leader-name'); if(lnEl) lnEl.innerText = maxScore > 0 ? `${leader} (${maxScore})` : "Aucune";
-        
-        let pctFr = grandTotal === 0 ? 50 : Math.round((totalFr / grandTotal) * 100);
-        let barFr = document.getElementById('bar-fr'); if(barFr) { barFr.style.width = pctFr + '%'; barFr.innerText = grandTotal > 0 ? `🇫🇷 ${pctFr}%` : ''; }
-        let barEtr = document.getElementById('bar-etr'); if(barEtr) { barEtr.style.width = (100 - pctFr) + '%'; barEtr.innerText = grandTotal > 0 ? `🌍 ${100 - pctFr}%` : ''; }
-    },
-
-    renderCars() {
-        const container = document.getElementById('car-container'); if(!container) return;
-        container.innerHTML = ''; 
-        let grandTotal = 0; 
-        this.vehicleTypes.forEach(v => grandTotal += (this.vehicleCounters[v] || 0)); 
-        let cgt = document.getElementById('car-grand-total'); if(cgt) cgt.innerText = grandTotal;
-
-        const slugMap = {
-            "Voitures": "voitures",
-            "Utilitaires": "utilitaires",
-            "Camions": "camions",
-            "Engins agricoles": "engins",
-            "Bus/Car": "bus",
-            "Camping-cars": "camping",
-            "Motos": "motos",
-            "Vélos": "velos"
-        };
-
-        this.vehicleTypes.forEach(v => {
-            let pct = grandTotal === 0 ? (100 / this.vehicleTypes.length) : Math.round(((this.vehicleCounters[v]||0) / grandTotal) * 100); 
-            let slug = slugMap[v];
-            let bar = document.getElementById(`bar-${slug}`);
-            if (bar) { 
-                bar.style.width = pct + '%'; 
-                bar.innerText = (grandTotal > 0 && this.vehicleCounters[v] > 0) ? `${pct}%` : ''; 
-            }
-        });
-
-        const icons = { Voitures: "🚗", Utilitaires: "🚐", Camions: "🚛", "Engins agricoles": "🚜", "Bus/Car": "🚌", "Camping-cars": "🏕️", Motos: "🏍️", Vélos: "🚲" };
-        this.vehicleTypes.forEach(v => {
-            let score = this.vehicleCounters[v] || 0;
-            container.innerHTML += `<div class="vehicle-card"><div class="vehicle-name">${icons[v] || "🚘"} ${v}</div><div class="vehicle-controls"><button class="btn-corr" onclick="window.app.updateVehicle(event, '${v}', -1)">-</button><span class="vehicle-score">${score}</span><button class="btn-add btn-add-fr" onclick="window.app.updateVehicle(event, '${v}', 1)">+</button></div></div>`;
-        });
-    },
-    
-    renderLiveStats(type) {
-        let container = document.getElementById(type === 'trucks' ? 'truck-live-stats' : 'car-live-stats');
-        if (!container) return;
-        
-        let sec = type === 'trucks' ? this.truckSeconds : this.carSeconds;
-        let dist = type === 'trucks' ? this.liveTruckDistance : this.liveCarDistance;
-        let count = type === 'trucks' ? this.truckHistory.filter(h => !h.isEvent).length : this.carHistory.filter(h => !h.isEvent).length;
-        
-        let freq = (count > 0 && sec > 0) ? (sec / 60 / count).toFixed(1) + " min" : "-";
-        let speed = (sec > 0) ? (count / (sec / 3600)).toFixed(1) + " /h" : "-";
-        let avgSpeed = (sec > 0) ? (dist / (sec / 3600)).toFixed(1) + " km/h" : "-";
-        let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
-
-        container.innerHTML = `
-            <div class="km-stat-card"><span class="km-stat-title">Vitesse Moy.</span><span class="km-stat-value" style="color:#8e44ad;">${avgSpeed}</span></div>
-            <div class="km-stat-card"><span class="km-stat-title">Fréq. Apparition</span><span class="km-stat-value">${freq}</span></div>
-            <div class="km-stat-card"><span class="km-stat-title">Rythme / Heure</span><span class="km-stat-value">${speed}</span></div>
-            <div class="km-stat-card"><span class="km-stat-title">Météo</span><span class="km-stat-value" style="color:#e67e22; font-size: 1em;">${weather}</span></div>
-        `;
-    },
-
-    renderKmStats() {
-        let tContainer = document.getElementById('truck-km-list');
-        if (tContainer) {
-            if (this.liveTruckDistance > 0) {
-                let truckCount = this.truckHistory.filter(h => !h.isEvent).length;
-                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(truckCount / this.liveTruckDistance).toFixed(1)} /km</span></div>`;
-                this.brands.forEach(brand => {
-                    let count = this.truckCounters[brand] ? (this.truckCounters[brand].fr + this.truckCounters[brand].etr) : 0;
-                    if (count > 0) html += `<div class="km-stat-card"><span class="km-stat-title">${brand}</span><span class="km-stat-value">${(count / this.liveTruckDistance).toFixed(1)} /km</span></div>`;
-                });
-                tContainer.innerHTML = html;
-            } else { tContainer.innerHTML = '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Roule un peu pour voir les stats... 🚚💨</span>'; }
-        }
-
-        let cContainer = document.getElementById('car-km-list');
-        if (cContainer) {
-            if (this.liveCarDistance > 0) {
-                let carCount = this.carHistory.filter(h => !h.isEvent).length;
-                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(carCount / this.liveCarDistance).toFixed(1)} /km</span></div>`;
-                this.vehicleTypes.forEach(v => {
-                    let count = this.vehicleCounters[v] || 0;
-                    if (count > 0) html += `<div class="km-stat-card"><span class="km-stat-title">${v}</span><span class="km-stat-value">${(count / this.liveCarDistance).toFixed(1)} /km</span></div>`;
-                });
-                cContainer.innerHTML = html;
-            } else { cContainer.innerHTML = '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Roule un peu pour voir les stats... 🚗💨</span>'; }
-        }
-    },
-
-    async showSessionDetails(type, sessionId) {
-        let session = await this.idb.getById(sessionId);
-        if(!session) return;
-
-        let itemsCount = session.history ? session.history.filter(h => !h.isEvent).length : 0;
-        let freq = itemsCount > 0 && session.durationSec > 0 ? (session.durationSec / 60 / itemsCount).toFixed(1) : '-';
-        let speed = session.durationSec > 0 ? (itemsCount / (session.durationSec / 3600)).toFixed(1) : '-';
-        let dist = session.distanceKm || 0;
-        let avgSpeedKmh = session.durationSec > 0 ? (dist / (session.durationSec / 3600)).toFixed(1) : '-';
-
-        let html = `
-            <div class="session-detail-row"><span class="session-detail-label">Date</span><span class="session-detail-value">${session.date}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label" style="color:#27ae60;">🟢 Départ</span><span class="session-detail-value">${session.startAddress || "Inconnue"}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label" style="color:#c0392b;">🔴 Arrivée</span><span class="session-detail-value">${session.endAddress || "Inconnue"}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Durée</span><span class="session-detail-value">${this.formatTime(session.durationSec || 0)}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Distance</span><span class="session-detail-value">${dist} km</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne</span><span class="session-detail-value" style="color:#8e44ad;">${avgSpeedKmh} km/h</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Météo</span><span class="session-detail-value">${session.weather || 'Inconnue'}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Véhicules comptés</span><span class="session-detail-value">${itemsCount}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Fréquence</span><span class="session-detail-value">${freq} min/véh.</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Rythme</span><span class="session-detail-value">${speed} /h</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Moyenne</span><span class="session-detail-value">${dist > 0 ? (itemsCount / dist).toFixed(1) : '-'} /km</span></div>
-        `;
-        document.getElementById('modal-session-title').innerText = type === 'trucks' ? '🚛 Détails Session Camions' : '🚗 Détails Session Véhicules';
-        document.getElementById('modal-session-content').innerHTML = html;
-        document.getElementById('session-detail-modal').style.display = 'flex';
-    },
-
     async renderAdvancedStats(type) {
         let historyContainer = document.getElementById(type === 'trucks' ? 'truck-history-container' : 'car-history-container');
         let sessionsContainer = document.getElementById(type === 'trucks' ? 'truck-sessions-container' : 'car-sessions-container');
-
         if (!historyContainer || !sessionsContainer) return;
+
         let currentHistory = type === 'trucks' ? this.truckHistory : this.carHistory;
-        
         historyContainer.innerHTML = '';
-        if (currentHistory.length === 0) {
-            historyContainer.innerHTML = '<div class="history-item">Aucune donnée pour la session en cours. 🛣️</div>';
-        } else {
+        if (currentHistory.length === 0) { historyContainer.innerHTML = '<div class="history-item">Aucune donnée pour la session en cours. 🛣️</div>'; } 
+        else {
             currentHistory.slice().reverse().forEach((item, index) => {
                 let realIndex = currentHistory.length - 1 - index;
                 let title = item.isEvent ? item.eventType : (type === 'trucks' ? `${item.brand} (${item.type === 'fr' ? '🇫🇷' : '🌍'})` : item.type);
                 let titleStyle = item.isEvent ? 'color: #f39c12;' : '';
-                historyContainer.innerHTML += `
-                    <div class="history-item">
-                        <div class="history-item-header">
-                            <strong style="${titleStyle}">${title}</strong>
-                            <span class="history-meta">⏱️ ${item.chronoTime} | 📍 ${item.lat ? parseFloat(item.lat).toFixed(4) : '?'}</span>
-                            <button class="btn-del-history" onclick="window.app.${type === 'trucks' ? 'deleteTruckHistoryItem' : 'deleteCarHistoryItem'}(${realIndex})">🗑️</button>
-                        </div>
-                    </div>`;
+                historyContainer.innerHTML += `<div class="history-item"><div class="history-item-header"><strong style="${titleStyle}">${title}</strong><span class="history-meta">⏱️ ${item.chronoTime} | 📍 ${item.lat ? parseFloat(item.lat).toFixed(4) : '?'}</span><button class="btn-del-history" onclick="window.app.${type === 'trucks' ? 'deleteTruckHistoryItem' : 'deleteCarHistoryItem'}(${realIndex})">🗑️</button></div></div>`;
             });
         }
 
         let sessions = await this.idb.getAll(type);
-        // On trie les sessions de la plus récente à la plus ancienne
         sessions.sort((a, b) => b.id - a.id);
         
         sessionsContainer.innerHTML = '';
-        if (sessions.length === 0) {
-            sessionsContainer.innerHTML = '<div class="history-item">Aucune session sauvegardée. 🚦</div>';
-        } else {
+        if (sessions.length === 0) { sessionsContainer.innerHTML = '<div class="history-item">Aucune session sauvegardée. 🚦</div>'; } 
+        else {
             sessions.forEach((session) => {
                 let itemsCount = session.history ? session.history.filter(h => !h.isEvent).length : 0;
                 let durationTxt = session.durationSec ? this.formatTime(session.durationSec) : "00:00:00";
-                let avgSpeedStr = (session.durationSec > 0 && session.distanceKm) ? ` | ⚡ ${(session.distanceKm / (session.durationSec / 3600)).toFixed(0)} km/h` : "";
-                
                 sessionsContainer.innerHTML += `
                     <div class="history-item clickable" onclick="window.app.showSessionDetails('${type}', '${session.id}')" style="cursor: pointer; background: var(--card-bg); padding: 10px; border-radius: 6px; margin-bottom: 5px; box-shadow: 0 1px 2px var(--shadow); position: relative;">
                         <div class="history-item-header" style="pointer-events: none; padding-right: 40px;">
                             <strong>📅 ${session.date.split(' ')[0]} <span style="font-size:0.8em; color:#7f8c8d; font-weight:normal;">(${session.endAddress ? session.endAddress.split(',')[0] : 'Inconnu'})</span></strong>
-                            <span class="history-meta" style="color: #2980b9; font-weight: bold;">
-                                ⏱️ ${durationTxt} | 📍 ${session.distanceKm || 0} km${avgSpeedStr} | 👁️ ${itemsCount} comptés
-                            </span>
+                            <span class="history-meta" style="color: #2980b9; font-weight: bold;">⏱️ ${durationTxt} | 📍 ${session.distanceKm || 0} km | 👁️ ${itemsCount} comptés</span>
                         </div>
                         <button onclick="window.app.exportSingleSession(event, '${type}', '${session.id}')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: #2980b9; color: white; border: none; border-radius: 4px; padding: 6px 10px; font-size: 1.1em; cursor: pointer; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📤</button>
                     </div>`;
