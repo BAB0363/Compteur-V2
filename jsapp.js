@@ -12,7 +12,6 @@ const app = {
     globalTruckCounters: {}, globalCarCounters: {}, 
     truckHistory: [], carHistory: [],
     
-    // Nouvelles variables de temps et distance globaux
     globalTruckDistance: parseFloat(localStorage.getItem('globalTruckDistance')) || 0,
     globalCarDistance: parseFloat(localStorage.getItem('globalCarDistance')) || 0,
     globalTruckTime: parseInt(localStorage.getItem('globalTruckTime')) || 0,
@@ -112,14 +111,13 @@ const app = {
         if (this.isTruckRunning) { 
             btn.innerText = "⏸️ Pause"; btn.classList.add('running'); 
             this.truckStartTime = Date.now(); localStorage.setItem('truckStartTime', this.truckStartTime);
-            this.lastGlobalTruckTick = Date.now(); // Init chrono global
+            this.lastGlobalTruckTick = Date.now();
             this.truckInterval = setInterval(() => { 
                 let now = Date.now();
                 let elapsed = Math.floor((now - this.truckStartTime) / 1000);
                 this.truckSeconds = this.truckAccumulatedTime + elapsed; 
                 localStorage.setItem('truckChronoSec', this.truckSeconds); 
                 
-                // MAJ du temps Global
                 let delta = now - this.lastGlobalTruckTick;
                 if(delta >= 1000) {
                     let add = Math.floor(delta / 1000);
@@ -152,14 +150,13 @@ const app = {
         if (this.isCarRunning) { 
             btn.innerText = "⏸️ Pause"; btn.classList.add('running'); 
             this.carStartTime = Date.now(); localStorage.setItem('carStartTime', this.carStartTime);
-            this.lastGlobalCarTick = Date.now(); // Init chrono global
+            this.lastGlobalCarTick = Date.now(); 
             this.carInterval = setInterval(() => { 
                 let now = Date.now();
                 let elapsed = Math.floor((now - this.carStartTime) / 1000);
                 this.carSeconds = this.carAccumulatedTime + elapsed; 
                 localStorage.setItem('carChronoSec', this.carSeconds); 
                 
-                // MAJ du temps Global
                 let delta = now - this.lastGlobalCarTick;
                 if(delta >= 1000) {
                     let add = Math.floor(delta / 1000);
@@ -321,6 +318,11 @@ const app = {
         let dateStr = new Date().toLocaleString('fr-FR');
         let history = type === 'trucks' ? this.truckHistory : this.carHistory;
         
+        let startDateStr = dateStr;
+        if (history.length > 0 && history[0].timestamp) {
+            startDateStr = new Date(history[0].timestamp).toLocaleString('fr-FR');
+        }
+
         let startLat = history.length > 0 ? history[0].lat : (window.gps.currentPos.lat || null);
         let startLon = history.length > 0 ? history[0].lon : (window.gps.currentPos.lon || null);
         let endLat = window.gps.currentPos.lat || null;
@@ -332,12 +334,12 @@ const app = {
 
         if (type === 'trucks') {
             let sessions = []; try { sessions = JSON.parse(localStorage.getItem('truckSessions')) || []; } catch(e){}
-            sessions.push({ id: Date.now().toString(), date: dateStr, startAddress: startAddress, endAddress: endAddress, durationSec: this.truckSeconds, distanceKm: parseFloat(this.liveTruckDistance.toFixed(2)), weather: window.gps.currentWeatherLabel, history: this.truckHistory, summary: JSON.parse(JSON.stringify(this.truckCounters)) });
+            sessions.push({ id: Date.now().toString(), startDate: startDateStr, date: dateStr, startAddress: startAddress, endAddress: endAddress, durationSec: this.truckSeconds, distanceKm: parseFloat(this.liveTruckDistance.toFixed(2)), weather: window.gps.currentWeatherLabel, history: this.truckHistory, summary: JSON.parse(JSON.stringify(this.truckCounters)) });
             sessions = sessions.slice(-10); 
             localStorage.setItem('truckSessions', JSON.stringify(sessions)); this.resetTrucksData(); if(window.ui) window.ui.showToast("💾 Session sauvegardée !");
         } else if (type === 'cars') {
             let sessions = []; try { sessions = JSON.parse(localStorage.getItem('carSessions')) || []; } catch(e){}
-            sessions.push({ id: Date.now().toString(), date: dateStr, startAddress: startAddress, endAddress: endAddress, durationSec: this.carSeconds, distanceKm: parseFloat(this.liveCarDistance.toFixed(2)), weather: window.gps.currentWeatherLabel, history: this.carHistory, summary: JSON.parse(JSON.stringify(this.vehicleCounters)) });
+            sessions.push({ id: Date.now().toString(), startDate: startDateStr, date: dateStr, startAddress: startAddress, endAddress: endAddress, durationSec: this.carSeconds, distanceKm: parseFloat(this.liveCarDistance.toFixed(2)), weather: window.gps.currentWeatherLabel, history: this.carHistory, summary: JSON.parse(JSON.stringify(this.vehicleCounters)) });
             sessions = sessions.slice(-10); 
             localStorage.setItem('carSessions', JSON.stringify(sessions)); this.resetCarsData(); if(window.ui) window.ui.showToast("💾 Session sauvegardée !");
         }
@@ -363,7 +365,6 @@ const app = {
         }
     },
 
-    // LA NOUVELLE FONCTION POUR AFFICHER LES DÉTAILS GLOBAUX DANS LA MODALE
     showGlobalDetails(type, key) {
         let count = 0, time = 0, dist = 0;
         let title = "";
@@ -434,8 +435,31 @@ const app = {
         if(clEl) clEl.innerHTML = carHtml;
     },
 
-    // ... (Le reste du code des exports / imports et affichage classique n'a pas changé par rapport à l'envoi précédent)
-    exportSaveFile() {
+    async triggerDownloadOrShare(dataString, fileName) {
+        const file = new File([dataString], fileName, { type: "text/plain" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+                await navigator.share({
+                    title: 'Export Compteur Trafic',
+                    text: 'Voici mes données de comptage trafic exportées.',
+                    files: [file]
+                });
+                if(window.ui) window.ui.showToast("📤 Fichier partagé !");
+                return;
+            } catch (err) {
+                console.warn("Partage annulé ou échoué, passage au téléchargement classique.", err);
+            }
+        }
+        
+        const blob = new Blob([dataString], { type: "text/plain" });
+        const url = URL.createObjectURL(blob); 
+        const a = document.createElement("a"); a.href = url; 
+        a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); 
+        if(window.ui) window.ui.showToast("💾 Fichier téléchargé !");
+    },
+
+    async exportSaveFile() {
         let truckSessions = JSON.parse(localStorage.getItem('truckSessions')) || [];
         let carSessions = JSON.parse(localStorage.getItem('carSessions')) || [];
 
@@ -464,16 +488,13 @@ const app = {
         };
 
         let exportData = { appVersion: "Compteur Trafic v3.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
-        const data = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([data], { type: "text/plain" });
-        const url = URL.createObjectURL(blob); 
-        const a = document.createElement("a"); a.href = url; 
-        a.download = `Compteur_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a); 
-        if(window.ui) window.ui.showToast("💾 Export global réussi !");
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const fileName = `Compteur_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
+        
+        await this.triggerDownloadOrShare(dataStr, fileName);
     },
     
-    exportSingleSession(event, type, reversedIndex) {
+    async exportSingleSession(event, type, reversedIndex) {
         event.stopPropagation();
         let sessions = JSON.parse(localStorage.getItem(type === 'trucks' ? 'truckSessions' : 'carSessions')) || [];
         let realIndex = sessions.length - 1 - reversedIndex;
@@ -481,14 +502,11 @@ const app = {
         if(!session) return;
 
         let exportData = { appVersion: "Compteur Trafic v3.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
-        const data = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([data], { type: "text/plain" });
-        const url = URL.createObjectURL(blob); 
-        const a = document.createElement("a"); a.href = url; 
+        const dataStr = JSON.stringify(exportData, null, 2);
         let safeDate = session.date.replace(/[\/ :]/g, '_');
-        a.download = `Compteur_Session_${type}_${safeDate}.txt`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a); 
-        if(window.ui) window.ui.showToast("📤 Session exportée !");
+        const fileName = `Compteur_Session_${type}_${safeDate}.txt`;
+        
+        await this.triggerDownloadOrShare(dataStr, fileName);
     },
 
     importSaveFile(event) {

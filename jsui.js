@@ -23,8 +23,9 @@ export const ui = {
             oscillator.type = 'sine';
             oscillator.frequency.setValueAtTime(isAdding ? 800 : 300, this.audioCtx.currentTime);
             
-            gainNode.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.0001, this.audioCtx.currentTime + 0.1);
+            // Volume augmenté au maximum (1.0 au lieu de 0.1) pour un bip bien fort !
+            gainNode.gain.setValueAtTime(1.0, this.audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.1);
             
             oscillator.start();
             oscillator.stop(this.audioCtx.currentTime + 0.1);
