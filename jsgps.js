@@ -34,20 +34,22 @@ export const gps = {
                         let linearD = parseFloat(this.calculateDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon));
                         let speedKmh = this.currentSpeed * 3.6;
 
-                        // CORRECTION : Filtre anti-zigzag (100m minimum, précision <= 20m)
                         if (linearD > 0.1 && linearD < 3.0 && accuracy <= 20 && (speedKmh > 5 || pos.coords.speed === null)) { 
-                            // On utilise directement la distance de Haversine lissée
                             let d = linearD;
 
                             if (window.app && window.app.isTruckRunning) { 
                                 window.app.liveTruckDistance += d; 
+                                window.app.globalTruckDistance += d; // Ajout au compteur Global
                                 localStorage.setItem('liveTruckDist', window.app.liveTruckDistance); 
+                                localStorage.setItem('globalTruckDistance', window.app.globalTruckDistance); 
                                 window.app.updateTruckChronoDisp(); 
                                 window.app.renderKmStats(); 
                             }
                             if (window.app && window.app.isCarRunning) { 
                                 window.app.liveCarDistance += d; 
+                                window.app.globalCarDistance += d; // Ajout au compteur Global
                                 localStorage.setItem('liveCarDist', window.app.liveCarDistance); 
+                                localStorage.setItem('globalCarDistance', window.app.globalCarDistance); 
                                 window.app.updateCarChronoDisp(); 
                                 window.app.renderKmStats(); 
                             }
