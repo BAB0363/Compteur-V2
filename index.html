@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=10">
+    <link rel="manifest" href="manifest.json?v=11">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=10">
+    <link rel="stylesheet" href="style.css?v=11">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -19,13 +19,14 @@
     </div>
 
     <button id="btn-install-pwa" class="no-print" style="display: none; width: 100%; margin-bottom: 15px; padding: 12px; background-color: #27ae60; color: white; border-radius: 6px; font-weight: bold; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
-        📲 Installer l'application sur l'écran d'accueil
+        📲 Installer l'application
     </button>
 
     <div class="main-tabs no-print">
         <button id="tab-trucks" class="active" onclick="window.ui.switchTab('trucks')">🚛 Camions</button>
         <button id="tab-cars" onclick="window.ui.switchTab('cars')">🚗 Véhicules</button>
         <button id="tab-global" onclick="window.ui.switchTab('global')">🌍 Global</button>
+        <button id="tab-analytics" onclick="window.ui.switchTab('analytics')">📈 Analyses</button>
         <button id="tab-save" onclick="window.ui.switchTab('save')">💾 Sauvegarde</button>
     </div>
 
@@ -65,7 +66,7 @@
                 <h4>📊 Détails au kilomètre</h4>
                 <div id="truck-km-list" class="km-stats-grid" style="margin-bottom: 15px;"></div>
                 
-                <h4>📈 Statistiques de la session</h4>
+                <h4>📈 Statistiques de la session (Temps Réel)</h4>
                 <div id="truck-live-stats" class="km-stats-grid"></div>
             </div>
         </div>
@@ -83,7 +84,7 @@
             <div class="history-list no-print" id="truck-history-container"></div>
             
             <h3 class="no-print">Sessions Précédentes</h3>
-            <p style="font-size: 0.8em; color: #7f8c8d; margin-top: -10px;">Clique sur une session pour voir les détails.</p>
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top: -10px;">Clique sur une session pour voir les détails temporels.</p>
             <div class="history-list no-print" id="truck-sessions-container"></div>
         </div>
     </div>
@@ -124,7 +125,7 @@
                 <h4>📊 Détails au kilomètre</h4>
                 <div id="car-km-list" class="km-stats-grid" style="margin-bottom: 15px;"></div>
                 
-                <h4>📈 Statistiques de la session</h4>
+                <h4>📈 Statistiques de la session (Temps Réel)</h4>
                 <div id="car-live-stats" class="km-stats-grid"></div>
             </div>
         </div>
@@ -142,7 +143,6 @@
             <div class="history-list no-print" id="car-history-container"></div>
             
             <h3 class="no-print">Sessions Précédentes</h3>
-            <p style="font-size: 0.8em; color: #7f8c8d; margin-top: -10px;">Clique sur une session pour voir les détails.</p>
             <div class="history-list no-print" id="car-sessions-container"></div>
         </div>
     </div>
@@ -150,24 +150,20 @@
     <div id="section-global" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #27ae60;">
             <h3 style="margin-top: 0; color: var(--text-color);">🌍 Statistiques Globales</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Ces données s'actualisent à chaque action depuis le début. Elles ne sont jamais réinitialisées par les arrêts de sessions.</p>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Données cumulées depuis le début.</p>
         </div>
         
         <div class="km-stats-container">
             <h4 style="color: #e67e22;">🚛 Cumul Camions</h4>
             <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="global-truck-total" style="color:#27ae60;">0</span></div>
-            <div style="position: relative; height: 250px; width: 100%; margin-bottom: 15px;">
-                <canvas id="globalTruckChart"></canvas>
-            </div>
+            <div class="chart-wrapper"><canvas id="globalTruckChart"></canvas></div>
             <div id="global-truck-list" class="km-stats-grid"></div>
         </div>
 
         <div class="km-stats-container">
             <h4 style="color: #3498db;">🚗 Cumul Véhicules</h4>
             <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="global-car-total" style="color:#27ae60;">0</span></div>
-            <div style="position: relative; height: 250px; width: 100%; margin-bottom: 15px;">
-                <canvas id="globalCarChart"></canvas>
-            </div>
+            <div class="chart-wrapper"><canvas id="globalCarChart"></canvas></div>
             <div id="global-car-list" class="km-stats-grid"></div>
         </div>
         
@@ -176,10 +172,40 @@
         </div>
     </div>
 
+    <div id="section-analytics" style="display: none;" class="no-print">
+        <div class="header-dashboard" style="border-left: 4px solid #e67e22;">
+            <h3 style="margin-top: 0; color: var(--text-color);">📈 Analyses Avancées</h3>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Exploite tes données sauvegardées pour découvrir les tendances de la route.</p>
+        </div>
+
+        <div class="main-tabs" style="margin-bottom: 10px;">
+            <button id="btn-ana-trucks" class="active" onclick="window.app.renderAnalytics('trucks')" style="background-color: #e67e22; color:white;">🚛 Données Camions</button>
+            <button id="btn-ana-cars" onclick="window.app.renderAnalytics('cars')" style="background-color: var(--btn-bg);">🚗 Données Véhicules</button>
+        </div>
+
+        <div class="km-stats-container">
+            <h4>📅 Répartition Hebdomadaire</h4>
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Trafic moyen par jour de la semaine.</p>
+            <div class="chart-wrapper"><canvas id="weeklyChart"></canvas></div>
+        </div>
+
+        <div class="km-stats-container">
+            <h4>⛰️ Analyse de l'Altitude</h4>
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Densité du trafic selon l'altitude GPS.</p>
+            <div class="chart-wrapper"><canvas id="altitudeChart"></canvas></div>
+        </div>
+
+        <div class="km-stats-container">
+            <h4>🔁 Top 5 des Séquences</h4>
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Qu'est-ce qui suit quoi le plus souvent ?</p>
+            <div id="sequence-container"></div>
+        </div>
+    </div>
+
     <div id="section-save" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #34495e;">
             <h3 style="margin-top: 0; color: var(--text-color);">💾 Sauvegarde & Export IA</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Exporte tes compteurs et ton historique au format texte optimisé pour l'analyse, ou restaure tes données.</p>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Exporte tes compteurs et ton historique enrichi au format texte optimisé pour l'analyse.</p>
             <button class="share-btn" style="width: 100%; margin-bottom: 10px; background-color: #2980b9; padding: 15px; font-size: 1.1em;" onclick="window.app.exportSaveFile()">📤 Exporter pour Analyse (.txt)</button>
             <input type="file" id="import-save-file" accept=".json,.gege,.txt" style="display:none;" onchange="window.app.importSaveFile(event)">
             <button class="share-btn" style="width: 100%; background-color: #27ae60; padding: 15px; font-size: 1.1em;" onclick="document.getElementById('import-save-file').click()">📥 Importer des Données</button>
@@ -191,18 +217,21 @@
             <button onclick="document.getElementById('session-detail-modal').style.display='none'" style="position:absolute; top:15px; right:15px; background:#e74c3c; color:white; border:none; border-radius:50%; width:30px; height:30px; cursor:pointer; font-weight:bold;">X</button>
             <h3 id="modal-session-title" style="margin-top:0; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; color: var(--text-color);">Détails de la session</h3>
             <div id="modal-session-content" style="color: var(--text-color); font-size: 0.95em; line-height: 1.5;"></div>
+            
+            <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">📈 Densité Temporelle</h4>
+            <div class="chart-wrapper" style="height: 150px;"><canvas id="temporalDensityChart"></canvas></div>
         </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=10"></script>
+    <script type="module" src="jsapp.js?v=11"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=10')
+          navigator.serviceWorker.register('./sw.js?v=11')
             .then(registration => {
               console.log('Service Worker Compteur enregistré avec succès !', registration.scope);
             })
