@@ -115,12 +115,16 @@ export const ui = {
 
     switchTab(tab) {
         this.activeTab = tab;
-        ['trucks', 'cars', 'save'].forEach(t => {
+        ['trucks', 'cars', 'global', 'save'].forEach(t => {
             let sec = document.getElementById(`section-${t}`);
             let btn = document.getElementById(`tab-${t}`);
             if(sec) sec.style.display = tab === t ? 'block' : 'none';
             if(btn) btn.classList.toggle('active', tab === t);
         });
+        
+        if(tab === 'global' && window.app) {
+            window.app.renderGlobalStats();
+        }
     },
 
     toggleTruckStats() {

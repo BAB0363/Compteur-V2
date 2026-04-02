@@ -41,6 +41,7 @@ body {
 .main-tabs::-webkit-scrollbar { display: none; }
 .main-tabs button { flex: 1; min-width: 75px; padding: 10px 2px; font-size: 0.9em; background-color: var(--btn-bg); color: var(--btn-text); border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; white-space: nowrap;}
 .main-tabs button.active { background-color: #34495e; color: white; }
+#tab-global.active { background-color: #27ae60; color: white; }
 #tab-save.active { background-color: #8e44ad; color: white; }
 
 .header-dashboard { background: var(--card-bg); padding: 10px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px var(--shadow); transition: 0.3s; }

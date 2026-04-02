@@ -6,10 +6,10 @@ window.ui = ui; window.gps = gps;
 
 const app = {
     brands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
-    // Nouvelles catégories !
     vehicleTypes: ["Voitures", "Utilitaires", "Camions", "Engins agricoles", "Bus/Car", "Camping-cars", "Motos", "Vélos"],
     
     truckCounters: {}, vehicleCounters: {},
+    globalTruckCounters: {}, globalCarCounters: {}, // Nouveaux compteurs globaux
     truckHistory: [], carHistory: [],
     
     truckSeconds: parseInt(localStorage.getItem('truckChronoSec')) || 0,
@@ -30,10 +30,12 @@ const app = {
     init() {
         try { this.truckCounters = JSON.parse(localStorage.getItem('truckCounters')) || {}; } catch(e) { this.truckCounters = {}; }
         try { this.vehicleCounters = JSON.parse(localStorage.getItem('vehicleCounters')) || {}; } catch(e) { this.vehicleCounters = {}; }
+        try { this.globalTruckCounters = JSON.parse(localStorage.getItem('globalTruckCounters')) || {}; } catch(e) { this.globalTruckCounters = {}; }
+        try { this.globalCarCounters = JSON.parse(localStorage.getItem('globalCarCounters')) || {}; } catch(e) { this.globalCarCounters = {}; }
         try { this.truckHistory = JSON.parse(localStorage.getItem('truckHistory')) || []; } catch(e) { this.truckHistory = []; }
         try { this.carHistory = JSON.parse(localStorage.getItem('carHistory')) || []; } catch(e) { this.carHistory = []; }
         
-        // Migration douce pour les anciens "Tracteurs"
+        // Migration douce
         if (this.vehicleCounters["Tracteurs"] !== undefined) {
             this.vehicleCounters["Engins agricoles"] = (this.vehicleCounters["Engins agricoles"] || 0) + this.vehicleCounters["Tracteurs"];
             delete this.vehicleCounters["Tracteurs"];
@@ -42,6 +44,8 @@ const app = {
 
         if(Object.keys(this.truckCounters).length === 0) this.brands.forEach(b => this.truckCounters[b] = { fr: 0, etr: 0 });
         if(Object.keys(this.vehicleCounters).length === 0) this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0);
+        if(Object.keys(this.globalTruckCounters).length === 0) this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
+        if(Object.keys(this.globalCarCounters).length === 0) this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
 
         if (!this.isTruckRunning) { this.truckAccumulatedTime = this.truckSeconds; }
         if (!this.isCarRunning) { this.carAccumulatedTime = this.carSeconds; }
@@ -150,17 +154,21 @@ const app = {
     updateTruck(e, brand, type, amount) {
         if (!this.isTruckRunning) { alert("Lance le chrono Camions d'abord ! ⏱️"); return; }
         if (!this.truckCounters[brand]) this.truckCounters[brand] = { fr: 0, etr: 0 };
+        if (!this.globalTruckCounters[brand]) this.globalTruckCounters[brand] = { fr: 0, etr: 0 };
         
         if (this.truckCounters[brand][type] + amount >= 0) {
             if (window.ui) window.ui.playBeep(amount > 0);
             if (amount > 0) {
                 this.truckCounters[brand][type] += amount;
-                // AJOUT DE L'ALTITUDE ICI
+                this.globalTruckCounters[brand][type] += amount; // MAJ Global
+                
                 let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
                 this.truckHistory.push(histItem);
                 
                 if(window.ui && e) { window.ui.triggerHapticFeedback('truck'); window.ui.showClickParticle(e, `+1`); }
-                localStorage.setItem('truckCounters', JSON.stringify(this.truckCounters)); localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
+                localStorage.setItem('truckCounters', JSON.stringify(this.truckCounters)); 
+                localStorage.setItem('globalTruckCounters', JSON.stringify(this.globalTruckCounters)); 
+                localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
                 this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
             } else if (amount < 0) {
                 for (let i = this.truckHistory.length - 1; i >= 0; i--) {
@@ -175,12 +183,14 @@ const app = {
     updateVehicle(e, type, amount) {
         if (!this.isCarRunning) { alert("Lance le chrono Véhicules d'abord ! ⏱️"); return; }
         if (typeof this.vehicleCounters[type] === 'undefined') this.vehicleCounters[type] = 0;
+        if (typeof this.globalCarCounters[type] === 'undefined') this.globalCarCounters[type] = 0;
         
         if (this.vehicleCounters[type] + amount >= 0) {
             if (window.ui) window.ui.playBeep(amount > 0);
             if (amount > 0) {
                 this.vehicleCounters[type] += amount; 
-                // AJOUT DE L'ALTITUDE ICI
+                this.globalCarCounters[type] += amount; // MAJ Global
+
                 let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
                 this.carHistory.push(histItem);
                 
@@ -189,7 +199,9 @@ const app = {
                 if(type === 'Engins agricoles' || type === 'Camions' || type === 'Bus/Car') hapticType = 'tractor';
 
                 if(window.ui && e) { window.ui.triggerHapticFeedback(hapticType); window.ui.showClickParticle(e, `+1`, '#e74c3c'); }
-                localStorage.setItem('vehicleCounters', JSON.stringify(this.vehicleCounters)); localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
+                localStorage.setItem('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
+                localStorage.setItem('globalCarCounters', JSON.stringify(this.globalCarCounters)); 
+                localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
                 this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
             } else if (amount < 0) {
                 for (let i = this.carHistory.length - 1; i >= 0; i--) {
@@ -203,9 +215,16 @@ const app = {
 
     deleteTruckHistoryItem(index) {
         let item = this.truckHistory[index];
-        if (!item.isEvent && this.truckCounters[item.brand] && this.truckCounters[item.brand][item.type] > 0) this.truckCounters[item.brand][item.type]--;
+        if (!item.isEvent && this.truckCounters[item.brand] && this.truckCounters[item.brand][item.type] > 0) {
+            this.truckCounters[item.brand][item.type]--;
+            if (this.globalTruckCounters[item.brand] && this.globalTruckCounters[item.brand][item.type] > 0) {
+                this.globalTruckCounters[item.brand][item.type]--;
+            }
+        }
         this.truckHistory.splice(index, 1);
-        localStorage.setItem('truckCounters', JSON.stringify(this.truckCounters)); localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
+        localStorage.setItem('truckCounters', JSON.stringify(this.truckCounters)); 
+        localStorage.setItem('globalTruckCounters', JSON.stringify(this.globalTruckCounters)); 
+        localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
         if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast(item.isEvent ? "🗑️ Événement supprimé" : "❌ Camion supprimé"); }
         this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
         if (document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
@@ -213,9 +232,14 @@ const app = {
 
     deleteCarHistoryItem(index) {
         let item = this.carHistory[index];
-        if (!item.isEvent && this.vehicleCounters[item.type] > 0) this.vehicleCounters[item.type]--;
+        if (!item.isEvent && this.vehicleCounters[item.type] > 0) {
+            this.vehicleCounters[item.type]--;
+            if (this.globalCarCounters[item.type] > 0) this.globalCarCounters[item.type]--;
+        }
         this.carHistory.splice(index, 1);
-        localStorage.setItem('vehicleCounters', JSON.stringify(this.vehicleCounters)); localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
+        localStorage.setItem('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
+        localStorage.setItem('globalCarCounters', JSON.stringify(this.globalCarCounters)); 
+        localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
         if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast(item.isEvent ? "🗑️ Événement supprimé" : "❌ Véhicule supprimé"); }
         this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
         if (document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
@@ -269,7 +293,6 @@ const app = {
         let dateStr = new Date().toLocaleString('fr-FR');
         let history = type === 'trucks' ? this.truckHistory : this.carHistory;
         
-        // Récupération des adresses
         let startLat = history.length > 0 ? history[0].lat : (window.gps.currentPos.lat || null);
         let startLon = history.length > 0 ? history[0].lon : (window.gps.currentPos.lon || null);
         let endLat = window.gps.currentPos.lat || null;
@@ -282,16 +305,29 @@ const app = {
         if (type === 'trucks') {
             let sessions = []; try { sessions = JSON.parse(localStorage.getItem('truckSessions')) || []; } catch(e){}
             sessions.push({ id: Date.now().toString(), date: dateStr, startAddress: startAddress, endAddress: endAddress, durationSec: this.truckSeconds, distanceKm: parseFloat(this.liveTruckDistance.toFixed(2)), weather: window.gps.currentWeatherLabel, history: this.truckHistory, summary: JSON.parse(JSON.stringify(this.truckCounters)) });
+            sessions = sessions.slice(-10); // LIMITE LES SESSIONS AUX 10 DERNIÈRES
             localStorage.setItem('truckSessions', JSON.stringify(sessions)); this.resetTrucksData(); if(window.ui) window.ui.showToast("💾 Session sauvegardée !");
         } else if (type === 'cars') {
             let sessions = []; try { sessions = JSON.parse(localStorage.getItem('carSessions')) || []; } catch(e){}
             sessions.push({ id: Date.now().toString(), date: dateStr, startAddress: startAddress, endAddress: endAddress, durationSec: this.carSeconds, distanceKm: parseFloat(this.liveCarDistance.toFixed(2)), weather: window.gps.currentWeatherLabel, history: this.carHistory, summary: JSON.parse(JSON.stringify(this.vehicleCounters)) });
+            sessions = sessions.slice(-10); // LIMITE LES SESSIONS AUX 10 DERNIÈRES
             localStorage.setItem('carSessions', JSON.stringify(sessions)); this.resetCarsData(); if(window.ui) window.ui.showToast("💾 Session sauvegardée !");
         }
     },
 
     resetTrucks() { if (confirm("⚠️ Effacer toutes les sessions sauvegardées ? Irréversible !")) { localStorage.removeItem('truckSessions'); this.renderAdvancedStats('trucks'); window.ui.showToast("🗑️ Historique effacé"); } },
     resetCars() { if (confirm("⚠️ Effacer toutes les sessions sauvegardées ? Irréversible !")) { localStorage.removeItem('carSessions'); this.renderAdvancedStats('cars'); window.ui.showToast("🗑️ Historique effacé"); } },
+
+    resetGlobalStats() {
+        if (confirm("⚠️ Es-tu sûr de vouloir effacer TOUTES les statistiques globales depuis le début ? Action irréversible !")) {
+            this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
+            this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
+            localStorage.setItem('globalTruckCounters', JSON.stringify(this.globalTruckCounters));
+            localStorage.setItem('globalCarCounters', JSON.stringify(this.globalCarCounters));
+            this.renderGlobalStats();
+            if(window.ui) window.ui.showToast("🗑️ Statistiques globales effacées !");
+        }
+    },
 
     exportSaveFile() {
         let truckSessions = JSON.parse(localStorage.getItem('truckSessions')) || [];
@@ -314,28 +350,21 @@ const app = {
         });
 
         let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
-        let totalTrucksMain = enrichedTruckSessions.reduce((acc, s) => acc + s.totalCount, 0);
-        let totalTruckDist = enrichedTruckSessions.reduce((acc, s) => acc + (s.distanceKm || 0), 0);
-        let totalVehiclesTab = enrichedCarSessions.reduce((acc, s) => acc + s.totalCount, 0);
-        let totalCarDist = enrichedCarSessions.reduce((acc, s) => acc + (s.distanceKm || 0), 0);
-
+        
         let globalSummary = {
             totalSessions: allSessions.length,
-            totalDistanceKm: +(totalTruckDist + totalCarDist).toFixed(2),
-            totalOngletCamions: totalTrucksMain,
-            moyenneGlobaleCamionsParKm: totalTruckDist > 0 ? +(totalTrucksMain / totalTruckDist).toFixed(2) : 0,
-            totalOngletVehicules: totalVehiclesTab,
-            moyenneGlobaleVehiculesParKm: totalCarDist > 0 ? +(totalVehiclesTab / totalCarDist).toFixed(2) : 0
+            globalDonneesBrutesCamions: this.globalTruckCounters,
+            globalDonneesBrutesVehicules: this.globalCarCounters
         };
 
-        let exportData = { appVersion: "Gégé v2.5", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
+        let exportData = { appVersion: "Compteur Trafic v3.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
         const data = JSON.stringify(exportData, null, 2);
         const blob = new Blob([data], { type: "text/plain" });
         const url = URL.createObjectURL(blob); 
         const a = document.createElement("a"); a.href = url; 
-        a.download = `Gege_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
+        a.download = `Compteur_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a); 
-        if(window.ui) window.ui.showToast("💾 Export global enrichi réussi !");
+        if(window.ui) window.ui.showToast("💾 Export global réussi !");
     },
     
     exportSingleSession(event, type, reversedIndex) {
@@ -345,13 +374,13 @@ const app = {
         let session = sessions[realIndex];
         if(!session) return;
 
-        let exportData = { appVersion: "Gégé v2.5", exportDate: new Date().toISOString(), sessionType: type, session: session };
+        let exportData = { appVersion: "Compteur Trafic v3.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
         const data = JSON.stringify(exportData, null, 2);
         const blob = new Blob([data], { type: "text/plain" });
         const url = URL.createObjectURL(blob); 
         const a = document.createElement("a"); a.href = url; 
         let safeDate = session.date.replace(/[\/ :]/g, '_');
-        a.download = `Gege_Session_${type}_${safeDate}.txt`;
+        a.download = `Compteur_Session_${type}_${safeDate}.txt`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a); 
         if(window.ui) window.ui.showToast("📤 Session exportée !");
     },
@@ -367,10 +396,44 @@ const app = {
                     let cSess = data.sessions.filter(s => s.sessionType === 'cars');
                     localStorage.setItem('truckSessions', JSON.stringify(tSess));
                     localStorage.setItem('carSessions', JSON.stringify(cSess));
+                    
+                    if (data.globalSummary?.globalDonneesBrutesCamions) {
+                        localStorage.setItem('globalTruckCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesCamions));
+                    }
+                    if (data.globalSummary?.globalDonneesBrutesVehicules) {
+                        localStorage.setItem('globalCarCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesVehicules));
+                    }
+                    
                     alert("✅ Historique importé avec succès ! Redémarrage..."); location.reload();
                 } else if(!data.sessions) { alert("❌ Format non reconnu."); }
             } catch (err) { alert("❌ Fichier invalide ou corrompu !"); }
         }; reader.readAsText(file);
+    },
+
+    renderGlobalStats() {
+        let gTruckTotal = 0;
+        let truckHtml = '';
+        this.brands.forEach(b => {
+            let count = (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0);
+            gTruckTotal += count;
+            if (count > 0) truckHtml += `<div class="km-stat-card"><span class="km-stat-title">${b}</span><span class="km-stat-value">${count}</span></div>`;
+        });
+        
+        let ttEl = document.getElementById('global-truck-total'); if(ttEl) ttEl.innerText = gTruckTotal;
+        let tlEl = document.getElementById('global-truck-list'); 
+        if(tlEl) tlEl.innerHTML = truckHtml || '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Rien de compté pour l\'instant... 🚚</span>';
+
+        let gCarTotal = 0;
+        let carHtml = '';
+        this.vehicleTypes.forEach(v => {
+            let count = this.globalCarCounters[v] || 0;
+            gCarTotal += count;
+            if (count > 0) carHtml += `<div class="km-stat-card"><span class="km-stat-title">${v}</span><span class="km-stat-value">${count}</span></div>`;
+        });
+        
+        let ctEl = document.getElementById('global-car-total'); if(ctEl) ctEl.innerText = gCarTotal;
+        let clEl = document.getElementById('global-car-list'); 
+        if(clEl) clEl.innerHTML = carHtml || '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Rien de compté pour l\'instant... 🚗</span>';
     },
 
     renderTrucks() {
@@ -403,7 +466,6 @@ const app = {
         this.vehicleTypes.forEach(v => grandTotal += (this.vehicleCounters[v] || 0)); 
         let cgt = document.getElementById('car-grand-total'); if(cgt) cgt.innerText = grandTotal;
 
-        // Dictionnaire pour lier les noms exacts aux ID HTML sans erreur
         const slugMap = {
             "Voitures": "voitures",
             "Utilitaires": "utilitaires",
@@ -421,7 +483,6 @@ const app = {
             let bar = document.getElementById(`bar-${slug}`);
             if (bar) { 
                 bar.style.width = pct + '%'; 
-                // On affiche le texte seulement si le total > 0 ET que ce véhicule a été compté
                 bar.innerText = (grandTotal > 0 && this.vehicleCounters[v] > 0) ? `${pct}%` : ''; 
             }
         });

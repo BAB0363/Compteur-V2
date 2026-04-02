@@ -1,6 +1,6 @@
 {
-  "name": "Compteurs Gégé",
-  "short_name": "Gégé",
+  "name": "Compteur Trafic",
+  "short_name": "Compteur",
   "description": "L'application ultime pour compter les camions et véhicules !",
   "start_url": "./index.html",
   "display": "standalone",

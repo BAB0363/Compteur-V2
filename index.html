@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Compteurs Gégé</title>
-    <link rel="manifest" href="manifest.json?v=8">
+    <title>Compteur Trafic</title>
+    <link rel="manifest" href="manifest.json?v=9">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=8">
+    <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
@@ -18,12 +18,13 @@
     </div>
 
     <button id="btn-install-pwa" class="no-print" style="display: none; width: 100%; margin-bottom: 15px; padding: 12px; background-color: #27ae60; color: white; border-radius: 6px; font-weight: bold; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
-        📲 Installer Gégé sur l'écran d'accueil
+        📲 Installer l'application sur l'écran d'accueil
     </button>
 
     <div class="main-tabs no-print">
         <button id="tab-trucks" class="active" onclick="window.ui.switchTab('trucks')">🚛 Camions</button>
         <button id="tab-cars" onclick="window.ui.switchTab('cars')">🚗 Véhicules</button>
+        <button id="tab-global" onclick="window.ui.switchTab('global')">🌍 Global</button>
         <button id="tab-save" onclick="window.ui.switchTab('save')">💾 Sauvegarde</button>
     </div>
 
@@ -145,10 +146,33 @@
         </div>
     </div>
 
+    <div id="section-global" style="display: none;" class="no-print">
+        <div class="header-dashboard" style="border-left: 4px solid #27ae60;">
+            <h3 style="margin-top: 0; color: var(--text-color);">🌍 Statistiques Globales</h3>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Ces données s'actualisent à chaque action depuis le début. Elles ne sont jamais réinitialisées par les arrêts de sessions.</p>
+        </div>
+        
+        <div class="km-stats-container">
+            <h4 style="color: #e67e22;">🚛 Cumul Camions</h4>
+            <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="global-truck-total" style="color:#27ae60;">0</span></div>
+            <div id="global-truck-list" class="km-stats-grid"></div>
+        </div>
+
+        <div class="km-stats-container">
+            <h4 style="color: #3498db;">🚗 Cumul Véhicules</h4>
+            <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="global-car-total" style="color:#27ae60;">0</span></div>
+            <div id="global-car-list" class="km-stats-grid"></div>
+        </div>
+        
+        <div class="actions-container no-print" style="justify-content: center; margin-top: 20px;">
+            <button class="reset-btn" onclick="window.app.resetGlobalStats()">🗑️ Remettre à zéro le Global</button>
+        </div>
+    </div>
+
     <div id="section-save" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #34495e;">
-            <h3 style="margin-top: 0; color: #2c3e50;">💾 Sauvegarde & Export IA</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Exporte tes compteurs au format texte optimisé pour l'analyse par une IA, ou restaure tes données.</p>
+            <h3 style="margin-top: 0; color: var(--text-color);">💾 Sauvegarde & Export IA</h3>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Exporte tes compteurs et ton historique au format texte optimisé pour l'analyse, ou restaure tes données.</p>
             <button class="share-btn" style="width: 100%; margin-bottom: 10px; background-color: #2980b9; padding: 15px; font-size: 1.1em;" onclick="window.app.exportSaveFile()">📤 Exporter pour Analyse (.txt)</button>
             <input type="file" id="import-save-file" accept=".json,.gege,.txt" style="display:none;" onchange="window.app.importSaveFile(event)">
             <button class="share-btn" style="width: 100%; background-color: #27ae60; padding: 15px; font-size: 1.1em;" onclick="document.getElementById('import-save-file').click()">📥 Importer des Données</button>
@@ -166,14 +190,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=8"></script>
+    <script type="module" src="jsapp.js?v=9"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('./sw.js')
             .then(registration => {
-              console.log('Service Worker Gégé enregistré avec succès !', registration.scope);
+              console.log('Service Worker Compteur enregistré avec succès !', registration.scope);
             })
             .catch(err => {
               console.log('Échec de l\'enregistrement du Service Worker:', err);
