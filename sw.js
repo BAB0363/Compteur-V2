@@ -1,4 +1,4 @@
-const CACHE_NAME = 'compteur-cache-v10'; 
+const CACHE_NAME = 'compteur-cache-v11'; 
 const urlsToCache = [
   './',
   './index.html',
@@ -18,7 +18,7 @@ self.addEventListener('install', event => {
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-        console.log('📦 Mise en cache des fichiers Compteur Trafic v10...');
+        console.log('📦 Mise en cache des fichiers Compteur Trafic v11...');
         return cache.addAll(urlsToCache);
     })
   );
