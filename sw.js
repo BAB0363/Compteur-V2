@@ -1,4 +1,4 @@
-const CACHE_NAME = 'compteur-cache-v9'; 
+const CACHE_NAME = 'compteur-cache-v10'; 
 const urlsToCache = [
   './',
   './index.html',
@@ -10,14 +10,15 @@ const urlsToCache = [
   './icon.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-  'https://unpkg.com/leaflet.heat/dist/leaflet-heat.js'
+  'https://unpkg.com/leaflet.heat/dist/leaflet-heat.js',
+  'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
 self.addEventListener('install', event => {
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-        console.log('📦 Mise en cache des fichiers Compteur Trafic v9...');
+        console.log('📦 Mise en cache des fichiers Compteur Trafic v10...');
         return cache.addAll(urlsToCache);
     })
   );

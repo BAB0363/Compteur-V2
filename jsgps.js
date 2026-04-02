@@ -4,6 +4,7 @@ export const gps = {
     currentSpeed: 0,
     lastTrackedPos: null,
     currentWeatherLabel: "Inconnue",
+    isFetchingWeather: false,
 
     init() {
         this.startTracking();
@@ -68,26 +69,39 @@ export const gps = {
     },
 
     async fetchWeather() {
-        if (!this.currentPos.lat) return;
+        if (!this.currentPos.lat) {
+            let wStatus = document.getElementById('weather-status');
+            if(wStatus) { wStatus.innerHTML = "❌ Position introuvable 🔄"; wStatus.style.color = "#e74c3c"; }
+            return;
+        }
+        if (this.isFetchingWeather) return; // Anti-spam clic
+        
+        this.isFetchingWeather = true;
+        let wStatus = document.getElementById('weather-status');
+        if(wStatus) { wStatus.innerHTML = "⏳ Météo en cours..."; wStatus.style.color = "#bdc3c7"; }
+
         try {
             let res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${this.currentPos.lat}&longitude=${this.currentPos.lon}&current_weather=true`);
+            if (!res.ok) throw new Error("Erreur réseau");
             let data = await res.json();
             let code = data.current_weather.weathercode;
-            let wStatus = document.getElementById('weather-status');
             
             if(code === 0 || code === 1) {
                 this.currentWeatherLabel = "Dégagée";
-                if(wStatus) { wStatus.innerText = "☀️ Météo Dégagée"; wStatus.style.color = "#f39c12"; }
+                if(wStatus) { wStatus.innerHTML = "☀️ Météo Dégagée 🔄"; wStatus.style.color = "#f39c12"; }
             } else if (code > 1 && code < 50) {
                 this.currentWeatherLabel = "Nuageuse";
-                if(wStatus) { wStatus.innerText = "☁️ Météo Nuageuse"; wStatus.style.color = "#bdc3c7"; }
+                if(wStatus) { wStatus.innerHTML = "☁️ Météo Nuageuse 🔄"; wStatus.style.color = "#bdc3c7"; }
             } else {
                 this.currentWeatherLabel = "Pluie / Difficile";
-                if(wStatus) { wStatus.innerText = "🌧️ Météo Difficile"; wStatus.style.color = "#3498db"; }
+                if(wStatus) { wStatus.innerHTML = "🌧️ Météo Difficile 🔄"; wStatus.style.color = "#3498db"; }
             }
         } catch(e) { 
             console.warn("Impossible de récupérer la météo locale."); 
             this.currentWeatherLabel = "Inconnue";
+            if(wStatus) { wStatus.innerHTML = "❌ Météo Inconnue 🔄"; wStatus.style.color = "#e74c3c"; }
+        } finally {
+            this.isFetchingWeather = false;
         }
     },
 
@@ -126,7 +140,14 @@ export const gps = {
         
         let defaultPos = this.currentPos.lat ? [this.currentPos.lat, this.currentPos.lon] : [46.603354, 1.888334]; 
         mapInstance = L.map(mapId).setView(defaultPos, 6);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
+        
+        // Mode nuit pour la carte si le Dark Mode est activé
+        let isDark = document.body.classList.contains('dark-mode');
+        let tileUrl = isDark 
+            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' 
+            : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        
+        L.tileLayer(tileUrl).addTo(mapInstance);
         
         let latlngs = []; 
         let heatData = []; 

@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=9">
+    <link rel="manifest" href="manifest.json?v=10">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=9">
+    <link rel="stylesheet" href="style.css?v=10">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -31,7 +32,7 @@
     <div class="status-row no-print">
         <div id="wake-lock-status">⚙️ Écran...</div>
         <div id="gps-status">📍 GPS en attente...</div>
-        <div id="weather-status" style="color: #3498db;">☀️ Météo en cours...</div>
+        <div id="weather-status" style="color: #3498db; cursor: pointer; display: flex; align-items: center; gap: 4px;" onclick="window.gps.fetchWeather()">☀️ Météo... 🔄</div>
     </div>
 
     <div id="section-trucks">
@@ -155,12 +156,18 @@
         <div class="km-stats-container">
             <h4 style="color: #e67e22;">🚛 Cumul Camions</h4>
             <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="global-truck-total" style="color:#27ae60;">0</span></div>
+            <div style="position: relative; height: 250px; width: 100%; margin-bottom: 15px;">
+                <canvas id="globalTruckChart"></canvas>
+            </div>
             <div id="global-truck-list" class="km-stats-grid"></div>
         </div>
 
         <div class="km-stats-container">
             <h4 style="color: #3498db;">🚗 Cumul Véhicules</h4>
             <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="global-car-total" style="color:#27ae60;">0</span></div>
+            <div style="position: relative; height: 250px; width: 100%; margin-bottom: 15px;">
+                <canvas id="globalCarChart"></canvas>
+            </div>
             <div id="global-car-list" class="km-stats-grid"></div>
         </div>
         
@@ -190,12 +197,12 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=9"></script>
+    <script type="module" src="jsapp.js?v=10"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js')
+          navigator.serviceWorker.register('./sw.js?v=10')
             .then(registration => {
               console.log('Service Worker Compteur enregistré avec succès !', registration.scope);
             })
