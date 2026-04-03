@@ -114,15 +114,16 @@ export const ui = {
 
     switchTab(tab) {
         this.activeTab = tab;
-        ['trucks', 'cars', 'global', 'analytics', 'save'].forEach(t => {
+        // Mise à jour de la liste des onglets
+        ['trucks', 'cars', 'dashboard', 'settings'].forEach(t => {
             let sec = document.getElementById(`section-${t}`);
             let btn = document.getElementById(`tab-${t}`);
             if(sec) sec.style.display = tab === t ? 'block' : 'none';
             if(btn) btn.classList.toggle('active', tab === t);
         });
         
-        if(tab === 'global' && window.app) window.app.renderGlobalStats();
-        if(tab === 'analytics' && window.app) window.app.renderAnalytics('trucks');
+        // Appel de la nouvelle fonction unifiée de rendu
+        if(tab === 'dashboard' && window.app) window.app.renderDashboard('trucks');
     },
 
     toggleTruckStats() {
@@ -137,7 +138,7 @@ export const ui = {
             if(window.app) window.app.renderAdvancedStats('trucks');
         } else { 
             s.style.display = 'none'; m.style.display = 'block'; 
-            btn.innerText = "📊 Stats & Carte"; btn.classList.remove('active'); 
+            btn.innerText = "🗺️ Carte & Actuel"; btn.classList.remove('active'); 
         }
     },
 
@@ -153,7 +154,7 @@ export const ui = {
             if(window.app) window.app.renderAdvancedStats('cars');
         } else { 
             s.style.display = 'none'; m.style.display = 'block'; 
-            btn.innerText = "📊 Stats & Carte"; btn.classList.remove('active'); 
+            btn.innerText = "🗺️ Carte & Actuel"; btn.classList.remove('active'); 
         }
     }
 };

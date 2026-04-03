@@ -4,20 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=12">
+    <link rel="manifest" href="manifest.json?v=13">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=12">
+    <link rel="stylesheet" href="style.css?v=13">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
     <div id="toast-container" class="no-print"></div>
 
-    <div class="top-bar-controls no-print">
-        <select id="profile-selector" onchange="window.app.changeProfile(this.value)" style="padding: 8px 10px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px var(--shadow);">
-            <option value="voiture">🚘 Profil : Voiture</option>
-            <option value="camion">🚛 Profil : Camion</option>
-        </select>
+    <div class="top-bar-controls no-print" style="justify-content: flex-end;">
         <div style="display: flex; gap: 5px;">
             <button id="btn-theme" onclick="window.ui.toggleDarkMode()">🌙 Nuit</button>
             <button id="btn-undo" onclick="window.app.undoLast()">↩️ Annuler</button>
@@ -31,9 +27,8 @@
     <div class="main-tabs no-print">
         <button id="tab-trucks" class="active" onclick="window.ui.switchTab('trucks')">🚛 Camions</button>
         <button id="tab-cars" onclick="window.ui.switchTab('cars')">🚗 Véhicules</button>
-        <button id="tab-global" onclick="window.ui.switchTab('global')">🌍 Global</button>
-        <button id="tab-analytics" onclick="window.ui.switchTab('analytics')">📈 Analyses</button>
-        <button id="tab-save" onclick="window.ui.switchTab('save')">💾 Sauvegarde</button>
+        <button id="tab-dashboard" onclick="window.ui.switchTab('dashboard')">📈 Tableau de Bord</button>
+        <button id="tab-settings" onclick="window.ui.switchTab('settings')">⚙️ Paramètres</button>
     </div>
 
     <div class="status-row no-print">
@@ -53,7 +48,7 @@
                     <button id="btn-truck-chrono" class="btn-chrono" onclick="window.app.toggleTruckChrono()">▶️ Start</button>
                     <button class="btn-chrono-reset" onclick="window.app.stopTruckSession()">⏹️ Stop</button>
                 </div>
-                <button id="btn-truck-stats" class="btn-stats-toggle" onclick="window.ui.toggleTruckStats()">📊 Stats & Carte</button>
+                <button id="btn-truck-stats" class="btn-stats-toggle" onclick="window.ui.toggleTruckStats()">🗺️ Carte & Actuel</button>
             </div>
             
             <div class="totals-row">
@@ -79,11 +74,6 @@
 
         <div id="truck-stats-view" style="display: none;">
             <button class="btn-return-large no-print" onclick="window.ui.toggleTruckStats()">⬅️ Retour aux compteurs</button>
-            
-            <div class="actions-container no-print" style="margin-bottom: 20px; justify-content: flex-end;">
-                <button class="reset-btn" style="flex: none; width: 100%;" onclick="window.app.resetTrucks()">🗑️ Effacer tout l'historique Camions</button>
-            </div>
-
             <div id="map-trucks" class="mini-map no-print"></div>
 
             <h3 style="margin-top:10px;" class="no-print">Historique Actuel</h3>
@@ -106,7 +96,7 @@
                     <button id="btn-car-chrono" class="btn-chrono" onclick="window.app.toggleCarChrono()">▶️ Start</button>
                     <button class="btn-chrono-reset" onclick="window.app.stopCarSession()">⏹️ Stop</button>
                 </div>
-                <button id="btn-car-stats" class="btn-stats-toggle" onclick="window.ui.toggleCarStats()">📊 Stats & Carte</button>
+                <button id="btn-car-stats" class="btn-stats-toggle" onclick="window.ui.toggleCarStats()">🗺️ Carte & Actuel</button>
             </div>
 
             <div class="totals-row">
@@ -138,11 +128,6 @@
 
         <div id="car-stats-view" style="display: none;">
             <button class="btn-return-large no-print" onclick="window.ui.toggleCarStats()">⬅️ Retour aux compteurs</button>
-            
-            <div class="actions-container no-print" style="margin-bottom: 20px; justify-content: flex-end;">
-                <button class="reset-btn" style="flex: none; width: 100%;" onclick="window.app.resetCars()">🗑️ Effacer tout l'historique Véhicules</button>
-            </div>
-
             <div id="map-cars" class="mini-map no-print"></div>
 
             <h3 style="margin-top:10px;" class="no-print">Historique Actuel</h3>
@@ -153,68 +138,69 @@
         </div>
     </div>
 
-    <div id="section-global" style="display: none;" class="no-print">
-        <div class="header-dashboard" style="border-left: 4px solid #27ae60;">
-            <h3 style="margin-top: 0; color: var(--text-color);">🌍 Statistiques Globales</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Données cumulées pour ce profil.</p>
-        </div>
-        
-        <div class="km-stats-container">
-            <h4 style="color: #e67e22;">🚛 Cumul Camions</h4>
-            <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="global-truck-total" style="color:#27ae60;">0</span></div>
-            <div class="chart-wrapper"><canvas id="globalTruckChart"></canvas></div>
-            <div id="global-truck-list" class="km-stats-grid"></div>
-        </div>
-
-        <div class="km-stats-container">
-            <h4 style="color: #3498db;">🚗 Cumul Véhicules</h4>
-            <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="global-car-total" style="color:#27ae60;">0</span></div>
-            <div class="chart-wrapper"><canvas id="globalCarChart"></canvas></div>
-            <div id="global-car-list" class="km-stats-grid"></div>
-        </div>
-        
-        <div class="actions-container no-print" style="justify-content: center; margin-top: 20px;">
-            <button class="reset-btn" onclick="window.app.resetGlobalStats()">🗑️ Remettre à zéro le Global</button>
-        </div>
-    </div>
-
-    <div id="section-analytics" style="display: none;" class="no-print">
+    <div id="section-dashboard" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #e67e22;">
-            <h3 style="margin-top: 0; color: var(--text-color);">📈 Analyses Avancées</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Tendances globales absolues, indépendantes de l'historique de tes sessions.</p>
+            <h3 style="margin-top: 0; color: var(--text-color);">📈 Tableau de Bord</h3>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Données globales et analyses pour ce profil.</p>
         </div>
 
-        <div class="main-tabs" style="margin-bottom: 10px;">
-            <button id="btn-ana-trucks" class="active" onclick="window.app.renderAnalytics('trucks')" style="background-color: #e67e22; color:white;">🚛 Données Camions</button>
-            <button id="btn-ana-cars" onclick="window.app.renderAnalytics('cars')" style="background-color: var(--btn-bg);">🚗 Données Véhicules</button>
+        <div class="main-tabs" style="margin-bottom: 15px;">
+            <button id="btn-ana-trucks" class="active" onclick="window.app.renderDashboard('trucks')" style="background-color: #e67e22; color:white;">🚛 Global Camions</button>
+            <button id="btn-ana-cars" onclick="window.app.renderDashboard('cars')" style="background-color: var(--btn-bg);">🚗 Global Véhicules</button>
+        </div>
+
+        <div class="km-stats-container">
+            <h4 id="dash-title-total" style="color: #e67e22;">🚛 Cumul Total</h4>
+            <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="dash-grand-total" style="color:#27ae60;">0</span></div>
+            <div class="chart-wrapper"><canvas id="dashboardMainChart"></canvas></div>
+            <div id="dashboard-main-list" class="km-stats-grid"></div>
         </div>
 
         <div class="km-stats-container">
             <h4>📅 Répartition Hebdomadaire</h4>
-            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Trafic global par jour de la semaine.</p>
             <div class="chart-wrapper"><canvas id="weeklyChart"></canvas></div>
         </div>
 
         <div class="km-stats-container">
             <h4>⛰️ Analyse de l'Altitude</h4>
-            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Densité du trafic selon l'altitude GPS.</p>
             <div class="chart-wrapper"><canvas id="altitudeChart"></canvas></div>
         </div>
 
         <div class="km-stats-container">
             <h4>🔁 Top 5 des Séquences</h4>
-            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Qu'est-ce qui suit quoi le plus souvent ?</p>
             <div id="sequence-container"></div>
         </div>
     </div>
 
-    <div id="section-save" style="display: none;" class="no-print">
+    <div id="section-settings" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #34495e;">
-            <h3 style="margin-top: 0; color: var(--text-color);">💾 Sauvegarde & Export IA</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Exporte tes compteurs et ton historique enrichi au format texte optimisé pour l'analyse.</p>
-            <button class="share-btn" style="width: 100%; margin-bottom: 10px; background-color: #2980b9; padding: 15px; font-size: 1.1em;" onclick="window.app.exportSaveFile()">📤 Exporter pour Analyse (.txt)</button>
+            <h3 style="margin-top: 0; color: var(--text-color);">⚙️ Paramètres & Données</h3>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Gère ton profil, tes sauvegardes et tes effacements.</p>
+        </div>
+
+        <div class="km-stats-container">
+            <h4>👤 Profil Actif</h4>
+            <select id="profile-selector" onchange="window.app.changeProfile(this.value)" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); font-weight: bold; cursor: pointer;">
+                <option value="voiture">🚘 Mode : Compteur Voiture</option>
+                <option value="camion">🚛 Mode : Compteur Camion</option>
+            </select>
+        </div>
+
+        <div class="km-stats-container">
+            <h4>💾 Export / Import</h4>
+            <button class="share-btn" style="width: 100%; margin-bottom: 10px; background-color: #2980b9; padding: 15px; font-size: 1em;" onclick="window.app.exportSaveFile()">📤 Exporter les données (.txt)</button>
             <input type="file" id="import-save-file" accept=".json,.gege,.txt" style="display:none;" onchange="window.app.importSaveFile(event)">
-            <button class="share-btn" style="width: 100%; background-color: #27ae60; padding: 15px; font-size: 1.1em;" onclick="document.getElementById('import-save-file').click()">📥 Importer des Données</button>
+            <button class="share-btn" style="width: 100%; background-color: #27ae60; padding: 15px; font-size: 1em;" onclick="document.getElementById('import-save-file').click()">📥 Importer une sauvegarde</button>
+        </div>
+
+        <div class="km-stats-container" style="border: 1px solid #e74c3c;">
+            <h4 style="color: #e74c3c;">⚠️ Zone de Danger</h4>
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Remises à zéro. Action irréversible.</p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button class="reset-btn" onclick="window.app.resetTrucks()">🗑️ Effacer sessions Camions</button>
+                <button class="reset-btn" onclick="window.app.resetCars()">🗑️ Effacer sessions Véhicules</button>
+                <button class="reset-btn" style="background-color: #8b0000;" onclick="window.app.resetGlobalStats()">🧨 Tout remettre à zéro (Global)</button>
+            </div>
         </div>
     </div>
 
@@ -244,12 +230,12 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=12"></script>
+    <script type="module" src="jsapp.js?v=13"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=12')
+          navigator.serviceWorker.register('./sw.js?v=13')
             .then(registration => {
               console.log('Service Worker Compteur enregistré avec succès !', registration.scope);
             })
