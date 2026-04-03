@@ -3,7 +3,7 @@ export const ui = {
     activeTab: 'trucks',
     deferredPrompt: null,
     audioCtx: null,
-    lottieInstance: null, // Nouvelle variable pour notre animation Lottie ✨
+    lottieInstance: null,
 
     playBeep(isAdding) {
         try {
@@ -36,7 +36,7 @@ export const ui = {
     init() {
         this.applyTheme();
         this.initPWAInstall();
-        this.initLottie(); // On lance l'initialisation de Lottie au démarrage
+        this.initLottie();
     },
 
     initLottie() {
@@ -47,7 +47,6 @@ export const ui = {
                 renderer: 'svg',
                 loop: false,
                 autoplay: false,
-                // URL d'une animation publique d'étincelle (tu pourras la changer !)
                 path: 'https://assets9.lottiefiles.com/packages/lf20_u4yrau.json' 
             });
         }
@@ -101,7 +100,6 @@ export const ui = {
     showClickParticle(e, text, color = '#27ae60') {
         if(!e || !e.clientX) return;
 
-        // Déclenchement de l'animation Lottie 🎉
         const lottieContainer = document.getElementById('lottie-container');
         if (lottieContainer && this.lottieInstance) {
             lottieContainer.style.left = e.clientX + 'px';
@@ -109,11 +107,9 @@ export const ui = {
             lottieContainer.style.display = 'block';
             this.lottieInstance.stop();
             this.lottieInstance.play();
-            // On cache le conteneur une fois l'animation finie (approx. 800ms)
             setTimeout(() => { lottieContainer.style.display = 'none'; }, 800);
         }
 
-        // On garde aussi le texte "+1" qui monte
         const particle = document.createElement('div');
         particle.className = 'click-particle';
         particle.innerText = text;
@@ -144,7 +140,6 @@ export const ui = {
 
     switchTab(tab) {
         this.activeTab = tab;
-        // Mise à jour de la liste des onglets
         ['trucks', 'cars', 'dashboard', 'settings'].forEach(t => {
             let sec = document.getElementById(`section-${t}`);
             let btn = document.getElementById(`tab-${t}`);
@@ -152,7 +147,6 @@ export const ui = {
             if(btn) btn.classList.toggle('active', tab === t);
         });
         
-        // Appel de la nouvelle fonction unifiée de rendu
         if(tab === 'dashboard' && window.app) window.app.renderDashboard('trucks');
     },
 

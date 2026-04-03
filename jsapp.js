@@ -32,12 +32,10 @@ const app = {
     liveTruckDistance: 0, liveCarDistance: 0,
     wakeLock: null, 
     
-    // Graphiques
     mainDashboardChart: null, 
     temporalChart: null, weeklyChart: null, altitudeChart: null, weeklyGlobalChart: null,
-    weatherChart: null, // NOUVEAU : Corrélation Météo
+    weatherChart: null, 
 
-    // Filtres
     currentDashboardFilter: 'all',
     activeDashboardType: 'trucks',
 
@@ -360,7 +358,8 @@ const app = {
                 this.globalTruckCounters[brand][type] += amount; 
                 
                 let nowTs = new Date().getTime();
-                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.truckSeconds), timestamp: nowTs };
+                let wLabel = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
+                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, weather: wLabel, chronoTime: this.formatTime(this.truckSeconds), timestamp: nowTs };
                 this.truckHistory.push(histItem);
 
                 let d = new Date(nowTs);
@@ -405,7 +404,8 @@ const app = {
                 this.globalCarCounters[type] += amount; 
 
                 let nowTs = new Date().getTime();
-                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.carSeconds), timestamp: nowTs };
+                let wLabel = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
+                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, weather: wLabel, chronoTime: this.formatTime(this.carSeconds), timestamp: nowTs };
                 this.carHistory.push(histItem);
 
                 let d = new Date(nowTs);
@@ -738,7 +738,6 @@ const app = {
         let count = 0, time = 0, dist = 0;
         let title = "";
 
-        // Pour la vue "Globale", on garde les données brutes cumulées depuis le premier jour.
         if (type === 'trucks') {
             time = this.globalTruckTime; dist = this.globalTruckDistance;
             if (key === 'Total') {
@@ -762,6 +761,8 @@ const app = {
         let freq = (count > 0 && time > 0) ? (time / 60 / count).toFixed(1) + " min/véh." : "-";
         let speed = (time > 0) ? (count / (time / 3600)).toFixed(1) + " /h" : "-";
         let avgKm = (dist > 0) ? (count / dist).toFixed(2) + " /km" : "-";
+        let espTemps = count > 1 ? (time / count).toFixed(1) + " s" : "-";
+        let espDist = (count > 1 && dist > 0) ? ((dist * 1000) / count).toFixed(0) + " m" : "-";
 
         let html = `
             <div class="session-detail-row"><span class="session-detail-label">Temps total cumulé</span><span class="session-detail-value">${this.formatTime(time)}</span></div>
@@ -772,6 +773,7 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Moyenne par km</span><span class="session-detail-value" style="color:#8e44ad;">${avgKm}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Fréquence d'apparition</span><span class="session-detail-value">${freq}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Rythme par heure</span><span class="session-detail-value">${speed}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Espacement Moyen</span><span class="session-detail-value">${espTemps} / ${espDist}</span></div>
         `;
 
         document.getElementById('modal-session-title').innerText = `🌍 Stats Globales : ${title}`;
@@ -783,7 +785,6 @@ const app = {
 
         document.getElementById('session-detail-modal').style.display = 'flex';
 
-        // Lier le bouton PDF pour les stats globales
         let btnPdf = document.getElementById('btn-export-pdf');
         if(btnPdf) {
             btnPdf.onclick = () => window.app.exportSessionPDF();
@@ -822,13 +823,11 @@ const app = {
         }
     },
 
-    // 📅 NOUVEAU : Fonction de filtrage du tableau de bord
     async applyDashboardFilter(filterValue) {
         this.currentDashboardFilter = filterValue;
         await this.renderDashboard(this.activeDashboardType || 'trucks');
     },
 
-    // 🌟 NOUVEAU TABLEAU DE BORD : Dynamique avec Filtres et Météo
     async renderDashboard(type) {
         this.activeDashboardType = type;
         
@@ -848,25 +847,23 @@ const app = {
         let allHistories = [];
         let now = new Date();
         
-        // On inclut la session en cours
         if (liveHistory && liveHistory.length > 0) {
             allHistories.push({ history: liveHistory, weather: window.gps ? window.gps.currentWeatherLabel : "Inconnue" });
         }
-        // On inclut l'historique IDB
-        sessions.forEach(s => allHistories.push({ history: s.history, weather: s.weather }));
+        sessions.forEach(s => allHistories.push(s)); // Push the entire session object for ID check
 
         let counters = {};
         let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
         let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
         let seqs = {};
-        let weathers = {}; // NOUVEAU : Pour la météo
+        let weathers = {}; 
         let dayKeys = Object.keys(days);
         let gTotal = 0;
+        let gTotalDist = 0;
 
         allHistories.forEach(s => {
             if (!s.history || s.history.length === 0) return;
             
-            // On vérifie le filtre avec la date du premier véhicule
             let firstItem = s.history.find(h => h.timestamp);
             if (!firstItem) return;
             let sDate = new Date(firstItem.timestamp);
@@ -874,13 +871,17 @@ const app = {
             if (filter === 'month' && (sDate.getMonth() !== now.getMonth() || sDate.getFullYear() !== now.getFullYear())) return;
             if (filter === 'week' && (now.getTime() - sDate.getTime() > 7 * 24 * 60 * 60 * 1000)) return;
 
-            let weatherLabel = s.weather || "Inconnue";
+            // Ajout de la distance pour calculer les ratios exacts selon le filtre
+            gTotalDist += (!s.id) ? (type === 'trucks' ? this.liveTruckDistance : this.liveCarDistance) : (s.distanceKm || 0);
+
             let sHist = s.history.filter(h => !h.isEvent);
             
             sHist.forEach((h, i) => {
                 let vehType = type === 'trucks' ? h.brand : h.type;
+                let weatherLabel = h.weather || s.weather || "Inconnue"; // Météo du clic prioritaire
+                
                 counters[vehType] = (counters[vehType] || 0) + 1;
-                weathers[weatherLabel] = (weathers[weatherLabel] || 0) + 1; // Comptage Météo
+                weathers[weatherLabel] = (weathers[weatherLabel] || 0) + 1;
                 gTotal++;
 
                 if (h.timestamp) {
@@ -899,15 +900,14 @@ const app = {
             });
         });
 
-        // ---------------- METTRE A JOUR LE DOM ----------------
-
         let tTitle = document.getElementById('dash-title-total'); 
         if (tTitle) { 
             tTitle.innerText = type === 'trucks' ? "🚛 Cumul Total Camions" : "🚗 Cumul Total Véhicules"; 
             tTitle.style.color = type === 'trucks' ? "#e67e22" : "#3498db"; 
         }
 
-        let htmlList = `<div class="km-stat-card" style="border-color:${type === 'trucks' ? '#27ae60' : '#3498db'}; cursor:pointer; background:var(--bg-color);" onclick="window.app.showGlobalDetails('${type}', 'Total')"><span class="km-stat-title">${type === 'trucks' ? 'Toutes Marques' : 'Tous Véhicules'}</span><span class="km-stat-value" style="color:${type === 'trucks' ? '#27ae60' : '#3498db'}; font-size:0.9em;">🔍 Voir Absolus</span></div>`;
+        let gRatio = gTotalDist > 0 ? (gTotal / gTotalDist).toFixed(1) + " /km" : "- /km";
+        let htmlList = `<div class="km-stat-card" style="border-color:${type === 'trucks' ? '#27ae60' : '#3498db'}; cursor:pointer; background:var(--bg-color);" onclick="window.app.showGlobalDetails('${type}', 'Total')"><span class="km-stat-title">${type === 'trucks' ? 'Toutes Marques' : 'Tous Véhicules'}</span><span class="km-stat-value" style="color:${type === 'trucks' ? '#27ae60' : '#3498db'}; font-size:0.9em;">🔍 Voir Absolus</span><span style="display:block; font-size:0.75em; color:#7f8c8d; margin-top:3px;">${gRatio}</span></div>`;
         
         let labelsForChart = [];
         let dataForChart = [];
@@ -916,7 +916,8 @@ const app = {
         typeList.forEach(item => {
             let count = counters[item] || 0;
             if (count > 0) {
-                htmlList += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('${type}', '${item}')"><span class="km-stat-title">${item}</span><span class="km-stat-value">${count}</span></div>`;
+                let ratio = gTotalDist > 0 ? (count / gTotalDist).toFixed(1) + " /km" : "";
+                htmlList += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('${type}', '${item}')"><span class="km-stat-title">${item}</span><span class="km-stat-value">${count}</span><span style="display:block; font-size:0.75em; color:#7f8c8d; margin-top:3px;">${ratio}</span></div>`;
                 labelsForChart.push(item);
                 dataForChart.push(count);
             }
@@ -929,7 +930,6 @@ const app = {
         const textColor = isDark ? '#d2dae2' : '#2c3e50';
         const colors = ['#3498db', '#e67e22', '#2ecc71', '#9b59b6', '#f1c40f', '#e74c3c', '#1abc9c', '#34495e'];
 
-        // 🟢 Graphique Principal
         const ctxMain = document.getElementById('dashboardMainChart');
         if (ctxMain) {
             if (this.mainDashboardChart) this.mainDashboardChart.destroy();
@@ -942,7 +942,6 @@ const app = {
             }
         }
 
-        // 🟢 Graphique Hebdomadaire
         let ctxW = document.getElementById('weeklyChart');
         if(ctxW) {
             if(this.weeklyChart) this.weeklyChart.destroy();
@@ -953,7 +952,6 @@ const app = {
             });
         }
 
-        // 🟢 Graphique Altitude
         let ctxA = document.getElementById('altitudeChart');
         if(ctxA) {
             if(this.altitudeChart) this.altitudeChart.destroy();
@@ -964,7 +962,6 @@ const app = {
             });
         }
 
-        // ☀️ NOUVEAU : Corrélation Météo
         let ctxWeather = document.getElementById('weatherChart');
         if(ctxWeather) {
             if(this.weatherChart) this.weatherChart.destroy();
@@ -987,7 +984,6 @@ const app = {
             });
         }
 
-        // 🟢 Séquences
         let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
         let seqHtml = '';
         if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
@@ -1009,6 +1005,8 @@ const app = {
         let dist = session.distanceKm || 0;
         let avgSpeedKmh = session.durationSec > 0 ? (dist / (session.durationSec / 3600)).toFixed(1) : '-';
         let avgKm = dist > 0 ? (itemsCount / dist).toFixed(1) : '-';
+        let espTemps = itemsCount > 1 && session.durationSec > 0 ? (session.durationSec / itemsCount).toFixed(1) + " s" : "-";
+        let espDist = (itemsCount > 1 && dist > 0) ? ((dist * 1000) / itemsCount).toFixed(0) + " m" : "-";
 
         let html = `
             <div class="session-detail-row"><span class="session-detail-label">Date</span><span class="session-detail-value">${session.date}</span></div>
@@ -1017,11 +1015,12 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Durée</span><span class="session-detail-value">${this.formatTime(session.durationSec || 0)}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Distance</span><span class="session-detail-value">${dist} km</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne</span><span class="session-detail-value" style="color:#8e44ad;">${avgSpeedKmh} km/h</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Météo</span><span class="session-detail-value">${session.weather || 'Inconnue'}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Météo globale session</span><span class="session-detail-value">${session.weather || 'Inconnue'}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Véhicules comptés</span><span class="session-detail-value">${itemsCount}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Fréquence</span><span class="session-detail-value">${freq} min/véh.</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Rythme</span><span class="session-detail-value">${speed} /h</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Moyenne</span><span class="session-detail-value">${avgKm} /km</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Espacement Moyen</span><span class="session-detail-value">${espTemps} / ${espDist}</span></div>
         `;
         document.getElementById('modal-session-title').innerText = type === 'trucks' ? '🚛 Détails Session Camions' : '🚗 Détails Session Véhicules';
         document.getElementById('modal-session-content').innerHTML = html;
@@ -1032,7 +1031,6 @@ const app = {
 
         document.getElementById('session-detail-modal').style.display = 'flex';
 
-        // Lier le bouton PDF pour cette session
         let btnPdf = document.getElementById('btn-export-pdf');
         if(btnPdf) {
             btnPdf.onclick = () => window.app.exportSessionPDF();
@@ -1065,7 +1063,6 @@ const app = {
         }
     },
 
-    // 📄 NOUVEAU : Fonction pour générer le rapport PDF (html2pdf)
     exportSessionPDF() {
         if (typeof html2pdf === 'undefined') {
             if(window.ui) window.ui.showToast("⚠️ Outil PDF non chargé.");
@@ -1075,7 +1072,6 @@ const app = {
         let element = document.getElementById('pdf-export-content');
         let btns = element.querySelectorAll('button');
         
-        // On cache temporairement les boutons de la modale pour le PDF
         btns.forEach(b => b.style.display = 'none');
         
         let opt = {
@@ -1087,7 +1083,6 @@ const app = {
         };
         
         html2pdf().set(opt).from(element).save().then(() => {
-            // On restaure les boutons une fois le PDF généré
             btns.forEach(b => b.style.display = ''); 
             if(window.ui) window.ui.showToast("📄 Export PDF réussi !");
         });
@@ -1124,7 +1119,17 @@ const app = {
             let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
             let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
             let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
-            return { ...s, totalCount: count, camionsParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps };
+            let rythmeH = s.durationSec > 0 ? +(count / (s.durationSec / 3600)).toFixed(1) : 0;
+            
+            let detailAuKm = {};
+            if (s.distanceKm > 0 && s.summary) {
+               Object.keys(s.summary).forEach(b => {
+                  let tot = s.summary[b].fr + s.summary[b].etr;
+                  if(tot > 0) detailAuKm[b] = +(tot / s.distanceKm).toFixed(2);
+               });
+            }
+
+            return { ...s, totalCount: count, camionsParKm: vehPerKm, frequenceMinutes: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
         });
 
         let enrichedCarSessions = carSessions.map(s => {
@@ -1133,7 +1138,17 @@ const app = {
             let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
             let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
             let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
-            return { ...s, totalCount: count, vehiculesParKm: vehPerKm, frequenceMinutes: freqMin, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps };
+            let rythmeH = s.durationSec > 0 ? +(count / (s.durationSec / 3600)).toFixed(1) : 0;
+
+            let detailAuKm = {};
+            if (s.distanceKm > 0 && s.summary) {
+               Object.keys(s.summary).forEach(v => {
+                  let tot = s.summary[v];
+                  if(tot > 0) detailAuKm[v] = +(tot / s.distanceKm).toFixed(2);
+               });
+            }
+
+            return { ...s, totalCount: count, vehiculesParKm: vehPerKm, frequenceMinutes: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
         });
 
         let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];

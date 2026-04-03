@@ -9,7 +9,8 @@ export const gps = {
     init() {
         this.startTracking();
         setTimeout(() => this.fetchWeather(), 2000);
-        setInterval(() => this.fetchWeather(), 900000); 
+        // Mise à jour toutes les 5 minutes (300 000 ms) au lieu de 15 min
+        setInterval(() => this.fetchWeather(), 300000); 
     },
 
     startTracking() {
@@ -40,7 +41,7 @@ export const gps = {
 
                             if (window.app && window.app.isTruckRunning) { 
                                 window.app.liveTruckDistance += d; 
-                                window.app.globalTruckDistance += d; // Ajout au compteur Global
+                                window.app.globalTruckDistance += d;
                                 window.app.storage.set('liveTruckDist', window.app.liveTruckDistance); 
                                 window.app.storage.set('globalTruckDistance', window.app.globalTruckDistance); 
                                 window.app.updateTruckChronoDisp(); 
@@ -48,7 +49,7 @@ export const gps = {
                             }
                             if (window.app && window.app.isCarRunning) { 
                                 window.app.liveCarDistance += d; 
-                                window.app.globalCarDistance += d; // Ajout au compteur Global
+                                window.app.globalCarDistance += d;
                                 window.app.storage.set('liveCarDist', window.app.liveCarDistance); 
                                 window.app.storage.set('globalCarDistance', window.app.globalCarDistance); 
                                 window.app.updateCarChronoDisp(); 
@@ -74,7 +75,7 @@ export const gps = {
             if(wStatus) { wStatus.innerHTML = "❌ Position introuvable 🔄"; wStatus.style.color = "#e74c3c"; }
             return;
         }
-        if (this.isFetchingWeather) return; // Anti-spam clic
+        if (this.isFetchingWeather) return;
         
         this.isFetchingWeather = true;
         let wStatus = document.getElementById('weather-status');
@@ -86,15 +87,16 @@ export const gps = {
             let data = await res.json();
             let code = data.current_weather.weathercode;
             
-            if(code === 0 || code === 1) {
-                this.currentWeatherLabel = "Dégagée";
-                if(wStatus) { wStatus.innerHTML = "☀️ Météo Dégagée 🔄"; wStatus.style.color = "#f39c12"; }
-            } else if (code > 1 && code < 50) {
+            // Intégration du code 2 (partiellement nuageux) dans une catégorie plus juste visuellement
+            if(code === 0 || code === 1 || code === 2) {
+                this.currentWeatherLabel = "Dégagée / Éclaircies";
+                if(wStatus) { wStatus.innerHTML = "🌤️ Éclaircies 🔄"; wStatus.style.color = "#f39c12"; }
+            } else if (code > 2 && code < 50) {
                 this.currentWeatherLabel = "Nuageuse";
-                if(wStatus) { wStatus.innerHTML = "☁️ Météo Nuageuse 🔄"; wStatus.style.color = "#bdc3c7"; }
+                if(wStatus) { wStatus.innerHTML = "☁️ Nuageuse 🔄"; wStatus.style.color = "#bdc3c7"; }
             } else {
                 this.currentWeatherLabel = "Pluie / Difficile";
-                if(wStatus) { wStatus.innerHTML = "🌧️ Météo Difficile 🔄"; wStatus.style.color = "#3498db"; }
+                if(wStatus) { wStatus.innerHTML = "🌧️ Difficile 🔄"; wStatus.style.color = "#3498db"; }
             }
         } catch(e) { 
             console.warn("Impossible de récupérer la météo locale."); 
@@ -105,7 +107,6 @@ export const gps = {
         }
     },
 
-    // 🌟 Identification améliorée des routes via OpenStreetMap (OSM)
     async getAddress(lat, lon) {
         if (!lat || !lon) return "Position inconnue";
         try {
@@ -113,7 +114,6 @@ export const gps = {
             const data = await response.json();
             if (data && data.address) {
                 let city = data.address.city || data.address.town || data.address.village || data.address.municipality || "";
-                // On cherche spécifiquement la route ou l'autoroute
                 let road = data.address.road || data.address.highway || "";
                 
                 if (road && city) return `🛣️ ${road}, ${city}`;
@@ -145,7 +145,6 @@ export const gps = {
         let defaultPos = this.currentPos.lat ? [this.currentPos.lat, this.currentPos.lon] : [46.603354, 1.888334]; 
         mapInstance = L.map(mapId).setView(defaultPos, 6);
         
-        // Mode nuit pour la carte si le Dark Mode est activé
         let isDark = document.body.classList.contains('dark-mode');
         let tileUrl = isDark 
             ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' 
