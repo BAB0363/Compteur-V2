@@ -1,4 +1,4 @@
-const CACHE_NAME = 'compteur-cache-v12'; 
+const CACHE_NAME = 'compteur-cache-v15'; 
 const urlsToCache = [
   './',
   './index.html',
@@ -7,18 +7,19 @@ const urlsToCache = [
   './jsui.js',
   './jsgps.js',
   './manifest.json',
-  './icon.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/leaflet.heat/dist/leaflet-heat.js',
-  'https://cdn.jsdelivr.net/npm/chart.js'
+  'https://cdn.jsdelivr.net/npm/chart.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
 ];
 
 self.addEventListener('install', event => {
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-        console.log('📦 Mise en cache des fichiers Compteur Trafic v12...');
+        console.log('📦 Mise en cache des fichiers Compteur Trafic v15...');
         return cache.addAll(urlsToCache);
     })
   );
