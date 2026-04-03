@@ -105,6 +105,7 @@ export const gps = {
         }
     },
 
+    // 🌟 Identification améliorée des routes via OpenStreetMap (OSM)
     async getAddress(lat, lon) {
         if (!lat || !lon) return "Position inconnue";
         try {
@@ -112,10 +113,13 @@ export const gps = {
             const data = await response.json();
             if (data && data.address) {
                 let city = data.address.city || data.address.town || data.address.village || data.address.municipality || "";
-                let road = data.address.road || "";
-                if (road && city) return `${road}, ${city}`;
-                if (city) return city;
-                if (road) return road;
+                // On cherche spécifiquement la route ou l'autoroute
+                let road = data.address.road || data.address.highway || "";
+                
+                if (road && city) return `🛣️ ${road}, ${city}`;
+                if (city) return `🏙️ ${city}`;
+                if (road) return `🛣️ ${road}`;
+                
                 return data.display_name.split(',').slice(0, 2).join(', ');
             }
             return "Adresse introuvable";

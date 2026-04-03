@@ -41,9 +41,8 @@ body {
 .main-tabs::-webkit-scrollbar { display: none; }
 .main-tabs button { flex: 1; min-width: 75px; padding: 10px 2px; font-size: 0.9em; background-color: var(--btn-bg); color: var(--btn-text); border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; white-space: nowrap;}
 .main-tabs button.active { background-color: #34495e; color: white; }
-#tab-global.active { background-color: #27ae60; color: white; }
-#tab-analytics.active { background-color: #e67e22; color: white; }
-#tab-save.active { background-color: #8e44ad; color: white; }
+#tab-dashboard.active { background-color: #e67e22; color: white; }
+#tab-settings.active { background-color: #7f8c8d; color: white; }
 
 .header-dashboard { background: var(--card-bg); padding: 10px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px var(--shadow); transition: 0.3s; }
 .top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: bold; font-size: 1.1em; }
@@ -114,8 +113,21 @@ button:active { transform: scale(0.95); }
 .session-detail-label { font-weight: bold; color: #7f8c8d; }
 .session-detail-value { font-weight: bold; color: var(--text-color); text-align: right; }
 
-/* Nouveaux styles pour les graphiques avancés */
 .chart-wrapper { position: relative; height: 200px; width: 100%; margin-bottom: 15px; }
 .sequence-item { display: flex; justify-content: space-between; background: var(--bg-color); padding: 8px; border-radius: 6px; margin-bottom: 5px; border: 1px solid var(--border-color); }
 .sequence-flow { font-weight: bold; color: var(--text-color); }
 .sequence-count { background: #34495e; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; }
+
+/* ==========================================
+   Styles pour l'export PDF
+   ========================================== */
+@media print {
+    .no-print { display: none !important; }
+    body, #pdf-export-content { 
+        background-color: white !important; 
+        color: black !important; 
+        box-shadow: none !important;
+    }
+    .chart-wrapper { page-break-inside: avoid; }
+    .km-stat-card { border-color: #ccc !important; }
+}

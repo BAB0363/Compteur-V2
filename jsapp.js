@@ -19,7 +19,6 @@ const app = {
     globalTruckCounters: {}, globalCarCounters: {}, 
     truckHistory: [], carHistory: [],
     
-    // Registres permanents pour les analyses absolues
     globalAnaTrucks: null, globalAnaCars: null,
 
     globalTruckDistance: 0, globalCarDistance: 0,
@@ -33,9 +32,14 @@ const app = {
     liveTruckDistance: 0, liveCarDistance: 0,
     wakeLock: null, 
     
-    // Nouveaux graphiques fusionnés
+    // Graphiques
     mainDashboardChart: null, 
     temporalChart: null, weeklyChart: null, altitudeChart: null, weeklyGlobalChart: null,
+    weatherChart: null, // NOUVEAU : Corrélation Météo
+
+    // Filtres
+    currentDashboardFilter: 'all',
+    activeDashboardType: 'trucks',
 
     idb: {
         db: null,
@@ -189,12 +193,6 @@ const app = {
             this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
         }
 
-        if (this.vehicleCounters["Tracteurs"] !== undefined) {
-            this.vehicleCounters["Engins agricoles"] = (this.vehicleCounters["Engins agricoles"] || 0) + this.vehicleCounters["Tracteurs"];
-            delete this.vehicleCounters["Tracteurs"];
-            this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters));
-        }
-
         if(Object.keys(this.truckCounters).length === 0) this.brands.forEach(b => this.truckCounters[b] = { fr: 0, etr: 0 });
         if(Object.keys(this.vehicleCounters).length === 0) this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0);
         if(Object.keys(this.globalTruckCounters).length === 0) this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
@@ -227,7 +225,6 @@ const app = {
         this.renderTrucks(); this.renderCars(); this.renderKmStats();
         this.renderLiveStats('trucks'); this.renderLiveStats('cars');
         
-        // Initialisation du tableau de bord au démarrage
         this.renderDashboard('trucks');
 
         if (document.getElementById('truck-stats-view') && document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
@@ -741,6 +738,7 @@ const app = {
         let count = 0, time = 0, dist = 0;
         let title = "";
 
+        // Pour la vue "Globale", on garde les données brutes cumulées depuis le premier jour.
         if (type === 'trucks') {
             time = this.globalTruckTime; dist = this.globalTruckDistance;
             if (key === 'Total') {
@@ -785,6 +783,12 @@ const app = {
 
         document.getElementById('session-detail-modal').style.display = 'flex';
 
+        // Lier le bouton PDF pour les stats globales
+        let btnPdf = document.getElementById('btn-export-pdf');
+        if(btnPdf) {
+            btnPdf.onclick = () => window.app.exportSessionPDF();
+        }
+
         let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
 
         let ctxD = document.getElementById('temporalDensityChart');
@@ -818,8 +822,16 @@ const app = {
         }
     },
 
-    // LA NOUVELLE FONCTION FUSIONNÉE POUR LE TABLEAU DE BORD
+    // 📅 NOUVEAU : Fonction de filtrage du tableau de bord
+    async applyDashboardFilter(filterValue) {
+        this.currentDashboardFilter = filterValue;
+        await this.renderDashboard(this.activeDashboardType || 'trucks');
+    },
+
+    // 🌟 NOUVEAU TABLEAU DE BORD : Dynamique avec Filtres et Météo
     async renderDashboard(type) {
+        this.activeDashboardType = type;
+        
         let btn1 = document.getElementById('btn-ana-trucks');
         let btn2 = document.getElementById('btn-ana-cars');
         if(btn1 && btn2) {
@@ -829,34 +841,86 @@ const app = {
             btn2.style.color = type === 'cars' ? 'white' : 'var(--btn-text)';
         }
 
-        let gTotal = 0;
-        let dataForChart = [];
-        let labelsForChart = [];
-        let htmlList = `<div class="km-stat-card" style="border-color:${type === 'trucks' ? '#27ae60' : '#3498db'}; cursor:pointer; background:var(--bg-color);" onclick="window.app.showGlobalDetails('${type}', 'Total')"><span class="km-stat-title">${type === 'trucks' ? 'Toutes Marques' : 'Tous Véhicules'}</span><span class="km-stat-value" style="color:${type === 'trucks' ? '#27ae60' : '#3498db'}; font-size:0.9em;">🔍 Voir Détails</span></div>`;
-
-        if (type === 'trucks') {
-            let tTitle = document.getElementById('dash-title-total'); if (tTitle) { tTitle.innerText = "🚛 Cumul Total Camions"; tTitle.style.color = "#e67e22"; }
-            this.brands.forEach(b => {
-                let count = (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0);
-                gTotal += count;
-                if (count > 0) {
-                    htmlList += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('trucks', '${b}')"><span class="km-stat-title">${b}</span><span class="km-stat-value">${count}</span></div>`;
-                    labelsForChart.push(b);
-                    dataForChart.push(count);
-                }
-            });
-        } else {
-            let tTitle = document.getElementById('dash-title-total'); if (tTitle) { tTitle.innerText = "🚗 Cumul Total Véhicules"; tTitle.style.color = "#3498db"; }
-            this.vehicleTypes.forEach(v => {
-                let count = this.globalCarCounters[v] || 0;
-                gTotal += count;
-                if (count > 0) {
-                    htmlList += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('cars', '${v}')"><span class="km-stat-title">${v}</span><span class="km-stat-value">${count}</span></div>`;
-                    labelsForChart.push(v);
-                    dataForChart.push(count);
-                }
-            });
+        let filter = this.currentDashboardFilter || 'all';
+        let sessions = await this.idb.getAll(type);
+        let liveHistory = type === 'trucks' ? this.truckHistory : this.carHistory;
+        
+        let allHistories = [];
+        let now = new Date();
+        
+        // On inclut la session en cours
+        if (liveHistory && liveHistory.length > 0) {
+            allHistories.push({ history: liveHistory, weather: window.gps ? window.gps.currentWeatherLabel : "Inconnue" });
         }
+        // On inclut l'historique IDB
+        sessions.forEach(s => allHistories.push({ history: s.history, weather: s.weather }));
+
+        let counters = {};
+        let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
+        let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
+        let seqs = {};
+        let weathers = {}; // NOUVEAU : Pour la météo
+        let dayKeys = Object.keys(days);
+        let gTotal = 0;
+
+        allHistories.forEach(s => {
+            if (!s.history || s.history.length === 0) return;
+            
+            // On vérifie le filtre avec la date du premier véhicule
+            let firstItem = s.history.find(h => h.timestamp);
+            if (!firstItem) return;
+            let sDate = new Date(firstItem.timestamp);
+            
+            if (filter === 'month' && (sDate.getMonth() !== now.getMonth() || sDate.getFullYear() !== now.getFullYear())) return;
+            if (filter === 'week' && (now.getTime() - sDate.getTime() > 7 * 24 * 60 * 60 * 1000)) return;
+
+            let weatherLabel = s.weather || "Inconnue";
+            let sHist = s.history.filter(h => !h.isEvent);
+            
+            sHist.forEach((h, i) => {
+                let vehType = type === 'trucks' ? h.brand : h.type;
+                counters[vehType] = (counters[vehType] || 0) + 1;
+                weathers[weatherLabel] = (weathers[weatherLabel] || 0) + 1; // Comptage Météo
+                gTotal++;
+
+                if (h.timestamp) {
+                    let d = new Date(h.timestamp);
+                    days[dayKeys[d.getDay()]]++;
+                }
+                let altVal = h.alt || 0;
+                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+                alts[altKey]++;
+
+                if (i < sHist.length - 1) {
+                    let nxt = type === 'trucks' ? sHist[i+1].brand : sHist[i+1].type;
+                    let pair = `${vehType} ➡️ ${nxt}`;
+                    seqs[pair] = (seqs[pair] || 0) + 1;
+                }
+            });
+        });
+
+        // ---------------- METTRE A JOUR LE DOM ----------------
+
+        let tTitle = document.getElementById('dash-title-total'); 
+        if (tTitle) { 
+            tTitle.innerText = type === 'trucks' ? "🚛 Cumul Total Camions" : "🚗 Cumul Total Véhicules"; 
+            tTitle.style.color = type === 'trucks' ? "#e67e22" : "#3498db"; 
+        }
+
+        let htmlList = `<div class="km-stat-card" style="border-color:${type === 'trucks' ? '#27ae60' : '#3498db'}; cursor:pointer; background:var(--bg-color);" onclick="window.app.showGlobalDetails('${type}', 'Total')"><span class="km-stat-title">${type === 'trucks' ? 'Toutes Marques' : 'Tous Véhicules'}</span><span class="km-stat-value" style="color:${type === 'trucks' ? '#27ae60' : '#3498db'}; font-size:0.9em;">🔍 Voir Absolus</span></div>`;
+        
+        let labelsForChart = [];
+        let dataForChart = [];
+        
+        let typeList = type === 'trucks' ? this.brands : this.vehicleTypes;
+        typeList.forEach(item => {
+            let count = counters[item] || 0;
+            if (count > 0) {
+                htmlList += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('${type}', '${item}')"><span class="km-stat-title">${item}</span><span class="km-stat-value">${count}</span></div>`;
+                labelsForChart.push(item);
+                dataForChart.push(count);
+            }
+        });
 
         let ttEl = document.getElementById('dash-grand-total'); if(ttEl) ttEl.innerText = gTotal;
         let tlEl = document.getElementById('dashboard-main-list'); if(tlEl) tlEl.innerHTML = htmlList;
@@ -865,6 +929,7 @@ const app = {
         const textColor = isDark ? '#d2dae2' : '#2c3e50';
         const colors = ['#3498db', '#e67e22', '#2ecc71', '#9b59b6', '#f1c40f', '#e74c3c', '#1abc9c', '#34495e'];
 
+        // 🟢 Graphique Principal
         const ctxMain = document.getElementById('dashboardMainChart');
         if (ctxMain) {
             if (this.mainDashboardChart) this.mainDashboardChart.destroy();
@@ -877,29 +942,53 @@ const app = {
             }
         }
 
-        let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
-
+        // 🟢 Graphique Hebdomadaire
         let ctxW = document.getElementById('weeklyChart');
         if(ctxW) {
             if(this.weeklyChart) this.weeklyChart.destroy();
             this.weeklyChart = new Chart(ctxW, {
                 type: 'line',
-                data: { labels: Object.keys(anaData.days), datasets: [{ label: 'Total cumulé', data: Object.values(anaData.days), borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', fill: true, tension: 0.4 }] },
+                data: { labels: Object.keys(days), datasets: [{ label: 'Total cumulé', data: Object.values(days), borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', fill: true, tension: 0.4 }] },
                 options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { color: textColor } }, x: { ticks: { color: textColor } } } }
             });
         }
 
+        // 🟢 Graphique Altitude
         let ctxA = document.getElementById('altitudeChart');
         if(ctxA) {
             if(this.altitudeChart) this.altitudeChart.destroy();
             this.altitudeChart = new Chart(ctxA, {
                 type: 'pie',
-                data: { labels: Object.keys(anaData.alts), datasets: [{ data: Object.values(anaData.alts), backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
+                data: { labels: Object.keys(alts), datasets: [{ data: Object.values(alts), backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
                 options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
             });
         }
 
-        let seqArr = Object.entries(anaData.seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
+        // ☀️ NOUVEAU : Corrélation Météo
+        let ctxWeather = document.getElementById('weatherChart');
+        if(ctxWeather) {
+            if(this.weatherChart) this.weatherChart.destroy();
+            this.weatherChart = new Chart(ctxWeather, {
+                type: 'bar',
+                data: { 
+                    labels: Object.keys(weathers), 
+                    datasets: [{ 
+                        label: 'Véhicules comptés', 
+                        data: Object.values(weathers), 
+                        backgroundColor: ['#f1c40f', '#bdc3c7', '#3498db', '#9b59b6'], 
+                        borderRadius: 4 
+                    }] 
+                },
+                options: { 
+                    maintainAspectRatio: false, 
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { color: textColor, stepSize: 1 } }, x: { ticks: { color: textColor } } } 
+                }
+            });
+        }
+
+        // 🟢 Séquences
+        let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
         let seqHtml = '';
         if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
         seqArr.forEach(item => {
@@ -943,6 +1032,12 @@ const app = {
 
         document.getElementById('session-detail-modal').style.display = 'flex';
 
+        // Lier le bouton PDF pour cette session
+        let btnPdf = document.getElementById('btn-export-pdf');
+        if(btnPdf) {
+            btnPdf.onclick = () => window.app.exportSessionPDF();
+        }
+
         let ctxD = document.getElementById('temporalDensityChart');
         if(ctxD) {
             if(this.temporalChart) this.temporalChart.destroy();
@@ -968,6 +1063,34 @@ const app = {
                 });
             }
         }
+    },
+
+    // 📄 NOUVEAU : Fonction pour générer le rapport PDF (html2pdf)
+    exportSessionPDF() {
+        if (typeof html2pdf === 'undefined') {
+            if(window.ui) window.ui.showToast("⚠️ Outil PDF non chargé.");
+            return;
+        }
+        
+        let element = document.getElementById('pdf-export-content');
+        let btns = element.querySelectorAll('button');
+        
+        // On cache temporairement les boutons de la modale pour le PDF
+        btns.forEach(b => b.style.display = 'none');
+        
+        let opt = {
+            margin:       10,
+            filename:     `Bilan_Compteur_${new Date().toISOString().slice(0,10)}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        
+        html2pdf().set(opt).from(element).save().then(() => {
+            // On restaure les boutons une fois le PDF généré
+            btns.forEach(b => b.style.display = ''); 
+            if(window.ui) window.ui.showToast("📄 Export PDF réussi !");
+        });
     },
 
     async triggerDownloadOrShare(dataString, fileName) {
