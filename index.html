@@ -14,8 +14,14 @@
     <div id="toast-container" class="no-print"></div>
 
     <div class="top-bar-controls no-print">
-        <button id="btn-theme" onclick="window.ui.toggleDarkMode()">🌙 Nuit</button>
-        <button id="btn-undo" onclick="window.app.undoLast()">↩️ Annuler</button>
+        <select id="profile-selector" onchange="window.app.changeProfile(this.value)" style="padding: 8px 10px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px var(--shadow);">
+            <option value="voiture">🚘 Profil : Voiture</option>
+            <option value="camion">🚛 Profil : Camion</option>
+        </select>
+        <div style="display: flex; gap: 5px;">
+            <button id="btn-theme" onclick="window.ui.toggleDarkMode()">🌙 Nuit</button>
+            <button id="btn-undo" onclick="window.app.undoLast()">↩️ Annuler</button>
+        </div>
     </div>
 
     <button id="btn-install-pwa" class="no-print" style="display: none; width: 100%; margin-bottom: 15px; padding: 12px; background-color: #27ae60; color: white; border-radius: 6px; font-weight: bold; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
@@ -150,7 +156,7 @@
     <div id="section-global" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #27ae60;">
             <h3 style="margin-top: 0; color: var(--text-color);">🌍 Statistiques Globales</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Données cumulées depuis le début.</p>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Données cumulées pour ce profil.</p>
         </div>
         
         <div class="km-stats-container">

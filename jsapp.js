@@ -5,6 +5,13 @@ import { gps } from './jsgps.js';
 window.ui = ui; window.gps = gps;
 
 const app = {
+    activeProfile: localStorage.getItem('activeProfile') || 'voiture',
+    storage: {
+        get(key) { return localStorage.getItem(window.app.activeProfile + '_' + key); },
+        set(key, value) { localStorage.setItem(window.app.activeProfile + '_' + key, value); },
+        remove(key) { localStorage.removeItem(window.app.activeProfile + '_' + key); }
+    },
+
     brands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
     vehicleTypes: ["Voitures", "Utilitaires", "Camions", "Engins agricoles", "Bus/Car", "Camping-cars", "Motos", "Vélos"],
     
@@ -12,25 +19,15 @@ const app = {
     globalTruckCounters: {}, globalCarCounters: {}, 
     truckHistory: [], carHistory: [],
     
-    globalTruckDistance: parseFloat(localStorage.getItem('globalTruckDistance')) || 0,
-    globalCarDistance: parseFloat(localStorage.getItem('globalCarDistance')) || 0,
-    globalTruckTime: parseInt(localStorage.getItem('globalTruckTime')) || 0,
-    globalCarTime: parseInt(localStorage.getItem('globalCarTime')) || 0,
+    globalTruckDistance: 0, globalCarDistance: 0,
+    globalTruckTime: 0, globalCarTime: 0,
     lastGlobalTruckTick: 0, lastGlobalCarTick: 0,
 
-    truckSeconds: parseInt(localStorage.getItem('truckChronoSec')) || 0,
-    truckAccumulatedTime: parseInt(localStorage.getItem('truckAccumulatedTime')) || 0,
-    truckStartTime: parseInt(localStorage.getItem('truckStartTime')) || 0,
-    isTruckRunning: localStorage.getItem('truckChronoRun') === 'true',
-    
-    carSeconds: parseInt(localStorage.getItem('carChronoSec')) || 0,
-    carAccumulatedTime: parseInt(localStorage.getItem('carAccumulatedTime')) || 0,
-    carStartTime: parseInt(localStorage.getItem('carStartTime')) || 0,
-    isCarRunning: localStorage.getItem('carChronoRun') === 'true',
+    truckSeconds: 0, truckAccumulatedTime: 0, truckStartTime: 0, isTruckRunning: false,
+    carSeconds: 0, carAccumulatedTime: 0, carStartTime: 0, isCarRunning: false,
     
     truckInterval: null, carInterval: null,
-    liveTruckDistance: parseFloat(localStorage.getItem('liveTruckDist')) || 0,
-    liveCarDistance: parseFloat(localStorage.getItem('liveCarDist')) || 0,
+    liveTruckDistance: 0, liveCarDistance: 0,
     wakeLock: null, 
     
     truckChart: null, carChart: null,
@@ -51,11 +48,18 @@ const app = {
                 req.onerror = e => reject("Erreur IDB");
             });
         },
+        async getAllRaw() {
+            return new Promise(resolve => {
+                let tx = this.db.transaction('sessions', 'readonly');
+                let req = tx.objectStore('sessions').getAll();
+                req.onsuccess = e => resolve(e.target.result);
+            });
+        },
         async getAll(type) {
             return new Promise(resolve => {
                 let tx = this.db.transaction('sessions', 'readonly');
                 let req = tx.objectStore('sessions').getAll();
-                req.onsuccess = e => resolve(e.target.result.filter(s => s.sessionType === type));
+                req.onsuccess = e => resolve(e.target.result.filter(s => s.sessionType === type && s.profile === window.app.activeProfile));
             });
         },
         async getById(id) {
@@ -83,26 +87,95 @@ const app = {
         }
     },
 
-    async init() {
-        await this.idb.init();
+    async migrateData() {
+        // Script pour ne pas perdre tes données au passage aux profils
+        let oldVal = localStorage.getItem('truckCounters');
+        if (oldVal && !localStorage.getItem('voiture_truckCounters') && !localStorage.getItem('camion_truckCounters')) {
+            const keys = ['truckCounters', 'vehicleCounters', 'globalTruckCounters', 'globalCarCounters', 'truckHistory', 'carHistory', 'globalTruckDistance', 'globalCarDistance', 'globalTruckTime', 'globalCarTime', 'truckChronoSec', 'truckAccumulatedTime', 'truckStartTime', 'truckChronoRun', 'carChronoSec', 'carAccumulatedTime', 'carStartTime', 'carChronoRun', 'liveTruckDist', 'liveCarDist'];
+            keys.forEach(k => {
+                let val = localStorage.getItem(k);
+                if (val !== null) {
+                    localStorage.setItem('voiture_' + k, val);
+                    localStorage.removeItem(k);
+                }
+            });
 
-        try { this.truckCounters = JSON.parse(localStorage.getItem('truckCounters')) || {}; } catch(e) { this.truckCounters = {}; }
-        try { this.vehicleCounters = JSON.parse(localStorage.getItem('vehicleCounters')) || {}; } catch(e) { this.vehicleCounters = {}; }
-        try { this.globalTruckCounters = JSON.parse(localStorage.getItem('globalTruckCounters')) || {}; } catch(e) { this.globalTruckCounters = {}; }
-        try { this.globalCarCounters = JSON.parse(localStorage.getItem('globalCarCounters')) || {}; } catch(e) { this.globalCarCounters = {}; }
-        try { this.truckHistory = JSON.parse(localStorage.getItem('truckHistory')) || []; } catch(e) { this.truckHistory = []; }
-        try { this.carHistory = JSON.parse(localStorage.getItem('carHistory')) || []; } catch(e) { this.carHistory = []; }
+            let allSessions = await this.idb.getAllRaw();
+            if (allSessions.length > 0) {
+                let tx = this.idb.db.transaction('sessions', 'readwrite');
+                let store = tx.objectStore('sessions');
+                allSessions.forEach(s => {
+                    if (!s.profile) {
+                        s.profile = 'voiture';
+                        store.put(s);
+                    }
+                });
+                return new Promise(resolve => { tx.oncomplete = () => resolve(); });
+            }
+        }
+    },
+
+    async changeProfile(newProfile) {
+        if (this.isTruckRunning) this.toggleTruckChrono();
+        if (this.isCarRunning) this.toggleCarChrono();
+
+        this.activeProfile = newProfile;
+        localStorage.setItem('activeProfile', newProfile);
+
+        await this.init(true);
+
+        if (window.ui) {
+            window.ui.showToast(`🔄 Profil changé : ${newProfile === 'voiture' ? '🚘 Voiture' : '🚛 Camion'}`);
+        }
+    },
+
+    async init(isProfileSwitch = false) {
+        if (!isProfileSwitch) {
+            await this.idb.init();
+            await this.migrateData();
+        }
+
+        let selector = document.getElementById('profile-selector');
+        if (selector) selector.value = this.activeProfile;
+
+        if (this.truckInterval) clearInterval(this.truckInterval);
+        if (this.carInterval) clearInterval(this.carInterval);
+
+        try { this.truckCounters = JSON.parse(this.storage.get('truckCounters')) || {}; } catch(e) { this.truckCounters = {}; }
+        try { this.vehicleCounters = JSON.parse(this.storage.get('vehicleCounters')) || {}; } catch(e) { this.vehicleCounters = {}; }
+        try { this.globalTruckCounters = JSON.parse(this.storage.get('globalTruckCounters')) || {}; } catch(e) { this.globalTruckCounters = {}; }
+        try { this.globalCarCounters = JSON.parse(this.storage.get('globalCarCounters')) || {}; } catch(e) { this.globalCarCounters = {}; }
+        try { this.truckHistory = JSON.parse(this.storage.get('truckHistory')) || []; } catch(e) { this.truckHistory = []; }
+        try { this.carHistory = JSON.parse(this.storage.get('carHistory')) || []; } catch(e) { this.carHistory = []; }
         
         if (this.vehicleCounters["Tracteurs"] !== undefined) {
             this.vehicleCounters["Engins agricoles"] = (this.vehicleCounters["Engins agricoles"] || 0) + this.vehicleCounters["Tracteurs"];
             delete this.vehicleCounters["Tracteurs"];
-            localStorage.setItem('vehicleCounters', JSON.stringify(this.vehicleCounters));
+            this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters));
         }
 
         if(Object.keys(this.truckCounters).length === 0) this.brands.forEach(b => this.truckCounters[b] = { fr: 0, etr: 0 });
         if(Object.keys(this.vehicleCounters).length === 0) this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0);
         if(Object.keys(this.globalTruckCounters).length === 0) this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
         if(Object.keys(this.globalCarCounters).length === 0) this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
+
+        this.globalTruckDistance = parseFloat(this.storage.get('globalTruckDistance')) || 0;
+        this.globalCarDistance = parseFloat(this.storage.get('globalCarDistance')) || 0;
+        this.globalTruckTime = parseInt(this.storage.get('globalTruckTime')) || 0;
+        this.globalCarTime = parseInt(this.storage.get('globalCarTime')) || 0;
+
+        this.truckSeconds = parseInt(this.storage.get('truckChronoSec')) || 0;
+        this.truckAccumulatedTime = parseInt(this.storage.get('truckAccumulatedTime')) || 0;
+        this.truckStartTime = parseInt(this.storage.get('truckStartTime')) || 0;
+        this.isTruckRunning = this.storage.get('truckChronoRun') === 'true';
+
+        this.carSeconds = parseInt(this.storage.get('carChronoSec')) || 0;
+        this.carAccumulatedTime = parseInt(this.storage.get('carAccumulatedTime')) || 0;
+        this.carStartTime = parseInt(this.storage.get('carStartTime')) || 0;
+        this.isCarRunning = this.storage.get('carChronoRun') === 'true';
+
+        this.liveTruckDistance = parseFloat(this.storage.get('liveTruckDist')) || 0;
+        this.liveCarDistance = parseFloat(this.storage.get('liveCarDist')) || 0;
 
         if (!this.isTruckRunning) { this.truckAccumulatedTime = this.truckSeconds; }
         if (!this.isCarRunning) { this.carAccumulatedTime = this.carSeconds; }
@@ -115,11 +188,18 @@ const app = {
         this.renderKmStats();
         this.renderLiveStats('trucks');
         this.renderLiveStats('cars');
+        this.renderGlobalStats();
 
-        this.requestWakeLock();
-        document.addEventListener('visibilitychange', async () => {
-            if (this.wakeLock !== null && document.visibilityState === 'visible') this.requestWakeLock();
-        });
+        if (window.ui && window.ui.activeTab === 'analytics') this.renderAnalytics('trucks');
+        if (document.getElementById('truck-stats-view') && document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
+        if (document.getElementById('car-stats-view') && document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
+
+        if (!isProfileSwitch) {
+            this.requestWakeLock();
+            document.addEventListener('visibilitychange', async () => {
+                if (this.wakeLock !== null && document.visibilityState === 'visible') this.requestWakeLock();
+            });
+        }
     },
 
     async requestWakeLock() {
@@ -151,30 +231,30 @@ const app = {
     },
 
     toggleTruckChrono() {
-        this.isTruckRunning = !this.isTruckRunning; localStorage.setItem('truckChronoRun', this.isTruckRunning);
+        this.isTruckRunning = !this.isTruckRunning; this.storage.set('truckChronoRun', this.isTruckRunning);
         const btn = document.getElementById('btn-truck-chrono'); if(!btn) return;
         
         let eventType = this.isTruckRunning ? "▶️ Reprise" : "⏸️ Pause";
         let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
         this.truckHistory.push(histItem);
-        localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
+        this.storage.set('truckHistory', JSON.stringify(this.truckHistory));
         if (document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
 
         if (this.isTruckRunning) { 
             btn.innerText = "⏸️ Pause"; btn.classList.add('running'); 
-            this.truckStartTime = Date.now(); localStorage.setItem('truckStartTime', this.truckStartTime);
+            this.truckStartTime = Date.now(); this.storage.set('truckStartTime', this.truckStartTime);
             this.lastGlobalTruckTick = Date.now();
             this.truckInterval = setInterval(() => { 
                 let now = Date.now();
                 let elapsed = Math.floor((now - this.truckStartTime) / 1000);
                 this.truckSeconds = this.truckAccumulatedTime + elapsed; 
-                localStorage.setItem('truckChronoSec', this.truckSeconds); 
+                this.storage.set('truckChronoSec', this.truckSeconds); 
                 
                 let delta = now - this.lastGlobalTruckTick;
                 if(delta >= 1000) {
                     let add = Math.floor(delta / 1000);
                     this.globalTruckTime += add;
-                    localStorage.setItem('globalTruckTime', this.globalTruckTime);
+                    this.storage.set('globalTruckTime', this.globalTruckTime);
                     this.lastGlobalTruckTick += add * 1000;
                 }
 
@@ -185,35 +265,35 @@ const app = {
             btn.innerText = "▶️ Start"; btn.classList.remove('running'); 
             clearInterval(this.truckInterval); 
             this.truckAccumulatedTime = this.truckSeconds;
-            localStorage.setItem('truckAccumulatedTime', this.truckAccumulatedTime);
+            this.storage.set('truckAccumulatedTime', this.truckAccumulatedTime);
         }
     },
 
     toggleCarChrono() {
-        this.isCarRunning = !this.isCarRunning; localStorage.setItem('carChronoRun', this.isCarRunning);
+        this.isCarRunning = !this.isCarRunning; this.storage.set('carChronoRun', this.isCarRunning);
         const btn = document.getElementById('btn-car-chrono'); if(!btn) return;
         
         let eventType = this.isCarRunning ? "▶️ Reprise" : "⏸️ Pause";
         let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
         this.carHistory.push(histItem);
-        localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
+        this.storage.set('carHistory', JSON.stringify(this.carHistory));
         if (document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
 
         if (this.isCarRunning) { 
             btn.innerText = "⏸️ Pause"; btn.classList.add('running'); 
-            this.carStartTime = Date.now(); localStorage.setItem('carStartTime', this.carStartTime);
+            this.carStartTime = Date.now(); this.storage.set('carStartTime', this.carStartTime);
             this.lastGlobalCarTick = Date.now(); 
             this.carInterval = setInterval(() => { 
                 let now = Date.now();
                 let elapsed = Math.floor((now - this.carStartTime) / 1000);
                 this.carSeconds = this.carAccumulatedTime + elapsed; 
-                localStorage.setItem('carChronoSec', this.carSeconds); 
+                this.storage.set('carChronoSec', this.carSeconds); 
                 
                 let delta = now - this.lastGlobalCarTick;
                 if(delta >= 1000) {
                     let add = Math.floor(delta / 1000);
                     this.globalCarTime += add;
-                    localStorage.setItem('globalCarTime', this.globalCarTime);
+                    this.storage.set('globalCarTime', this.globalCarTime);
                     this.lastGlobalCarTick += add * 1000;
                 }
 
@@ -224,7 +304,7 @@ const app = {
             btn.innerText = "▶️ Start"; btn.classList.remove('running'); 
             clearInterval(this.carInterval); 
             this.carAccumulatedTime = this.carSeconds;
-            localStorage.setItem('carAccumulatedTime', this.carAccumulatedTime);
+            this.storage.set('carAccumulatedTime', this.carAccumulatedTime);
         }
     },
 
@@ -243,9 +323,9 @@ const app = {
                 this.truckHistory.push(histItem);
                 
                 if(window.ui && e) { window.ui.triggerHapticFeedback('truck'); window.ui.showClickParticle(e, `+1`); }
-                localStorage.setItem('truckCounters', JSON.stringify(this.truckCounters)); 
-                localStorage.setItem('globalTruckCounters', JSON.stringify(this.globalTruckCounters)); 
-                localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
+                this.storage.set('truckCounters', JSON.stringify(this.truckCounters)); 
+                this.storage.set('globalTruckCounters', JSON.stringify(this.globalTruckCounters)); 
+                this.storage.set('truckHistory', JSON.stringify(this.truckHistory));
                 this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
             } else if (amount < 0) {
                 for (let i = this.truckHistory.length - 1; i >= 0; i--) {
@@ -276,9 +356,9 @@ const app = {
                 if(type === 'Engins agricoles' || type === 'Camions' || type === 'Bus/Car') hapticType = 'tractor';
 
                 if(window.ui && e) { window.ui.triggerHapticFeedback(hapticType); window.ui.showClickParticle(e, `+1`, '#e74c3c'); }
-                localStorage.setItem('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
-                localStorage.setItem('globalCarCounters', JSON.stringify(this.globalCarCounters)); 
-                localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
+                this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
+                this.storage.set('globalCarCounters', JSON.stringify(this.globalCarCounters)); 
+                this.storage.set('carHistory', JSON.stringify(this.carHistory));
                 this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
             } else if (amount < 0) {
                 for (let i = this.carHistory.length - 1; i >= 0; i--) {
@@ -299,9 +379,9 @@ const app = {
             }
         }
         this.truckHistory.splice(index, 1);
-        localStorage.setItem('truckCounters', JSON.stringify(this.truckCounters)); 
-        localStorage.setItem('globalTruckCounters', JSON.stringify(this.globalTruckCounters)); 
-        localStorage.setItem('truckHistory', JSON.stringify(this.truckHistory));
+        this.storage.set('truckCounters', JSON.stringify(this.truckCounters)); 
+        this.storage.set('globalTruckCounters', JSON.stringify(this.globalTruckCounters)); 
+        this.storage.set('truckHistory', JSON.stringify(this.truckHistory));
         if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast(item.isEvent ? "🗑️ Événement supprimé" : "❌ Camion supprimé"); }
         this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
         if (document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
@@ -314,9 +394,9 @@ const app = {
             if (this.globalCarCounters[item.type] > 0) this.globalCarCounters[item.type]--;
         }
         this.carHistory.splice(index, 1);
-        localStorage.setItem('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
-        localStorage.setItem('globalCarCounters', JSON.stringify(this.globalCarCounters)); 
-        localStorage.setItem('carHistory', JSON.stringify(this.carHistory));
+        this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
+        this.storage.set('globalCarCounters', JSON.stringify(this.globalCarCounters)); 
+        this.storage.set('carHistory', JSON.stringify(this.carHistory));
         if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast(item.isEvent ? "🗑️ Événement supprimé" : "❌ Véhicule supprimé"); }
         this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
         if (document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
@@ -333,9 +413,9 @@ const app = {
     resetTrucksData() {
         this.brands.forEach(b => { this.truckCounters[b] = { fr: 0, etr: 0 }; }); 
         this.truckHistory = []; this.truckSeconds = 0; this.truckAccumulatedTime = 0; this.liveTruckDistance = 0;
-        localStorage.setItem('truckCounters', JSON.stringify(this.truckCounters)); 
-        localStorage.setItem('truckHistory', JSON.stringify([])); 
-        localStorage.setItem('truckChronoSec', 0); localStorage.setItem('truckAccumulatedTime', 0); localStorage.setItem('liveTruckDist', 0);
+        this.storage.set('truckCounters', JSON.stringify(this.truckCounters)); 
+        this.storage.set('truckHistory', JSON.stringify([])); 
+        this.storage.set('truckChronoSec', 0); this.storage.set('truckAccumulatedTime', 0); this.storage.set('liveTruckDist', 0);
         this.updateTruckChronoDisp(); this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
     },
     async stopTruckSession() {
@@ -351,9 +431,9 @@ const app = {
     resetCarsData() {
         this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0); 
         this.carHistory = []; this.carSeconds = 0; this.carAccumulatedTime = 0; this.liveCarDistance = 0;
-        localStorage.setItem('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
-        localStorage.setItem('carHistory', JSON.stringify([])); 
-        localStorage.setItem('carChronoSec', 0); localStorage.setItem('carAccumulatedTime', 0); localStorage.setItem('liveCarDist', 0);
+        this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
+        this.storage.set('carHistory', JSON.stringify([])); 
+        this.storage.set('carChronoSec', 0); this.storage.set('carAccumulatedTime', 0); this.storage.set('liveCarDist', 0);
         this.updateCarChronoDisp(); this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
     },
     async stopCarSession() {
@@ -386,6 +466,7 @@ const app = {
 
         let newSession = { 
             id: Date.now().toString(), 
+            profile: this.activeProfile,
             sessionType: type, 
             startDate: startDateStr, 
             date: dateStr, 
@@ -407,14 +488,14 @@ const app = {
     },
 
     async resetTrucks() { 
-        if (confirm("⚠️ Effacer toutes les sessions sauvegardées ? Irréversible !")) { 
+        if (confirm("⚠️ Effacer toutes les sessions sauvegardées (pour ce profil) ? Irréversible !")) { 
             await this.idb.clear('trucks'); 
             this.renderAdvancedStats('trucks'); 
             window.ui.showToast("🗑️ Historique effacé"); 
         } 
     },
     async resetCars() { 
-        if (confirm("⚠️ Effacer toutes les sessions sauvegardées ? Irréversible !")) { 
+        if (confirm("⚠️ Effacer toutes les sessions sauvegardées (pour ce profil) ? Irréversible !")) { 
             await this.idb.clear('cars'); 
             this.renderAdvancedStats('cars'); 
             window.ui.showToast("🗑️ Historique effacé"); 
@@ -422,16 +503,16 @@ const app = {
     },
 
     resetGlobalStats() {
-        if (confirm("⚠️ Es-tu sûr de vouloir effacer TOUTES les statistiques globales depuis le début ? Action irréversible !")) {
+        if (confirm("⚠️ Es-tu sûr de vouloir effacer TOUTES les statistiques globales pour ce profil ? Action irréversible !")) {
             this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
             this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
             this.globalTruckDistance = 0; this.globalTruckTime = 0;
             this.globalCarDistance = 0; this.globalCarTime = 0;
             
-            localStorage.setItem('globalTruckCounters', JSON.stringify(this.globalTruckCounters));
-            localStorage.setItem('globalCarCounters', JSON.stringify(this.globalCarCounters));
-            localStorage.setItem('globalTruckDistance', 0); localStorage.setItem('globalTruckTime', 0);
-            localStorage.setItem('globalCarDistance', 0); localStorage.setItem('globalCarTime', 0);
+            this.storage.set('globalTruckCounters', JSON.stringify(this.globalTruckCounters));
+            this.storage.set('globalCarCounters', JSON.stringify(this.globalCarCounters));
+            this.storage.set('globalTruckDistance', 0); this.storage.set('globalTruckTime', 0);
+            this.storage.set('globalCarDistance', 0); this.storage.set('globalCarTime', 0);
             
             this.renderGlobalStats();
             if(window.ui) window.ui.showToast("🗑️ Statistiques globales effacées !");
@@ -484,7 +565,6 @@ const app = {
         });
     },
 
-    // TOUTES LES STATS SONT LÀ ! ANCIENNES + NOUVELLES
     renderLiveStats(type) {
         let container = document.getElementById(type === 'trucks' ? 'truck-live-stats' : 'car-live-stats');
         if (!container) return;
@@ -496,13 +576,11 @@ const app = {
         let items = hist.filter(h => !h.isEvent);
         let count = items.length;
         
-        // Anciennes statistiques
         let avgSpeed = (sec > 0) ? (dist / (sec / 3600)).toFixed(1) + " km/h" : "-";
         let freqApp = (count > 0 && sec > 0) ? (sec / 60 / count).toFixed(1) + " min" : "-";
         let rythmeHeure = (sec > 0) ? (count / (sec / 3600)).toFixed(1) + " /h" : "-";
         let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
 
-        // Nouvelles statistiques
         let espTemps = count > 1 ? (sec / count).toFixed(1) + " s" : "-";
         let espDist = (count > 1 && dist > 0) ? ((dist * 1000) / count).toFixed(0) + " m" : "-";
         let nowTimestamp = Date.now();
@@ -551,7 +629,6 @@ const app = {
         }
     },
 
-    // LA FONCTION MANQUANTE EST DE RETOUR
     showGlobalDetails(type, key) {
         let count = 0, time = 0, dist = 0;
         let title = "";
@@ -734,7 +811,6 @@ const app = {
         document.getElementById('sequence-container').innerHTML = seqHtml;
     },
 
-    // TOUTES LES ANCIENNES STATS DÉTAILLÉES SONT DE RETOUR
     async showSessionDetails(type, sessionId) {
         let session = await this.idb.getById(sessionId);
         if(!session) return;
@@ -807,7 +883,7 @@ const app = {
         event.stopPropagation();
         let session = await this.idb.getById(sessionId);
         if(!session) return;
-        let exportData = { appVersion: "Compteur Trafic v4.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
+        let exportData = { appVersion: "Compteur Trafic v5.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
         const dataStr = JSON.stringify(exportData, null, 2);
         let safeDate = session.date.replace(/[\/ :]/g, '_');
         await this.triggerDownloadOrShare(dataStr, `Compteur_Session_${type}_${safeDate}.txt`);
@@ -837,11 +913,11 @@ const app = {
 
         let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
         
-        let globalSummary = { totalSessions: allSessions.length, globalDonneesBrutesCamions: this.globalTruckCounters, globalDonneesBrutesVehicules: this.globalCarCounters };
+        let globalSummary = { profile: this.activeProfile, totalSessions: allSessions.length, globalDonneesBrutesCamions: this.globalTruckCounters, globalDonneesBrutesVehicules: this.globalCarCounters };
 
-        let exportData = { appVersion: "Compteur Trafic v4.0 (Analytics)", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
+        let exportData = { appVersion: "Compteur Trafic v5.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
         const dataStr = JSON.stringify(exportData, null, 2);
-        const fileName = `Compteur_Export_Global_${new Date().toISOString().slice(0,10)}.txt`;
+        const fileName = `Compteur_Export_${this.activeProfile}_${new Date().toISOString().slice(0,10)}.txt`;
         
         await this.triggerDownloadOrShare(dataStr, fileName);
     },
@@ -852,11 +928,11 @@ const app = {
         reader.onload = async (e) => {
             try {
                 const data = JSON.parse(e.target.result);
-                if (data.sessions && confirm("⚠️ Attention : L'importation va remplacer ton historique actuel. Continuer ?")) {
+                if (data.sessions && confirm(`⚠️ Attention : L'importation va remplacer l'historique actuel pour le profil "${this.activeProfile}". Continuer ?`)) {
                     await this.idb.clear('trucks'); await this.idb.clear('cars');
-                    for (let s of data.sessions) { if (!s.id) s.id = Date.now().toString() + Math.random().toString(); await this.idb.add(s); }
-                    if (data.globalSummary?.globalDonneesBrutesCamions) localStorage.setItem('globalTruckCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesCamions));
-                    if (data.globalSummary?.globalDonneesBrutesVehicules) localStorage.setItem('globalCarCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesVehicules));
+                    for (let s of data.sessions) { if (!s.id) s.id = Date.now().toString() + Math.random().toString(); s.profile = this.activeProfile; await this.idb.add(s); }
+                    if (data.globalSummary?.globalDonneesBrutesCamions) this.storage.set('globalTruckCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesCamions));
+                    if (data.globalSummary?.globalDonneesBrutesVehicules) this.storage.set('globalCarCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesVehicules));
                     alert("✅ Historique importé avec succès ! Redémarrage..."); location.reload();
                 } else if(!data.sessions) { alert("❌ Format non reconnu."); }
             } catch (err) { alert("❌ Fichier invalide ou corrompu !"); }
@@ -884,7 +960,7 @@ const app = {
         sessions.sort((a, b) => b.id - a.id);
         
         sessionsContainer.innerHTML = '';
-        if (sessions.length === 0) { sessionsContainer.innerHTML = '<div class="history-item">Aucune session sauvegardée. 🚦</div>'; } 
+        if (sessions.length === 0) { sessionsContainer.innerHTML = '<div class="history-item">Aucune session sauvegardée pour ce profil. 🚦</div>'; } 
         else {
             sessions.forEach((session) => {
                 let itemsCount = session.history ? session.history.filter(h => !h.isEvent).length : 0;

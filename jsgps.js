@@ -41,16 +41,16 @@ export const gps = {
                             if (window.app && window.app.isTruckRunning) { 
                                 window.app.liveTruckDistance += d; 
                                 window.app.globalTruckDistance += d; // Ajout au compteur Global
-                                localStorage.setItem('liveTruckDist', window.app.liveTruckDistance); 
-                                localStorage.setItem('globalTruckDistance', window.app.globalTruckDistance); 
+                                window.app.storage.set('liveTruckDist', window.app.liveTruckDistance); 
+                                window.app.storage.set('globalTruckDistance', window.app.globalTruckDistance); 
                                 window.app.updateTruckChronoDisp(); 
                                 window.app.renderKmStats(); 
                             }
                             if (window.app && window.app.isCarRunning) { 
                                 window.app.liveCarDistance += d; 
                                 window.app.globalCarDistance += d; // Ajout au compteur Global
-                                localStorage.setItem('liveCarDist', window.app.liveCarDistance); 
-                                localStorage.setItem('globalCarDistance', window.app.globalCarDistance); 
+                                window.app.storage.set('liveCarDist', window.app.liveCarDistance); 
+                                window.app.storage.set('globalCarDistance', window.app.globalCarDistance); 
                                 window.app.updateCarChronoDisp(); 
                                 window.app.renderKmStats(); 
                             }
@@ -152,7 +152,7 @@ export const gps = {
         let latlngs = []; 
         let heatData = []; 
         
-        let sessions = []; try { sessions = JSON.parse(localStorage.getItem(mapType === 'trucks' ? 'truckSessions' : 'carSessions')) || []; } catch(e){}
+        let sessions = []; try { sessions = JSON.parse(window.app.storage.get(mapType === 'trucks' ? 'truckSessions' : 'carSessions')) || []; } catch(e){}
         sessions.forEach(s => {
             if(s.history) { 
                 s.history.forEach(h => { 
