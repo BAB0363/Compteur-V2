@@ -88,7 +88,6 @@ const app = {
     },
 
     async migrateData() {
-        // Script pour ne pas perdre tes données au passage aux profils
         let oldVal = localStorage.getItem('truckCounters');
         if (oldVal && !localStorage.getItem('voiture_truckCounters') && !localStorage.getItem('camion_truckCounters')) {
             const keys = ['truckCounters', 'vehicleCounters', 'globalTruckCounters', 'globalCarCounters', 'truckHistory', 'carHistory', 'globalTruckDistance', 'globalCarDistance', 'globalTruckTime', 'globalCarTime', 'truckChronoSec', 'truckAccumulatedTime', 'truckStartTime', 'truckChronoRun', 'carChronoSec', 'carAccumulatedTime', 'carStartTime', 'carChronoRun', 'liveTruckDist', 'liveCarDist'];
@@ -629,7 +628,7 @@ const app = {
         }
     },
 
-    showGlobalDetails(type, key) {
+    async showGlobalDetails(type, key) {
         let count = 0, time = 0, dist = 0;
         let title = "";
 
@@ -670,7 +669,66 @@ const app = {
 
         document.getElementById('modal-session-title').innerText = `🌍 Stats Globales : ${title}`;
         document.getElementById('modal-session-content').innerHTML = html;
+        
+        // --- Changement dynamique du titre pour le Global ---
+        let titleEl = document.querySelector('#session-detail-modal h4');
+        if (titleEl) titleEl.innerText = "📈 Répartition par heure (Global)";
+
+        // --- Récupération des données pour la densité temporelle globale ---
+        let sessions = await this.idb.getAll(type);
+        let hourBlocks = {};
+        for(let i=0; i<24; i++) hourBlocks[`${i}h`] = 0; // Initialise les 24 heures
+
+        sessions.forEach(s => {
+            if (s.history) {
+                s.history.filter(h => !h.isEvent).forEach(h => {
+                    let match = false;
+                    if (key === 'Total') match = true;
+                    else if (type === 'trucks' && h.brand === key) match = true;
+                    else if (type === 'cars' && h.type === key) match = true;
+
+                    if (match && h.timestamp) {
+                        let hour = new Date(h.timestamp).getHours();
+                        hourBlocks[`${hour}h`]++;
+                    }
+                });
+            }
+        });
+
         document.getElementById('session-detail-modal').style.display = 'flex';
+
+        let ctxD = document.getElementById('temporalDensityChart');
+        if(ctxD) {
+            if(this.temporalChart) this.temporalChart.destroy();
+
+            let hasData = Object.values(hourBlocks).some(v => v > 0);
+
+            if(hasData) {
+                let isDark = document.body.classList.contains('dark-mode');
+                let tColor = isDark ? '#d2dae2' : '#333';
+
+                this.temporalChart = new Chart(ctxD, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(hourBlocks),
+                        datasets: [{ 
+                            label: 'Véhicules par heure', 
+                            data: Object.values(hourBlocks), 
+                            backgroundColor: type === 'trucks' ? '#27ae60' : '#3498db', 
+                            borderRadius: 4 
+                        }]
+                    },
+                    options: { 
+                        maintainAspectRatio: false, 
+                        plugins: { legend: { display: false } }, 
+                        scales: { 
+                            y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, 
+                            x: { ticks: { color: tColor } } 
+                        } 
+                    }
+                });
+            }
+        }
     },
 
     renderGlobalStats() {
@@ -839,6 +897,11 @@ const app = {
         `;
         document.getElementById('modal-session-title').innerText = type === 'trucks' ? '🚛 Détails Session Camions' : '🚗 Détails Session Véhicules';
         document.getElementById('modal-session-content').innerHTML = html;
+        
+        // --- On remet le titre correct pour les sessions ---
+        let titleEl = document.querySelector('#session-detail-modal h4');
+        if (titleEl) titleEl.innerText = "📈 Densité Temporelle (Session)";
+
         document.getElementById('session-detail-modal').style.display = 'flex';
 
         let ctxD = document.getElementById('temporalDensityChart');
