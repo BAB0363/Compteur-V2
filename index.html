@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=11">
+    <link rel="manifest" href="manifest.json?v=12">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=11">
+    <link rel="stylesheet" href="style.css?v=12">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -181,7 +181,7 @@
     <div id="section-analytics" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #e67e22;">
             <h3 style="margin-top: 0; color: var(--text-color);">📈 Analyses Avancées</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Exploite tes données sauvegardées pour découvrir les tendances de la route.</p>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Tendances globales absolues, indépendantes de l'historique de tes sessions.</p>
         </div>
 
         <div class="main-tabs" style="margin-bottom: 10px;">
@@ -191,7 +191,7 @@
 
         <div class="km-stats-container">
             <h4>📅 Répartition Hebdomadaire</h4>
-            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Trafic moyen par jour de la semaine.</p>
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Trafic global par jour de la semaine.</p>
             <div class="chart-wrapper"><canvas id="weeklyChart"></canvas></div>
         </div>
 
@@ -226,18 +226,23 @@
             
             <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">📈 Densité Temporelle</h4>
             <div class="chart-wrapper" style="height: 150px;"><canvas id="temporalDensityChart"></canvas></div>
+
+            <div id="modal-weekly-section" style="display: none;">
+                <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">📅 Répartition par Jour</h4>
+                <div class="chart-wrapper" style="height: 150px;"><canvas id="weeklyGlobalChart"></canvas></div>
+            </div>
         </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=11"></script>
+    <script type="module" src="jsapp.js?v=12"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=11')
+          navigator.serviceWorker.register('./sw.js?v=12')
             .then(registration => {
               console.log('Service Worker Compteur enregistré avec succès !', registration.scope);
             })

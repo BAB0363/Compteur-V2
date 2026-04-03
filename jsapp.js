@@ -19,6 +19,9 @@ const app = {
     globalTruckCounters: {}, globalCarCounters: {}, 
     truckHistory: [], carHistory: [],
     
+    // NOUVEAU : Registres permanents pour les analyses absolues
+    globalAnaTrucks: null, globalAnaCars: null,
+
     globalTruckDistance: 0, globalCarDistance: 0,
     globalTruckTime: 0, globalCarTime: 0,
     lastGlobalTruckTick: 0, lastGlobalCarTick: 0,
@@ -31,7 +34,7 @@ const app = {
     wakeLock: null, 
     
     truckChart: null, carChart: null,
-    temporalChart: null, weeklyChart: null, altitudeChart: null,
+    temporalChart: null, weeklyChart: null, altitudeChart: null, weeklyGlobalChart: null,
 
     idb: {
         db: null,
@@ -87,28 +90,60 @@ const app = {
         }
     },
 
+    // Crée une structure vide pour les analyses
+    getEmptyAnalytics() {
+        let hours = {}; for(let i=0; i<24; i++) hours[`${i}h`] = 0;
+        return {
+            hours: hours,
+            days: { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 },
+            alts: { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 },
+            seqs: {}, lastVeh: null
+        };
+    },
+
+    // Moulinette magique : importe tes anciens historiques dans la mémoire permanente
+    async buildPermanentAnalyticsFromIDB(type, targetAna) {
+        let sessions = await this.idb.getAll(type);
+        let dayKeys = Object.keys(targetAna.days);
+        sessions.forEach(s => {
+            if (s.history) {
+                let hist = s.history.filter(h => !h.isEvent);
+                for(let i = 0; i < hist.length; i++) {
+                    let h = hist[i];
+                    if (h.timestamp) {
+                        let d = new Date(h.timestamp);
+                        targetAna.hours[`${d.getHours()}h`]++;
+                        targetAna.days[dayKeys[d.getDay()]]++;
+                    }
+                    let altVal = h.alt || 0;
+                    let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+                    targetAna.alts[altKey]++;
+
+                    if (i < hist.length - 1) {
+                        let cur = type === 'trucks' ? h.brand : h.type;
+                        let nxt = type === 'trucks' ? hist[i+1].brand : hist[i+1].type;
+                        let pair = `${cur} ➡️ ${nxt}`;
+                        targetAna.seqs[pair] = (targetAna.seqs[pair] || 0) + 1;
+                    }
+                }
+            }
+        });
+    },
+
     async migrateData() {
         let oldVal = localStorage.getItem('truckCounters');
         if (oldVal && !localStorage.getItem('voiture_truckCounters') && !localStorage.getItem('camion_truckCounters')) {
             const keys = ['truckCounters', 'vehicleCounters', 'globalTruckCounters', 'globalCarCounters', 'truckHistory', 'carHistory', 'globalTruckDistance', 'globalCarDistance', 'globalTruckTime', 'globalCarTime', 'truckChronoSec', 'truckAccumulatedTime', 'truckStartTime', 'truckChronoRun', 'carChronoSec', 'carAccumulatedTime', 'carStartTime', 'carChronoRun', 'liveTruckDist', 'liveCarDist'];
             keys.forEach(k => {
                 let val = localStorage.getItem(k);
-                if (val !== null) {
-                    localStorage.setItem('voiture_' + k, val);
-                    localStorage.removeItem(k);
-                }
+                if (val !== null) { localStorage.setItem('voiture_' + k, val); localStorage.removeItem(k); }
             });
 
             let allSessions = await this.idb.getAllRaw();
             if (allSessions.length > 0) {
                 let tx = this.idb.db.transaction('sessions', 'readwrite');
                 let store = tx.objectStore('sessions');
-                allSessions.forEach(s => {
-                    if (!s.profile) {
-                        s.profile = 'voiture';
-                        store.put(s);
-                    }
-                });
+                allSessions.forEach(s => { if (!s.profile) { s.profile = 'voiture'; store.put(s); } });
                 return new Promise(resolve => { tx.oncomplete = () => resolve(); });
             }
         }
@@ -122,17 +157,11 @@ const app = {
         localStorage.setItem('activeProfile', newProfile);
 
         await this.init(true);
-
-        if (window.ui) {
-            window.ui.showToast(`🔄 Profil changé : ${newProfile === 'voiture' ? '🚘 Voiture' : '🚛 Camion'}`);
-        }
+        if (window.ui) { window.ui.showToast(`🔄 Profil changé : ${newProfile === 'voiture' ? '🚘 Voiture' : '🚛 Camion'}`); }
     },
 
     async init(isProfileSwitch = false) {
-        if (!isProfileSwitch) {
-            await this.idb.init();
-            await this.migrateData();
-        }
+        if (!isProfileSwitch) { await this.idb.init(); await this.migrateData(); }
 
         let selector = document.getElementById('profile-selector');
         if (selector) selector.value = this.activeProfile;
@@ -147,6 +176,21 @@ const app = {
         try { this.truckHistory = JSON.parse(this.storage.get('truckHistory')) || []; } catch(e) { this.truckHistory = []; }
         try { this.carHistory = JSON.parse(this.storage.get('carHistory')) || []; } catch(e) { this.carHistory = []; }
         
+        // Initialisation ou Migration des stats permanentes
+        try { this.globalAnaTrucks = JSON.parse(this.storage.get('globalAnaTrucks')); } catch(e) {}
+        if (!this.globalAnaTrucks) { 
+            this.globalAnaTrucks = this.getEmptyAnalytics(); 
+            await this.buildPermanentAnalyticsFromIDB('trucks', this.globalAnaTrucks);
+            this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
+        }
+
+        try { this.globalAnaCars = JSON.parse(this.storage.get('globalAnaCars')); } catch(e) {}
+        if (!this.globalAnaCars) { 
+            this.globalAnaCars = this.getEmptyAnalytics(); 
+            await this.buildPermanentAnalyticsFromIDB('cars', this.globalAnaCars);
+            this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
+        }
+
         if (this.vehicleCounters["Tracteurs"] !== undefined) {
             this.vehicleCounters["Engins agricoles"] = (this.vehicleCounters["Engins agricoles"] || 0) + this.vehicleCounters["Tracteurs"];
             delete this.vehicleCounters["Tracteurs"];
@@ -182,11 +226,8 @@ const app = {
         if (this.isTruckRunning) { this.isTruckRunning = false; this.toggleTruckChrono(); } else this.updateTruckChronoDisp();
         if (this.isCarRunning) { this.isCarRunning = false; this.toggleCarChrono(); } else this.updateCarChronoDisp();
         
-        this.renderTrucks();
-        this.renderCars();
-        this.renderKmStats();
-        this.renderLiveStats('trucks');
-        this.renderLiveStats('cars');
+        this.renderTrucks(); this.renderCars(); this.renderKmStats();
+        this.renderLiveStats('trucks'); this.renderLiveStats('cars');
         this.renderGlobalStats();
 
         if (window.ui && window.ui.activeTab === 'analytics') this.renderAnalytics('trucks');
@@ -265,6 +306,8 @@ const app = {
             clearInterval(this.truckInterval); 
             this.truckAccumulatedTime = this.truckSeconds;
             this.storage.set('truckAccumulatedTime', this.truckAccumulatedTime);
+            this.globalAnaTrucks.lastVeh = null; // Coupe la séquence
+            this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
         }
     },
 
@@ -304,6 +347,8 @@ const app = {
             clearInterval(this.carInterval); 
             this.carAccumulatedTime = this.carSeconds;
             this.storage.set('carAccumulatedTime', this.carAccumulatedTime);
+            this.globalAnaCars.lastVeh = null; // Coupe la séquence
+            this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
         }
     },
 
@@ -318,8 +363,25 @@ const app = {
                 this.truckCounters[brand][type] += amount;
                 this.globalTruckCounters[brand][type] += amount; 
                 
-                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
+                let nowTs = new Date().getTime();
+                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.truckSeconds), timestamp: nowTs };
                 this.truckHistory.push(histItem);
+
+                // ENREGISTREMENT PERMANENT (Heure, Jour, Alt, Séquence)
+                let d = new Date(nowTs);
+                this.globalAnaTrucks.hours[`${d.getHours()}h`]++;
+                this.globalAnaTrucks.days[Object.keys(this.globalAnaTrucks.days)[d.getDay()]]++;
+                
+                let altVal = window.gps.currentPos.alt || 0;
+                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+                this.globalAnaTrucks.alts[altKey]++;
+
+                if (this.globalAnaTrucks.lastVeh) {
+                    let pair = `${this.globalAnaTrucks.lastVeh} ➡️ ${brand}`;
+                    this.globalAnaTrucks.seqs[pair] = (this.globalAnaTrucks.seqs[pair] || 0) + 1;
+                }
+                this.globalAnaTrucks.lastVeh = brand;
+                this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
                 
                 if(window.ui && e) { window.ui.triggerHapticFeedback('truck'); window.ui.showClickParticle(e, `+1`); }
                 this.storage.set('truckCounters', JSON.stringify(this.truckCounters)); 
@@ -347,8 +409,25 @@ const app = {
                 this.vehicleCounters[type] += amount; 
                 this.globalCarCounters[type] += amount; 
 
-                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
+                let nowTs = new Date().getTime();
+                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.carSeconds), timestamp: nowTs };
                 this.carHistory.push(histItem);
+
+                // ENREGISTREMENT PERMANENT (Heure, Jour, Alt, Séquence)
+                let d = new Date(nowTs);
+                this.globalAnaCars.hours[`${d.getHours()}h`]++;
+                this.globalAnaCars.days[Object.keys(this.globalAnaCars.days)[d.getDay()]]++;
+                
+                let altVal = window.gps.currentPos.alt || 0;
+                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+                this.globalAnaCars.alts[altKey]++;
+
+                if (this.globalAnaCars.lastVeh) {
+                    let pair = `${this.globalAnaCars.lastVeh} ➡️ ${type}`;
+                    this.globalAnaCars.seqs[pair] = (this.globalAnaCars.seqs[pair] || 0) + 1;
+                }
+                this.globalAnaCars.lastVeh = type;
+                this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
                 
                 let hapticType = 'car';
                 if(type === 'Motos' || type === 'Vélos') hapticType = 'moto';
@@ -376,6 +455,21 @@ const app = {
             if (this.globalTruckCounters[item.brand] && this.globalTruckCounters[item.brand][item.type] > 0) {
                 this.globalTruckCounters[item.brand][item.type]--;
             }
+
+            // RETRAIT DES STATS PERMANENTES (En cas d'erreur)
+            if (item.timestamp) {
+                let d = new Date(item.timestamp);
+                let hourKey = `${d.getHours()}h`;
+                let dayKey = Object.keys(this.globalAnaTrucks.days)[d.getDay()];
+                let altVal = item.alt || 0;
+                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+
+                if(this.globalAnaTrucks.hours[hourKey] > 0) this.globalAnaTrucks.hours[hourKey]--;
+                if(this.globalAnaTrucks.days[dayKey] > 0) this.globalAnaTrucks.days[dayKey]--;
+                if(this.globalAnaTrucks.alts[altKey] > 0) this.globalAnaTrucks.alts[altKey]--;
+                if(index === this.truckHistory.length - 1) this.globalAnaTrucks.lastVeh = null; // Casse la séquence si c'est le dernier
+                this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
+            }
         }
         this.truckHistory.splice(index, 1);
         this.storage.set('truckCounters', JSON.stringify(this.truckCounters)); 
@@ -391,6 +485,21 @@ const app = {
         if (!item.isEvent && this.vehicleCounters[item.type] > 0) {
             this.vehicleCounters[item.type]--;
             if (this.globalCarCounters[item.type] > 0) this.globalCarCounters[item.type]--;
+
+            // RETRAIT DES STATS PERMANENTES (En cas d'erreur)
+            if (item.timestamp) {
+                let d = new Date(item.timestamp);
+                let hourKey = `${d.getHours()}h`;
+                let dayKey = Object.keys(this.globalAnaCars.days)[d.getDay()];
+                let altVal = item.alt || 0;
+                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+
+                if(this.globalAnaCars.hours[hourKey] > 0) this.globalAnaCars.hours[hourKey]--;
+                if(this.globalAnaCars.days[dayKey] > 0) this.globalAnaCars.days[dayKey]--;
+                if(this.globalAnaCars.alts[altKey] > 0) this.globalAnaCars.alts[altKey]--;
+                if(index === this.carHistory.length - 1) this.globalAnaCars.lastVeh = null; 
+                this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
+            }
         }
         this.carHistory.splice(index, 1);
         this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
@@ -487,26 +596,32 @@ const app = {
     },
 
     async resetTrucks() { 
-        if (confirm("⚠️ Effacer toutes les sessions sauvegardées (pour ce profil) ? Irréversible !")) { 
+        if (confirm("⚠️ Effacer toutes les sessions Camions sauvegardées (pour ce profil) ? Tes stats globales et tes analyses resteront intactes !")) { 
             await this.idb.clear('trucks'); 
             this.renderAdvancedStats('trucks'); 
-            window.ui.showToast("🗑️ Historique effacé"); 
+            window.ui.showToast("🗑️ Historique des sessions effacé"); 
         } 
     },
     async resetCars() { 
-        if (confirm("⚠️ Effacer toutes les sessions sauvegardées (pour ce profil) ? Irréversible !")) { 
+        if (confirm("⚠️ Effacer toutes les sessions Véhicules sauvegardées (pour ce profil) ? Tes stats globales et tes analyses resteront intactes !")) { 
             await this.idb.clear('cars'); 
             this.renderAdvancedStats('cars'); 
-            window.ui.showToast("🗑️ Historique effacé"); 
+            window.ui.showToast("🗑️ Historique des sessions effacé"); 
         } 
     },
 
     resetGlobalStats() {
-        if (confirm("⚠️ Es-tu sûr de vouloir effacer TOUTES les statistiques globales pour ce profil ? Action irréversible !")) {
+        if (confirm("⚠️ Es-tu sûr de vouloir effacer TOUTES les statistiques globales et analyses pour ce profil ? Action irréversible !")) {
             this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
             this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
             this.globalTruckDistance = 0; this.globalTruckTime = 0;
             this.globalCarDistance = 0; this.globalCarTime = 0;
+            
+            // On vide aussi les analyses permanentes
+            this.globalAnaTrucks = this.getEmptyAnalytics();
+            this.globalAnaCars = this.getEmptyAnalytics();
+            this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
+            this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
             
             this.storage.set('globalTruckCounters', JSON.stringify(this.globalTruckCounters));
             this.storage.set('globalCarCounters', JSON.stringify(this.globalCarCounters));
@@ -514,7 +629,7 @@ const app = {
             this.storage.set('globalCarDistance', 0); this.storage.set('globalCarTime', 0);
             
             this.renderGlobalStats();
-            if(window.ui) window.ui.showToast("🗑️ Statistiques globales effacées !");
+            if(window.ui) window.ui.showToast("🗑️ Statistiques globales et analyses effacées !");
         }
     },
 
@@ -670,62 +785,42 @@ const app = {
         document.getElementById('modal-session-title').innerText = `🌍 Stats Globales : ${title}`;
         document.getElementById('modal-session-content').innerHTML = html;
         
-        // --- Changement dynamique du titre pour le Global ---
         let titleEl = document.querySelector('#session-detail-modal h4');
-        if (titleEl) titleEl.innerText = "📈 Répartition par heure (Global)";
-
-        // --- Récupération des données pour la densité temporelle globale ---
-        let sessions = await this.idb.getAll(type);
-        let hourBlocks = {};
-        for(let i=0; i<24; i++) hourBlocks[`${i}h`] = 0; // Initialise les 24 heures
-
-        sessions.forEach(s => {
-            if (s.history) {
-                s.history.filter(h => !h.isEvent).forEach(h => {
-                    let match = false;
-                    if (key === 'Total') match = true;
-                    else if (type === 'trucks' && h.brand === key) match = true;
-                    else if (type === 'cars' && h.type === key) match = true;
-
-                    if (match && h.timestamp) {
-                        let hour = new Date(h.timestamp).getHours();
-                        hourBlocks[`${hour}h`]++;
-                    }
-                });
-            }
-        });
+        if (titleEl) titleEl.innerText = "📈 Répartition par heure (Tous modèles confondus)";
+        document.getElementById('modal-weekly-section').style.display = 'block';
 
         document.getElementById('session-detail-modal').style.display = 'flex';
 
+        let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
+
+        // 1. Dessiner le graphique Horaire (Lecture de la mémoire permanente)
         let ctxD = document.getElementById('temporalDensityChart');
         if(ctxD) {
             if(this.temporalChart) this.temporalChart.destroy();
-
-            let hasData = Object.values(hourBlocks).some(v => v > 0);
-
+            let hasData = Object.values(anaData.hours).some(v => v > 0);
             if(hasData) {
                 let isDark = document.body.classList.contains('dark-mode');
                 let tColor = isDark ? '#d2dae2' : '#333';
-
                 this.temporalChart = new Chart(ctxD, {
                     type: 'bar',
-                    data: {
-                        labels: Object.keys(hourBlocks),
-                        datasets: [{ 
-                            label: 'Véhicules par heure', 
-                            data: Object.values(hourBlocks), 
-                            backgroundColor: type === 'trucks' ? '#27ae60' : '#3498db', 
-                            borderRadius: 4 
-                        }]
-                    },
-                    options: { 
-                        maintainAspectRatio: false, 
-                        plugins: { legend: { display: false } }, 
-                        scales: { 
-                            y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, 
-                            x: { ticks: { color: tColor } } 
-                        } 
-                    }
+                    data: { labels: Object.keys(anaData.hours), datasets: [{ label: 'Véhicules par heure', data: Object.values(anaData.hours), backgroundColor: type === 'trucks' ? '#27ae60' : '#3498db', borderRadius: 4 }] },
+                    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, x: { ticks: { color: tColor } } } }
+                });
+            }
+        }
+
+        // 2. Dessiner le graphique Journalier (Lecture de la mémoire permanente)
+        let ctxW = document.getElementById('weeklyGlobalChart');
+        if(ctxW) {
+            if(this.weeklyGlobalChart) this.weeklyGlobalChart.destroy();
+            let hasDayData = Object.values(anaData.days).some(v => v > 0);
+            if(hasDayData) {
+                let isDark = document.body.classList.contains('dark-mode');
+                let tColor = isDark ? '#d2dae2' : '#333';
+                this.weeklyGlobalChart = new Chart(ctxW, {
+                    type: 'bar',
+                    data: { labels: Object.keys(anaData.days), datasets: [{ label: 'Véhicules par jour', data: Object.values(anaData.days), backgroundColor: type === 'trucks' ? '#e67e22' : '#9b59b6', borderRadius: 4 }] },
+                    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, x: { ticks: { color: tColor } } } }
                 });
             }
         }
@@ -807,35 +902,8 @@ const app = {
             btn2.style.color = type === 'cars' ? 'white' : 'var(--btn-text)';
         }
 
-        let sessions = await this.idb.getAll(type);
-        
-        let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
-        let dayKeys = Object.keys(days);
-        let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
-        let seqs = {};
-
-        sessions.forEach(s => {
-            let d = new Date(parseInt(s.id));
-            let dayName = dayKeys[d.getDay()];
-            
-            let hist = s.history ? s.history.filter(h => !h.isEvent) : [];
-            days[dayName] += hist.length;
-
-            for(let i = 0; i < hist.length; i++) {
-                let a = hist[i].alt || 0;
-                if(a < 200) alts["< 200m"]++;
-                else if(a < 500) alts["200-500m"]++;
-                else if(a < 1000) alts["500-1000m"]++;
-                else alts["> 1000m"]++;
-
-                if(i < hist.length - 1) {
-                    let cur = type === 'trucks' ? hist[i].brand : hist[i].type;
-                    let nxt = type === 'trucks' ? hist[i+1].brand : hist[i+1].type;
-                    let pair = `${cur} ➡️ ${nxt}`;
-                    seqs[pair] = (seqs[pair] || 0) + 1;
-                }
-            }
-        });
+        // LECTURE DIRECTE DE LA MEMOIRE PERMANENTE (Au lieu de parser les sessions !)
+        let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
 
         const isDark = document.body.classList.contains('dark-mode');
         const textColor = isDark ? '#d2dae2' : '#2c3e50';
@@ -845,7 +913,7 @@ const app = {
             if(this.weeklyChart) this.weeklyChart.destroy();
             this.weeklyChart = new Chart(ctxW, {
                 type: 'line',
-                data: { labels: Object.keys(days), datasets: [{ label: 'Total cumulé', data: Object.values(days), borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', fill: true, tension: 0.4 }] },
+                data: { labels: Object.keys(anaData.days), datasets: [{ label: 'Total cumulé', data: Object.values(anaData.days), borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', fill: true, tension: 0.4 }] },
                 options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { color: textColor } }, x: { ticks: { color: textColor } } } }
             });
         }
@@ -855,12 +923,12 @@ const app = {
             if(this.altitudeChart) this.altitudeChart.destroy();
             this.altitudeChart = new Chart(ctxA, {
                 type: 'pie',
-                data: { labels: Object.keys(alts), datasets: [{ data: Object.values(alts), backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
+                data: { labels: Object.keys(anaData.alts), datasets: [{ data: Object.values(anaData.alts), backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
                 options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
             });
         }
 
-        let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
+        let seqArr = Object.entries(anaData.seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
         let seqHtml = '';
         if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
         seqArr.forEach(item => {
@@ -898,9 +966,9 @@ const app = {
         document.getElementById('modal-session-title').innerText = type === 'trucks' ? '🚛 Détails Session Camions' : '🚗 Détails Session Véhicules';
         document.getElementById('modal-session-content').innerHTML = html;
         
-        // --- On remet le titre correct pour les sessions ---
         let titleEl = document.querySelector('#session-detail-modal h4');
         if (titleEl) titleEl.innerText = "📈 Densité Temporelle (Session)";
+        document.getElementById('modal-weekly-section').style.display = 'none'; // Cache les jours pour une session unique
 
         document.getElementById('session-detail-modal').style.display = 'flex';
 
@@ -946,7 +1014,7 @@ const app = {
         event.stopPropagation();
         let session = await this.idb.getById(sessionId);
         if(!session) return;
-        let exportData = { appVersion: "Compteur Trafic v5.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
+        let exportData = { appVersion: "Compteur Trafic v5.1", exportDate: new Date().toISOString(), sessionType: type, session: session };
         const dataStr = JSON.stringify(exportData, null, 2);
         let safeDate = session.date.replace(/[\/ :]/g, '_');
         await this.triggerDownloadOrShare(dataStr, `Compteur_Session_${type}_${safeDate}.txt`);
@@ -976,9 +1044,17 @@ const app = {
 
         let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
         
-        let globalSummary = { profile: this.activeProfile, totalSessions: allSessions.length, globalDonneesBrutesCamions: this.globalTruckCounters, globalDonneesBrutesVehicules: this.globalCarCounters };
+        // On inclut les analyses permanentes dans l'export pour ne pas les perdre
+        let globalSummary = { 
+            profile: this.activeProfile, 
+            totalSessions: allSessions.length, 
+            globalDonneesBrutesCamions: this.globalTruckCounters, 
+            globalDonneesBrutesVehicules: this.globalCarCounters,
+            analysesPermanentesCamions: this.globalAnaTrucks,
+            analysesPermanentesVehicules: this.globalAnaCars
+        };
 
-        let exportData = { appVersion: "Compteur Trafic v5.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
+        let exportData = { appVersion: "Compteur Trafic v5.1", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
         const dataStr = JSON.stringify(exportData, null, 2);
         const fileName = `Compteur_Export_${this.activeProfile}_${new Date().toISOString().slice(0,10)}.txt`;
         
@@ -994,9 +1070,13 @@ const app = {
                 if (data.sessions && confirm(`⚠️ Attention : L'importation va remplacer l'historique actuel pour le profil "${this.activeProfile}". Continuer ?`)) {
                     await this.idb.clear('trucks'); await this.idb.clear('cars');
                     for (let s of data.sessions) { if (!s.id) s.id = Date.now().toString() + Math.random().toString(); s.profile = this.activeProfile; await this.idb.add(s); }
+                    
                     if (data.globalSummary?.globalDonneesBrutesCamions) this.storage.set('globalTruckCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesCamions));
                     if (data.globalSummary?.globalDonneesBrutesVehicules) this.storage.set('globalCarCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesVehicules));
-                    alert("✅ Historique importé avec succès ! Redémarrage..."); location.reload();
+                    if (data.globalSummary?.analysesPermanentesCamions) this.storage.set('globalAnaTrucks', JSON.stringify(data.globalSummary.analysesPermanentesCamions));
+                    if (data.globalSummary?.analysesPermanentesVehicules) this.storage.set('globalAnaCars', JSON.stringify(data.globalSummary.analysesPermanentesVehicules));
+                    
+                    alert("✅ Historique et analyses importés avec succès ! Redémarrage..."); location.reload();
                 } else if(!data.sessions) { alert("❌ Format non reconnu."); }
             } catch (err) { alert("❌ Fichier invalide ou corrompu !"); }
         }; reader.readAsText(file);
