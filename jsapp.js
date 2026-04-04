@@ -788,7 +788,7 @@ const app = {
             if (this.liveTruckDistance > 0) {
                 let truckCount = this.truckHistory.filter(h => !h.isEvent).length;
                 let gRatio = (truckCount / this.liveTruckDistance).toFixed(1);
-                let gFreq = (truckCount > 0 && this.truckSeconds > 0) ? (this.truckSeconds / 60 / truckCount).toFixed(1) + " min" : "-";
+                let gFreq = (truckCount > 0 && this.truckSeconds > 0) ? (truckCount / (this.truckSeconds / 60)).toFixed(1) + " /min" : "-";
                 
                 let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${gRatio} /km</span><span class="km-stat-extra">⏱️ ${gFreq}</span></div>`;
                 
@@ -797,7 +797,7 @@ const app = {
                     let count = this.truckCounters[brand] ? (this.truckCounters[brand].fr + this.truckCounters[brand].etr) : 0;
                     if (count > 0) {
                         let ratio = (count / this.liveTruckDistance).toFixed(1);
-                        let freq = (this.truckSeconds > 0) ? (this.truckSeconds / 60 / count).toFixed(1) + " min" : "-";
+                        let freq = (this.truckSeconds > 0) ? (count / (this.truckSeconds / 60)).toFixed(1) + " /min" : "-";
                         statsArr.push({ name: brand, ratio: parseFloat(ratio), ratioStr: ratio, freq: freq });
                     }
                 });
@@ -816,7 +816,7 @@ const app = {
             if (this.liveCarDistance > 0) {
                 let carCount = this.carHistory.filter(h => !h.isEvent).length;
                 let gRatio = (carCount / this.liveCarDistance).toFixed(1);
-                let gFreq = (carCount > 0 && this.carSeconds > 0) ? (this.carSeconds / 60 / carCount).toFixed(1) + " min" : "-";
+                let gFreq = (carCount > 0 && this.carSeconds > 0) ? (carCount / (this.carSeconds / 60)).toFixed(1) + " /min" : "-";
 
                 let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${gRatio} /km</span><span class="km-stat-extra">⏱️ ${gFreq}</span></div>`;
                 
@@ -825,7 +825,7 @@ const app = {
                     let count = this.vehicleCounters[v] || 0;
                     if (count > 0) {
                         let ratio = (count / this.liveCarDistance).toFixed(1);
-                        let freq = (this.carSeconds > 0) ? (this.carSeconds / 60 / count).toFixed(1) + " min" : "-";
+                        let freq = (this.carSeconds > 0) ? (count / (this.carSeconds / 60)).toFixed(1) + " /min" : "-";
                         let displayName = v === "Camions" ? "Poids Lourds" : v;
                         statsArr.push({ name: displayName, ratio: parseFloat(ratio), ratioStr: ratio, freq: freq });
                     }
