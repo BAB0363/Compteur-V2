@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=16">
+    <link rel="manifest" href="manifest.json?v=17">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=16">
+    <link rel="stylesheet" href="style.css?v=17">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -64,6 +64,9 @@
                 <div id="bar-fr"></div>
                 <div id="bar-etr"></div>
             </div>
+            <div id="prediction-box-trucks" style="text-align: center; font-size: 0.75em; margin-top: 8px; color: #7f8c8d; font-weight: bold;">
+                🔮 Prédiction : <span id="pred-text-trucks" style="color: #8e44ad;">Analyse en cours...</span>
+            </div>
         </div>
         
         <div id="truck-main-view">
@@ -118,6 +121,9 @@
                 <div id="bar-motos"></div>
                 <div id="bar-velos"></div>
             </div>
+            <div id="prediction-box-cars" style="text-align: center; font-size: 0.75em; margin-top: 8px; color: #7f8c8d; font-weight: bold;">
+                🔮 Prédiction : <span id="pred-text-cars" style="color: #8e44ad;">Analyse en cours...</span>
+            </div>
         </div>
         
         <div id="car-main-view">
@@ -169,6 +175,11 @@
             <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="dash-grand-total" style="color:#27ae60;">0</span></div>
             <div class="chart-wrapper"><canvas id="dashboardMainChart"></canvas></div>
             <div id="dashboard-main-list" class="km-stats-grid"></div>
+        </div>
+
+        <div class="km-stats-container" id="dash-nat-container" style="display: none;">
+            <h4>🌍 Répartition Nationalité</h4>
+            <div class="chart-wrapper"><canvas id="natChart"></canvas></div>
         </div>
 
         <div class="km-stats-container">
@@ -270,12 +281,12 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=16"></script>
+    <script type="module" src="jsapp.js?v=17"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=16')
+          navigator.serviceWorker.register('./sw.js?v=17')
             .then(registration => {
               console.log('Service Worker Compteur enregistré avec succès !', registration.scope);
             })
