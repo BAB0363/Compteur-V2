@@ -5,15 +5,19 @@ import { gps } from './jsgps.js';
 window.ui = ui; window.gps = gps;
 
 const app = {
-    activeProfile: localStorage.getItem('activeProfile') || 'voiture',
+    currentUser: localStorage.getItem('currentUser') || 'Sylvain',
+    currentMode: localStorage.getItem('currentMode') || 'voiture',
+    usersList: JSON.parse(localStorage.getItem('usersList')) || ['Sylvain'],
+
     storage: {
-        get(key) { return localStorage.getItem(window.app.activeProfile + '_' + key); },
-        set(key, value) { localStorage.setItem(window.app.activeProfile + '_' + key, value); },
-        remove(key) { localStorage.removeItem(window.app.activeProfile + '_' + key); }
+        get(key) { return localStorage.getItem(window.app.currentUser + '_' + window.app.currentMode + '_' + key); },
+        set(key, value) { localStorage.setItem(window.app.currentUser + '_' + window.app.currentMode + '_' + key, value); },
+        remove(key) { localStorage.removeItem(window.app.currentUser + '_' + window.app.currentMode + '_' + key); }
     },
 
     brands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
-    vehicleTypes: ["Voitures", "Utilitaires", "Camions", "Engins agricoles", "Bus/Car", "Camping-cars", "Motos", "Vélos"],
+    // Ordre mis à jour selon ta demande
+    vehicleTypes: ["Voitures", "Utilitaires", "Motos", "Camions", "Camping-cars", "Bus/Car", "Engins agricoles", "Vélos"],
     
     truckCounters: {}, vehicleCounters: {},
     globalTruckCounters: {}, globalCarCounters: {}, 
@@ -65,7 +69,7 @@ const app = {
             return new Promise(resolve => {
                 let tx = this.db.transaction('sessions', 'readonly');
                 let req = tx.objectStore('sessions').getAll();
-                req.onsuccess = e => resolve(e.target.result.filter(s => s.sessionType === type && s.profile === window.app.activeProfile));
+                req.onsuccess = e => resolve(e.target.result.filter(s => s.sessionType === type && s.user === window.app.currentUser && s.mode === window.app.currentMode));
             });
         },
         async getById(id) {
@@ -132,40 +136,110 @@ const app = {
     },
 
     async migrateData() {
-        let oldVal = localStorage.getItem('truckCounters');
-        if (oldVal && !localStorage.getItem('voiture_truckCounters') && !localStorage.getItem('camion_truckCounters')) {
-            const keys = ['truckCounters', 'vehicleCounters', 'globalTruckCounters', 'globalCarCounters', 'truckHistory', 'carHistory', 'globalTruckDistance', 'globalCarDistance', 'globalTruckTime', 'globalCarTime', 'truckChronoSec', 'truckAccumulatedTime', 'truckStartTime', 'truckChronoRun', 'carChronoSec', 'carAccumulatedTime', 'carStartTime', 'carChronoRun', 'liveTruckDist', 'liveCarDist'];
-            keys.forEach(k => {
-                let val = localStorage.getItem(k);
-                if (val !== null) { localStorage.setItem('voiture_' + k, val); localStorage.removeItem(k); }
+        let oldProfile = localStorage.getItem('activeProfile');
+        if (oldProfile) {
+            const keys = ['truckCounters', 'vehicleCounters', 'globalTruckCounters', 'globalCarCounters', 'truckHistory', 'carHistory', 'globalTruckDistance', 'globalCarDistance', 'globalTruckTime', 'globalCarTime', 'truckChronoSec', 'truckAccumulatedTime', 'truckStartTime', 'truckChronoRun', 'carChronoSec', 'carAccumulatedTime', 'carStartTime', 'carChronoRun', 'liveTruckDist', 'liveCarDist', 'globalAnaTrucks', 'globalAnaCars'];
+            
+            ['voiture', 'camion'].forEach(mode => {
+                keys.forEach(k => {
+                    let val = localStorage.getItem(mode + '_' + k);
+                    if (val !== null) { 
+                        localStorage.setItem('Sylvain_' + mode + '_' + k, val); 
+                        localStorage.removeItem(mode + '_' + k); 
+                    }
+                });
             });
 
             let allSessions = await this.idb.getAllRaw();
             if (allSessions.length > 0) {
                 let tx = this.idb.db.transaction('sessions', 'readwrite');
                 let store = tx.objectStore('sessions');
-                allSessions.forEach(s => { if (!s.profile) { s.profile = 'voiture'; store.put(s); } });
-                return new Promise(resolve => { tx.oncomplete = () => resolve(); });
+                allSessions.forEach(s => { 
+                    if (!s.user) { 
+                        s.user = 'Sylvain'; 
+                        s.mode = s.profile || 'voiture';
+                        s.profile = 'Sylvain_' + s.mode;
+                        store.put(s); 
+                    } 
+                });
             }
+            localStorage.removeItem('activeProfile');
         }
     },
 
-    async changeProfile(newProfile) {
+    updateHeaderDisplay() {
+        let elUser = document.getElementById('display-user');
+        let elMode = document.getElementById('display-mode');
+        if(elUser) elUser.innerText = this.currentUser;
+        if(elMode) elMode.innerText = this.currentMode === 'voiture' ? '🚗 Voiture' : '🚛 Camion';
+    },
+
+    createUser() {
+        let input = document.getElementById('new-user-input');
+        if(!input) return;
+        let newName = input.value.trim();
+        if(newName && !this.usersList.includes(newName)) {
+            this.usersList.push(newName);
+            localStorage.setItem('usersList', JSON.stringify(this.usersList));
+            input.value = '';
+            this.changeUser(newName);
+        } else if (this.usersList.includes(newName)) {
+            if(window.ui) window.ui.showToast("❌ Cet utilisateur existe déjà");
+        }
+    },
+
+    deleteUser() {
+        if(this.usersList.length <= 1) {
+            if(window.ui) window.ui.showToast("⚠️ Impossible de supprimer le dernier utilisateur !");
+            return;
+        }
+        if(confirm(`⚠️ Supprimer définitivement le profil de ${this.currentUser} et TOUTES ses données locales ?`)) {
+            this.usersList = this.usersList.filter(u => u !== this.currentUser);
+            localStorage.setItem('usersList', JSON.stringify(this.usersList));
+            this.changeUser(this.usersList[0]);
+        }
+    },
+
+    async changeUser(newUser) {
         if (this.isTruckRunning) this.toggleTruckChrono();
         if (this.isCarRunning) this.toggleCarChrono();
 
-        this.activeProfile = newProfile;
-        localStorage.setItem('activeProfile', newProfile);
+        this.currentUser = newUser;
+        localStorage.setItem('currentUser', newUser);
 
         await this.init(true);
-        if (window.ui) { window.ui.showToast(`🔄 Profil changé : ${newProfile === 'voiture' ? '🚘 Voiture' : '🚛 Camion'}`); }
+        if (window.ui) { window.ui.showToast(`👤 Utilisateur changé : ${newUser}`); }
+    },
+
+    async changeMode(newMode) {
+        if (this.isTruckRunning) this.toggleTruckChrono();
+        if (this.isCarRunning) this.toggleCarChrono();
+
+        this.currentMode = newMode;
+        localStorage.setItem('currentMode', newMode);
+
+        await this.init(true);
+        if (window.ui) { window.ui.showToast(`🔄 Mode changé : ${newMode === 'voiture' ? '🚘 Voiture' : '🚛 Camion'}`); }
     },
 
     async init(isProfileSwitch = false) {
         if (!isProfileSwitch) { await this.idb.init(); await this.migrateData(); }
 
-        let selector = document.getElementById('profile-selector');
-        if (selector) selector.value = this.activeProfile;
+        let userSel = document.getElementById('user-selector');
+        if(userSel) {
+            userSel.innerHTML = '';
+            this.usersList.forEach(u => {
+                let opt = document.createElement('option');
+                opt.value = u; opt.innerText = "👤 " + u;
+                if(u === this.currentUser) opt.selected = true;
+                userSel.appendChild(opt);
+            });
+        }
+
+        let modeSel = document.getElementById('mode-selector');
+        if (modeSel) modeSel.value = this.currentMode;
+
+        this.updateHeaderDisplay();
 
         if (this.truckInterval) clearInterval(this.truckInterval);
         if (this.carInterval) clearInterval(this.carInterval);
@@ -566,7 +640,9 @@ const app = {
 
         let newSession = { 
             id: Date.now().toString(), 
-            profile: this.activeProfile,
+            user: this.currentUser,
+            mode: this.currentMode,
+            profile: this.currentUser + '_' + this.currentMode,
             sessionType: type, 
             startDate: startDateStr, 
             date: dateStr, 
@@ -588,14 +664,14 @@ const app = {
     },
 
     async resetTrucks() { 
-        if (confirm("⚠️ Effacer toutes les sessions Camions sauvegardées (pour ce profil) ? Tes stats globales et tes analyses resteront intactes !")) { 
+        if (confirm(`⚠️ Effacer toutes les sessions Camions de ${this.currentUser} ? Tes stats globales resteront intactes !`)) { 
             await this.idb.clear('trucks'); 
             this.renderAdvancedStats('trucks'); 
             window.ui.showToast("🗑️ Historique des sessions effacé"); 
         } 
     },
     async resetCars() { 
-        if (confirm("⚠️ Effacer toutes les sessions Véhicules sauvegardées (pour ce profil) ? Tes stats globales et tes analyses resteront intactes !")) { 
+        if (confirm(`⚠️ Effacer toutes les sessions Véhicules de ${this.currentUser} ? Tes stats globales resteront intactes !`)) { 
             await this.idb.clear('cars'); 
             this.renderAdvancedStats('cars'); 
             window.ui.showToast("🗑️ Historique des sessions effacé"); 
@@ -603,7 +679,7 @@ const app = {
     },
 
     resetGlobalStats() {
-        if (confirm("⚠️ Es-tu sûr de vouloir effacer TOUTES les statistiques globales et analyses pour ce profil ? Action irréversible !")) {
+        if (confirm(`⚠️ Es-tu sûr de vouloir effacer TOUTES les statistiques globales et analyses pour le profil de ${this.currentUser} ? Action irréversible !`)) {
             this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
             this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
             this.globalTruckDistance = 0; this.globalTruckTime = 0;
@@ -655,6 +731,7 @@ const app = {
         let cgt = document.getElementById('car-grand-total'); if(cgt) cgt.innerText = grandTotal;
 
         const slugMap = { "Voitures": "voitures", "Utilitaires": "utilitaires", "Camions": "camions", "Engins agricoles": "engins", "Bus/Car": "bus", "Camping-cars": "camping", "Motos": "motos", "Vélos": "velos" };
+        const nameMap = { "Camions": "Poids Lourds" }; // Mappe le nom en interface
 
         this.vehicleTypes.forEach(v => {
             let pct = grandTotal === 0 ? (100 / this.vehicleTypes.length) : Math.round(((this.vehicleCounters[v]||0) / grandTotal) * 100); 
@@ -666,7 +743,8 @@ const app = {
         const icons = { Voitures: "🚗", Utilitaires: "🚐", Camions: "🚛", "Engins agricoles": "🚜", "Bus/Car": "🚌", "Camping-cars": "🏕️", Motos: "🏍️", Vélos: "🚲" };
         this.vehicleTypes.forEach(v => {
             let score = this.vehicleCounters[v] || 0;
-            container.innerHTML += `<div class="vehicle-card"><div class="vehicle-name">${icons[v] || "🚘"} ${v}</div><div class="vehicle-controls"><button class="btn-corr" onclick="window.app.updateVehicle(event, '${v}', -1)">-</button><span class="vehicle-score">${score}</span><button class="btn-add btn-add-fr" onclick="window.app.updateVehicle(event, '${v}', 1)">+</button></div></div>`;
+            let displayName = nameMap[v] || v;
+            container.innerHTML += `<div class="vehicle-card"><div class="vehicle-name">${icons[v] || "🚘"} ${displayName}</div><div class="vehicle-controls"><button class="btn-corr" onclick="window.app.updateVehicle(event, '${v}', -1)">-</button><span class="vehicle-score">${score}</span><button class="btn-add btn-add-fr" onclick="window.app.updateVehicle(event, '${v}', 1)">+</button></div></div>`;
         });
     },
 
@@ -682,7 +760,6 @@ const app = {
         let count = items.length;
         
         let avgSpeed = (sec > 0) ? (dist / (sec / 3600)).toFixed(1) + " km/h" : "-";
-        let freqApp = (count > 0 && sec > 0) ? (sec / 60 / count).toFixed(1) + " min" : "-";
         let rythmeHeure = (sec > 0) ? (count / (sec / 3600)).toFixed(1) + " /h" : "-";
         let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
 
@@ -698,7 +775,6 @@ const app = {
         container.innerHTML = `
             <div class="km-stat-card"><span class="km-stat-title">Météo</span><span class="km-stat-value" style="color:#e67e22;">${weather}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Vitesse Moy.</span><span class="km-stat-value" style="color:#8e44ad;">${avgSpeed}</span></div>
-            <div class="km-stat-card"><span class="km-stat-title">Fréq. Apparition</span><span class="km-stat-value">${freqApp}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Rythme / Heure</span><span class="km-stat-value">${rythmeHeure}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Tendance (10m)</span><span class="km-stat-value" style="color:#e67e22;">${mobilePace}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Espacement Moyen</span><span class="km-stat-value">${espTemps} / ${espDist}</span></div>
@@ -711,11 +787,26 @@ const app = {
         if (tContainer) {
             if (this.liveTruckDistance > 0) {
                 let truckCount = this.truckHistory.filter(h => !h.isEvent).length;
-                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(truckCount / this.liveTruckDistance).toFixed(1)} /km</span></div>`;
+                let gRatio = (truckCount / this.liveTruckDistance).toFixed(1);
+                let gFreq = (truckCount > 0 && this.truckSeconds > 0) ? (this.truckSeconds / 60 / truckCount).toFixed(1) + " min" : "-";
+                
+                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${gRatio} /km</span><span class="km-stat-extra">⏱️ ${gFreq}</span></div>`;
+                
+                let statsArr = [];
                 this.brands.forEach(brand => {
                     let count = this.truckCounters[brand] ? (this.truckCounters[brand].fr + this.truckCounters[brand].etr) : 0;
-                    if (count > 0) html += `<div class="km-stat-card"><span class="km-stat-title">${brand}</span><span class="km-stat-value">${(count / this.liveTruckDistance).toFixed(1)} /km</span></div>`;
+                    if (count > 0) {
+                        let ratio = (count / this.liveTruckDistance).toFixed(1);
+                        let freq = (this.truckSeconds > 0) ? (this.truckSeconds / 60 / count).toFixed(1) + " min" : "-";
+                        statsArr.push({ name: brand, ratio: parseFloat(ratio), ratioStr: ratio, freq: freq });
+                    }
                 });
+                
+                statsArr.sort((a,b) => b.ratio - a.ratio);
+                statsArr.forEach(st => {
+                    html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span><span class="km-stat-extra">⏱️ ${st.freq}</span></div>`;
+                });
+                
                 tContainer.innerHTML = html;
             } else { tContainer.innerHTML = '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Roule un peu pour voir les stats... 🚚💨</span>'; }
         }
@@ -724,11 +815,27 @@ const app = {
         if (cContainer) {
             if (this.liveCarDistance > 0) {
                 let carCount = this.carHistory.filter(h => !h.isEvent).length;
-                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${(carCount / this.liveCarDistance).toFixed(1)} /km</span></div>`;
+                let gRatio = (carCount / this.liveCarDistance).toFixed(1);
+                let gFreq = (carCount > 0 && this.carSeconds > 0) ? (this.carSeconds / 60 / carCount).toFixed(1) + " min" : "-";
+
+                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${gRatio} /km</span><span class="km-stat-extra">⏱️ ${gFreq}</span></div>`;
+                
+                let statsArr = [];
                 this.vehicleTypes.forEach(v => {
                     let count = this.vehicleCounters[v] || 0;
-                    if (count > 0) html += `<div class="km-stat-card"><span class="km-stat-title">${v}</span><span class="km-stat-value">${(count / this.liveCarDistance).toFixed(1)} /km</span></div>`;
+                    if (count > 0) {
+                        let ratio = (count / this.liveCarDistance).toFixed(1);
+                        let freq = (this.carSeconds > 0) ? (this.carSeconds / 60 / count).toFixed(1) + " min" : "-";
+                        let displayName = v === "Camions" ? "Poids Lourds" : v;
+                        statsArr.push({ name: displayName, ratio: parseFloat(ratio), ratioStr: ratio, freq: freq });
+                    }
                 });
+                
+                statsArr.sort((a,b) => b.ratio - a.ratio);
+                statsArr.forEach(st => {
+                    html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span><span class="km-stat-extra">⏱️ ${st.freq}</span></div>`;
+                });
+                
                 cContainer.innerHTML = html;
             } else { cContainer.innerHTML = '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Roule un peu pour voir les stats... 🚗💨</span>'; }
         }
@@ -753,7 +860,7 @@ const app = {
                 title = "🚗 Total tous Véhicules";
                 this.vehicleTypes.forEach(v => count += (this.globalCarCounters[v] || 0));
             } else {
-                title = `🚘 ${key}`;
+                title = `🚘 ${key === 'Camions' ? 'Poids Lourds' : key}`;
                 count = this.globalCarCounters[key] || 0;
             }
         }
@@ -850,7 +957,7 @@ const app = {
         if (liveHistory && liveHistory.length > 0) {
             allHistories.push({ history: liveHistory, weather: window.gps ? window.gps.currentWeatherLabel : "Inconnue" });
         }
-        sessions.forEach(s => allHistories.push(s)); // Push the entire session object for ID check
+        sessions.forEach(s => allHistories.push(s)); 
 
         let counters = {};
         let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
@@ -871,14 +978,13 @@ const app = {
             if (filter === 'month' && (sDate.getMonth() !== now.getMonth() || sDate.getFullYear() !== now.getFullYear())) return;
             if (filter === 'week' && (now.getTime() - sDate.getTime() > 7 * 24 * 60 * 60 * 1000)) return;
 
-            // Ajout de la distance pour calculer les ratios exacts selon le filtre
             gTotalDist += (!s.id) ? (type === 'trucks' ? this.liveTruckDistance : this.liveCarDistance) : (s.distanceKm || 0);
 
             let sHist = s.history.filter(h => !h.isEvent);
             
             sHist.forEach((h, i) => {
                 let vehType = type === 'trucks' ? h.brand : h.type;
-                let weatherLabel = h.weather || s.weather || "Inconnue"; // Météo du clic prioritaire
+                let weatherLabel = h.weather || s.weather || "Inconnue";
                 
                 counters[vehType] = (counters[vehType] || 0) + 1;
                 weathers[weatherLabel] = (weathers[weatherLabel] || 0) + 1;
@@ -917,8 +1023,9 @@ const app = {
             let count = counters[item] || 0;
             if (count > 0) {
                 let ratio = gTotalDist > 0 ? (count / gTotalDist).toFixed(1) + " /km" : "";
-                htmlList += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('${type}', '${item}')"><span class="km-stat-title">${item}</span><span class="km-stat-value">${count}</span><span style="display:block; font-size:0.75em; color:#7f8c8d; margin-top:3px;">${ratio}</span></div>`;
-                labelsForChart.push(item);
+                let displayItem = item === 'Camions' && type === 'cars' ? 'Poids Lourds' : item;
+                htmlList += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('${type}', '${item}')"><span class="km-stat-title">${displayItem}</span><span class="km-stat-value">${count}</span><span style="display:block; font-size:0.75em; color:#7f8c8d; margin-top:3px;">${ratio}</span></div>`;
+                labelsForChart.push(displayItem);
                 dataForChart.push(count);
             }
         });
@@ -1154,7 +1261,8 @@ const app = {
         let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
         
         let globalSummary = { 
-            profile: this.activeProfile, 
+            profile: this.currentUser,
+            mode: this.currentMode,
             totalSessions: allSessions.length, 
             globalDonneesBrutesCamions: this.globalTruckCounters, 
             globalDonneesBrutesVehicules: this.globalCarCounters,
@@ -1164,7 +1272,7 @@ const app = {
 
         let exportData = { appVersion: "Compteur Trafic v5.1", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
         const dataStr = JSON.stringify(exportData, null, 2);
-        const fileName = `Compteur_Export_${this.activeProfile}_${new Date().toISOString().slice(0,10)}.txt`;
+        const fileName = `Compteur_Export_${this.currentUser}_${new Date().toISOString().slice(0,10)}.txt`;
         
         await this.triggerDownloadOrShare(dataStr, fileName);
     },
@@ -1175,9 +1283,9 @@ const app = {
         reader.onload = async (e) => {
             try {
                 const data = JSON.parse(e.target.result);
-                if (data.sessions && confirm(`⚠️ Attention : L'importation va remplacer l'historique actuel pour le profil "${this.activeProfile}". Continuer ?`)) {
+                if (data.sessions && confirm(`⚠️ Attention : L'importation va remplacer l'historique de ${this.currentUser}. Continuer ?`)) {
                     await this.idb.clear('trucks'); await this.idb.clear('cars');
-                    for (let s of data.sessions) { if (!s.id) s.id = Date.now().toString() + Math.random().toString(); s.profile = this.activeProfile; await this.idb.add(s); }
+                    for (let s of data.sessions) { if (!s.id) s.id = Date.now().toString() + Math.random().toString(); s.user = this.currentUser; await this.idb.add(s); }
                     
                     if (data.globalSummary?.globalDonneesBrutesCamions) this.storage.set('globalTruckCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesCamions));
                     if (data.globalSummary?.globalDonneesBrutesVehicules) this.storage.set('globalCarCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesVehicules));
@@ -1201,7 +1309,8 @@ const app = {
         else {
             currentHistory.slice().reverse().forEach((item, index) => {
                 let realIndex = currentHistory.length - 1 - index;
-                let title = item.isEvent ? item.eventType : (type === 'trucks' ? `${item.brand} (${item.type === 'fr' ? '🇫🇷' : '🌍'})` : item.type);
+                let displayType = item.type === 'Camions' ? 'Poids Lourds' : item.type;
+                let title = item.isEvent ? item.eventType : (type === 'trucks' ? `${item.brand} (${item.type === 'fr' ? '🇫🇷' : '🌍'})` : displayType);
                 let titleStyle = item.isEvent ? 'color: #f39c12;' : '';
                 historyContainer.innerHTML += `<div class="history-item"><div class="history-item-header"><strong style="${titleStyle}">${title}</strong><span class="history-meta">⏱️ ${item.chronoTime} | 📍 ${item.lat ? parseFloat(item.lat).toFixed(4) : '?'}</span><button class="btn-del-history" onclick="window.app.${type === 'trucks' ? 'deleteTruckHistoryItem' : 'deleteCarHistoryItem'}(${realIndex})">🗑️</button></div></div>`;
             });
@@ -1211,7 +1320,7 @@ const app = {
         sessions.sort((a, b) => b.id - a.id);
         
         sessionsContainer.innerHTML = '';
-        if (sessions.length === 0) { sessionsContainer.innerHTML = '<div class="history-item">Aucune session sauvegardée pour ce profil. 🚦</div>'; } 
+        if (sessions.length === 0) { sessionsContainer.innerHTML = `<div class="history-item">Aucune session sauvegardée pour ${this.currentUser}. 🚦</div>`; } 
         else {
             sessions.forEach((session) => {
                 let itemsCount = session.history ? session.history.filter(h => !h.isEvent).length : 0;

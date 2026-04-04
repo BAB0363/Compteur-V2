@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=14">
+    <link rel="manifest" href="manifest.json?v=16">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=14">
+    <link rel="stylesheet" href="style.css?v=16">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -16,7 +16,10 @@
     <div id="toast-container" class="no-print"></div>
     <div id="lottie-container" style="position: fixed; pointer-events: none; z-index: 10000; width: 100px; height: 100px; display: none; transform: translate(-50%, -50%);"></div>
 
-    <div class="top-bar-controls no-print" style="justify-content: flex-end;">
+    <div class="top-bar-controls no-print">
+        <div id="current-profile-display" style="font-weight: bold; font-size: 0.85em; background: var(--card-bg); padding: 6px 12px; border-radius: 20px; box-shadow: 0 1px 2px var(--shadow); display: flex; align-items: center; gap: 5px;">
+            👤 <span id="display-user">Sylvain</span> <span style="color:var(--border-color)">|</span> <span id="display-mode">🚗 Voiture</span>
+        </div>
         <div style="display: flex; gap: 5px;">
             <button id="btn-theme" onclick="window.ui.toggleDarkMode()">🌙 Nuit</button>
             <button id="btn-undo" onclick="window.app.undoLast()">↩️ Annuler</button>
@@ -196,11 +199,28 @@
         </div>
 
         <div class="km-stats-container">
-            <h4>👤 Profil Actif</h4>
-            <select id="profile-selector" onchange="window.app.changeProfile(this.value)" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); font-weight: bold; cursor: pointer;">
-                <option value="voiture">🚘 Mode : Compteur Voiture</option>
-                <option value="camion">🚛 Mode : Compteur Camion</option>
-            </select>
+            <h4>👤 Profils et Modes</h4>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="font-size: 0.85em; color: #7f8c8d; font-weight: bold; margin-bottom: 5px; display: block;">Utilisateur :</label>
+                <div style="display: flex; gap: 5px; margin-bottom: 8px;">
+                    <select id="user-selector" onchange="window.app.changeUser(this.value)" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); font-weight: bold; cursor: pointer;">
+                        </select>
+                    <button class="btn-corr" style="padding: 0 12px; border-radius: 6px;" onclick="window.app.deleteUser()" title="Supprimer cet utilisateur">🗑️</button>
+                </div>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="new-user-input" placeholder="Nouvel utilisateur..." style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);">
+                    <button class="btn-add-fr" style="padding: 0 12px; border-radius: 6px; font-size: 0.9em;" onclick="window.app.createUser()">Ajouter</button>
+                </div>
+            </div>
+
+            <div>
+                <label style="font-size: 0.85em; color: #7f8c8d; font-weight: bold; margin-bottom: 5px; display: block;">Mode de comptage :</label>
+                <select id="mode-selector" onchange="window.app.changeMode(this.value)" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); font-weight: bold; cursor: pointer;">
+                    <option value="voiture">🚘 Mode : Compteur Véhicules</option>
+                    <option value="camion">🚛 Mode : Compteur Camions</option>
+                </select>
+            </div>
         </div>
 
         <div class="km-stats-container">
@@ -212,7 +232,7 @@
 
         <div class="km-stats-container" style="border: 1px solid #e74c3c;">
             <h4 style="color: #e74c3c;">⚠️ Zone de Danger</h4>
-            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Remises à zéro. Action irréversible.</p>
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Remises à zéro du profil sélectionné.</p>
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <button class="reset-btn" onclick="window.app.resetTrucks()">🗑️ Effacer sessions Camions</button>
                 <button class="reset-btn" onclick="window.app.resetCars()">🗑️ Effacer sessions Véhicules</button>
@@ -250,12 +270,12 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=14"></script>
+    <script type="module" src="jsapp.js?v=16"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=14')
+          navigator.serviceWorker.register('./sw.js?v=16')
             .then(registration => {
               console.log('Service Worker Compteur enregistré avec succès !', registration.scope);
             })

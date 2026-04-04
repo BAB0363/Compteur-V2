@@ -106,7 +106,8 @@ button:active { transform: scale(0.95); }
 .km-stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
 .km-stat-card { background: var(--bg-color); padding: 10px; border-radius: 6px; text-align: center; border: 1px solid var(--border-color); }
 .km-stat-title { font-size: 0.85em; color: #7f8c8d; font-weight: bold; display: block; margin-bottom: 5px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
-.km-stat-value { font-size: 1.2em; font-weight: bold; color: #2980b9; }
+.km-stat-value { font-size: 1.1em; font-weight: bold; color: #2980b9; }
+.km-stat-extra { font-size: 0.75em; color: #95a5a6; display: block; margin-top: 3px; }
 
 .session-detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border-color); }
 .session-detail-row:last-child { border-bottom: none; }
