@@ -229,39 +229,48 @@ const app = {
         let ana = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
         let lastVeh = ana.lastVeh;
         let prediction = null;
+        let candidates = [];
 
+        // 1. Probabilités basées sur les séquences historiques
         if (lastVeh) {
-            let bestNext = null;
-            let maxCount = 0;
             Object.keys(ana.seqs).forEach(pair => {
                 if (pair.startsWith(lastVeh + ' ➡️ ')) {
-                    if (ana.seqs[pair] > maxCount) {
-                        maxCount = ana.seqs[pair];
-                        bestNext = pair.split(' ➡️ ')[1];
-                    }
+                    let nextVeh = pair.split(' ➡️ ')[1];
+                    let count = ana.seqs[pair];
+                    for(let i=0; i<count; i++) candidates.push(nextVeh);
                 }
             });
-            if (bestNext) prediction = bestNext;
         }
-        
-        if (!prediction) {
-            let max = -1;
-            if (type === 'trucks') {
-                Object.keys(this.globalTruckCounters).forEach(b => {
-                    let tot = (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0);
-                    if (tot > max) { max = tot; prediction = b; }
-                });
-            } else {
-                Object.keys(this.globalCarCounters).forEach(v => {
-                    if (this.globalCarCounters[v] > max) { max = this.globalCarCounters[v]; prediction = v; }
-                });
+
+        if (candidates.length > 0) {
+            prediction = candidates[Math.floor(Math.random() * candidates.length)];
+        } else {
+            // 2. Probabilités basées sur les volumes globaux (si aucune séquence n'est trouvée)
+            let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
+            Object.keys(globalCounters).forEach(k => {
+                let count = type === 'trucks' ? ((globalCounters[k]?.fr || 0) + (globalCounters[k]?.etr || 0)) : (globalCounters[k] || 0);
+                for(let i=0; i<count; i++) candidates.push(k);
+            });
+            if (candidates.length > 0) {
+                prediction = candidates[Math.floor(Math.random() * candidates.length)];
             }
         }
 
+        // 3. Dernier filet de sécurité (totalement aléatoire si l'app vient d'être installée)
+        if (!prediction) {
+            prediction = type === 'trucks' ? this.brands[Math.floor(Math.random() * this.brands.length)] : this.vehicleTypes[Math.floor(Math.random() * this.vehicleTypes.length)];
+        }
+
+        // Attribution des nationalités pour les camions (pondérée)
         if (type === 'trucks' && prediction) {
             let fr = this.globalTruckCounters[prediction]?.fr || 0;
             let etr = this.globalTruckCounters[prediction]?.etr || 0;
-            let nat = fr >= etr ? 'fr' : 'etr';
+            let natCandidates = [];
+            for(let i=0; i<fr; i++) natCandidates.push('fr');
+            for(let i=0; i<etr; i++) natCandidates.push('etr');
+            
+            let nat = natCandidates.length > 0 ? natCandidates[Math.floor(Math.random() * natCandidates.length)] : (Math.random() > 0.5 ? 'fr' : 'etr');
+            
             this.currentPredictionTruck = { brand: prediction, nat: nat };
             let el = document.getElementById('pred-text-trucks');
             if(el) el.innerText = `${prediction} (${nat === 'fr' ? '🇫🇷' : '🌍'})`;
@@ -482,7 +491,6 @@ const app = {
         if (this.truckCounters[brand][type] + amount >= 0) {
             if (window.ui) window.ui.playBeep(amount > 0);
             if (amount > 0) {
-                // Vérification de la prédiction AVANT d'enregistrer la nouvelle séquence
                 if (this.currentPredictionTruck) {
                     this.globalAnaTrucks.predictions.total++;
                     if (this.currentPredictionTruck.brand === brand && this.currentPredictionTruck.nat === type) {
@@ -835,7 +843,6 @@ const app = {
         let count = items.length;
         
         let avgSpeed = (sec > 0) ? (dist / (sec / 3600)).toFixed(1) + " km/h" : "-";
-        let freqApp = (count > 0 && sec > 0) ? (count / (sec / 60)).toFixed(1) + " /min" : "-";
         let rythmeHeure = (sec > 0) ? (count / (sec / 3600)).toFixed(1) + " /h" : "-";
         let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
 
@@ -851,7 +858,6 @@ const app = {
         container.innerHTML = `
             <div class="km-stat-card"><span class="km-stat-title">Météo</span><span class="km-stat-value" style="color:#e67e22;">${weather}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Vitesse Moy.</span><span class="km-stat-value" style="color:#8e44ad;">${avgSpeed}</span></div>
-            <div class="km-stat-card"><span class="km-stat-title">Apparitions / min</span><span class="km-stat-value">${freqApp}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Rythme / Heure</span><span class="km-stat-value">${rythmeHeure}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Tendance (10m)</span><span class="km-stat-value" style="color:#e67e22;">${mobilePace}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Espacement Moyen</span><span class="km-stat-value">${espTemps} / ${espDist}</span></div>
@@ -865,21 +871,23 @@ const app = {
             if (this.liveTruckDistance > 0) {
                 let truckCount = this.truckHistory.filter(h => !h.isEvent).length;
                 let gRatio = (truckCount / this.liveTruckDistance).toFixed(1);
+                let gFreq = (truckCount > 0 && this.truckSeconds > 0) ? (truckCount / (this.truckSeconds / 60)).toFixed(1) + " /min" : "-";
                 
-                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${gRatio} /km</span></div>`;
+                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${gRatio} /km</span><span class="km-stat-extra">⏱️ ${gFreq}</span></div>`;
                 
                 let statsArr = [];
                 this.brands.forEach(brand => {
                     let count = this.truckCounters[brand] ? (this.truckCounters[brand].fr + this.truckCounters[brand].etr) : 0;
                     if (count > 0) {
                         let ratio = (count / this.liveTruckDistance).toFixed(1);
-                        statsArr.push({ name: brand, ratio: parseFloat(ratio), ratioStr: ratio });
+                        let freq = (this.truckSeconds > 0) ? (count / (this.truckSeconds / 60)).toFixed(1) + " /min" : "-";
+                        statsArr.push({ name: brand, ratio: parseFloat(ratio), ratioStr: ratio, freq: freq });
                     }
                 });
                 
                 statsArr.sort((a,b) => b.ratio - a.ratio);
                 statsArr.forEach(st => {
-                    html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span></div>`;
+                    html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span><span class="km-stat-extra">⏱️ ${st.freq}</span></div>`;
                 });
                 
                 tContainer.innerHTML = html;
@@ -891,22 +899,24 @@ const app = {
             if (this.liveCarDistance > 0) {
                 let carCount = this.carHistory.filter(h => !h.isEvent).length;
                 let gRatio = (carCount / this.liveCarDistance).toFixed(1);
+                let gFreq = (carCount > 0 && this.carSeconds > 0) ? (carCount / (this.carSeconds / 60)).toFixed(1) + " /min" : "-";
 
-                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${gRatio} /km</span></div>`;
+                let html = `<div class="km-stat-card" style="border-color: #f39c12;"><span class="km-stat-title">Global</span><span class="km-stat-value">${gRatio} /km</span><span class="km-stat-extra">⏱️ ${gFreq}</span></div>`;
                 
                 let statsArr = [];
                 this.vehicleTypes.forEach(v => {
                     let count = this.vehicleCounters[v] || 0;
                     if (count > 0) {
                         let ratio = (count / this.liveCarDistance).toFixed(1);
+                        let freq = (this.carSeconds > 0) ? (count / (this.carSeconds / 60)).toFixed(1) + " /min" : "-";
                         let displayName = v === "Camions" ? "Poids Lourds" : v;
-                        statsArr.push({ name: displayName, ratio: parseFloat(ratio), ratioStr: ratio });
+                        statsArr.push({ name: displayName, ratio: parseFloat(ratio), ratioStr: ratio, freq: freq });
                     }
                 });
                 
                 statsArr.sort((a,b) => b.ratio - a.ratio);
                 statsArr.forEach(st => {
-                    html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span></div>`;
+                    html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span><span class="km-stat-extra">⏱️ ${st.freq}</span></div>`;
                 });
                 
                 cContainer.innerHTML = html;
@@ -1106,7 +1116,6 @@ const app = {
         let labelsForChart = [];
         let dataForChart = [];
         
-        // Création du tableau pour le tri décroissant
         let itemsArr = [];
         let typeList = type === 'trucks' ? this.brands : this.vehicleTypes;
         typeList.forEach(item => {
@@ -1116,7 +1125,6 @@ const app = {
             }
         });
         
-        // Tri décroissant
         itemsArr.sort((a, b) => b.count - a.count);
 
         itemsArr.forEach(obj => {
@@ -1148,7 +1156,6 @@ const app = {
             }
         }
 
-        // Camembert Nationalité
         let natContainer = document.getElementById('dash-nat-container');
         if (type === 'trucks') {
             if (natContainer) natContainer.style.display = 'block';
@@ -1312,7 +1319,6 @@ const app = {
     },
 
     async triggerDownloadOrShare(dataString, fileName) {
-        // Enregistrement direct forcé
         const blob = new Blob([dataString], { type: "text/plain" });
         const url = URL.createObjectURL(blob); 
         const a = document.createElement("a"); a.href = url; a.download = fileName;
