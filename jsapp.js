@@ -24,6 +24,9 @@ const app = {
     
     globalAnaTrucks: null, globalAnaCars: null,
 
+    sessionTruckPredictions: { total: 0, success: 0 },
+    sessionCarPredictions: { total: 0, success: 0 },
+
     globalTruckDistance: 0, globalCarDistance: 0,
     globalTruckTime: 0, globalCarTime: 0,
     lastGlobalTruckTick: 0, lastGlobalCarTick: 0,
@@ -227,57 +230,87 @@ const app = {
 
     updatePrediction(type) {
         let ana = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
-        let lastVeh = ana.lastVeh;
-        let prediction = null;
-        let candidates = [];
+        let history = type === 'trucks' ? this.truckHistory : this.carHistory;
+        let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
+        let candidates = type === 'trucks' ? this.brands : this.vehicleTypes;
 
-        // 1. Probabilités basées sur les séquences historiques
-        if (lastVeh) {
+        // Récupération des données pour nos 4 concepts
+        let recentItems = history.filter(h => !h.isEvent).slice(-2);
+        let lastVeh1 = recentItems.length > 0 ? (type === 'trucks' ? recentItems[recentItems.length-1].brand : recentItems[recentItems.length-1].type) : null;
+        
+        let currentSpeedKmh = window.gps && window.gps.currentSpeed ? window.gps.currentSpeed * 3.6 : 0;
+        let isHighway = currentSpeedKmh > 75; 
+        let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue"; 
+        
+        let sec = type === 'trucks' ? this.truckSeconds : this.carSeconds;
+        let isDenseTraffic = sec > 0 && (history.length / (sec / 3600)) > 500; 
+
+        // Initialisation des scores
+        let scores = {};
+        candidates.forEach(c => scores[c] = 0);
+
+        // ÉTAPE 1 : Poids de base (Volumes globaux)
+        candidates.forEach(c => {
+            let count = type === 'trucks' ? ((globalCounters[c]?.fr || 0) + (globalCounters[c]?.etr || 0)) : (globalCounters[c] || 0);
+            scores[c] += count; 
+        });
+
+        // ÉTAPE 2 : Séquence de Markov (Dernier véhicule)
+        if (lastVeh1) {
             Object.keys(ana.seqs).forEach(pair => {
-                if (pair.startsWith(lastVeh + ' ➡️ ')) {
+                if (pair.startsWith(lastVeh1 + ' ➡️ ')) {
                     let nextVeh = pair.split(' ➡️ ')[1];
-                    let count = ana.seqs[pair];
-                    for(let i=0; i<count; i++) candidates.push(nextVeh);
+                    if (scores[nextVeh] !== undefined) scores[nextVeh] += (ana.seqs[pair] * 3); 
                 }
             });
         }
 
-        if (candidates.length > 0) {
-            prediction = candidates[Math.floor(Math.random() * candidates.length)];
-        } else {
-            // 2. Probabilités basées sur les volumes globaux (si aucune séquence n'est trouvée)
-            let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
-            Object.keys(globalCounters).forEach(k => {
-                let count = type === 'trucks' ? ((globalCounters[k]?.fr || 0) + (globalCounters[k]?.etr || 0)) : (globalCounters[k] || 0);
-                for(let i=0; i<count; i++) candidates.push(k);
-            });
-            if (candidates.length > 0) {
-                prediction = candidates[Math.floor(Math.random() * candidates.length)];
+        // ÉTAPE 3 : Ajustements Métier (Météo & Vitesse)
+        if (type === 'cars') {
+            if (isHighway) {
+                scores['Camions'] += 50; 
+                scores['Vélos'] = 0; 
+                scores['Engins agricoles'] = 0;
+            }
+            if (weather === 'Pluie / Difficile') {
+                scores['Motos'] = Math.max(0, scores['Motos'] - 30);
+                scores['Vélos'] = Math.max(0, scores['Vélos'] - 30);
+            }
+            if (isDenseTraffic) {
+                scores['Voitures'] += 100; 
             }
         }
 
-        // 3. Dernier filet de sécurité (totalement aléatoire si l'app vient d'être installée)
-        if (!prediction) {
-            prediction = type === 'trucks' ? this.brands[Math.floor(Math.random() * this.brands.length)] : this.vehicleTypes[Math.floor(Math.random() * this.vehicleTypes.length)];
-        }
+        // Sélection du Gagnant
+        let bestCandidate = null;
+        let maxScore = -1;
+        Object.keys(scores).forEach(c => {
+            let finalScore = scores[c] + (Math.random() * (scores[c] * 0.2)); 
+            if (finalScore > maxScore && scores[c] >= 0) {
+                maxScore = finalScore;
+                bestCandidate = c;
+            }
+        });
 
-        // Attribution des nationalités pour les camions (pondérée)
-        if (type === 'trucks' && prediction) {
-            let fr = this.globalTruckCounters[prediction]?.fr || 0;
-            let etr = this.globalTruckCounters[prediction]?.etr || 0;
-            let natCandidates = [];
-            for(let i=0; i<fr; i++) natCandidates.push('fr');
-            for(let i=0; i<etr; i++) natCandidates.push('etr');
+        if (!bestCandidate) bestCandidate = candidates[Math.floor(Math.random() * candidates.length)];
+
+        // Attribution de la prédiction
+        if (type === 'trucks') {
+            let fr = this.globalTruckCounters[bestCandidate]?.fr || 0;
+            let etr = this.globalTruckCounters[bestCandidate]?.etr || 0;
             
-            let nat = natCandidates.length > 0 ? natCandidates[Math.floor(Math.random() * natCandidates.length)] : (Math.random() > 0.5 ? 'fr' : 'etr');
+            let chanceEtranger = (etr / (fr + etr || 1));
+            if (isHighway) chanceEtranger += 0.2; 
             
-            this.currentPredictionTruck = { brand: prediction, nat: nat };
+            let nat = Math.random() < chanceEtranger ? 'etr' : 'fr';
+
+            this.currentPredictionTruck = { brand: bestCandidate, nat: nat };
             let el = document.getElementById('pred-text-trucks');
-            if(el) el.innerText = `${prediction} (${nat === 'fr' ? '🇫🇷' : '🌍'})`;
-        } else if (type === 'cars' && prediction) {
-            this.currentPredictionCar = { type: prediction };
+            if(el) el.innerText = `${bestCandidate} (${nat === 'fr' ? '🇫🇷' : '🌍'})`;
+        } else {
+            this.currentPredictionCar = { type: bestCandidate };
             let el = document.getElementById('pred-text-cars');
-            if(el) el.innerText = prediction === 'Camions' ? 'Poids Lourds' : prediction;
+            if(el) el.innerText = bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate;
         }
     },
 
@@ -493,8 +526,10 @@ const app = {
             if (amount > 0) {
                 if (this.currentPredictionTruck) {
                     this.globalAnaTrucks.predictions.total++;
+                    this.sessionTruckPredictions.total++;
                     if (this.currentPredictionTruck.brand === brand && this.currentPredictionTruck.nat === type) {
                         this.globalAnaTrucks.predictions.success++;
+                        this.sessionTruckPredictions.success++;
                         if(window.ui) window.ui.showToast("🔮 Prédiction exacte !");
                     }
                 }
@@ -548,8 +583,10 @@ const app = {
             if (amount > 0) {
                 if (this.currentPredictionCar) {
                     this.globalAnaCars.predictions.total++;
+                    this.sessionCarPredictions.total++;
                     if (this.currentPredictionCar.type === type) {
                         this.globalAnaCars.predictions.success++;
+                        this.sessionCarPredictions.success++;
                         if(window.ui) window.ui.showToast("🔮 Prédiction exacte !");
                     }
                 }
@@ -670,6 +707,7 @@ const app = {
     resetTrucksData() {
         this.brands.forEach(b => { this.truckCounters[b] = { fr: 0, etr: 0 }; }); 
         this.truckHistory = []; this.truckSeconds = 0; this.truckAccumulatedTime = 0; this.liveTruckDistance = 0;
+        this.sessionTruckPredictions = { total: 0, success: 0 };
         this.storage.set('truckCounters', JSON.stringify(this.truckCounters)); 
         this.storage.set('truckHistory', JSON.stringify([])); 
         this.storage.set('truckChronoSec', 0); this.storage.set('truckAccumulatedTime', 0); this.storage.set('liveTruckDist', 0);
@@ -688,6 +726,7 @@ const app = {
     resetCarsData() {
         this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0); 
         this.carHistory = []; this.carSeconds = 0; this.carAccumulatedTime = 0; this.liveCarDistance = 0;
+        this.sessionCarPredictions = { total: 0, success: 0 };
         this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
         this.storage.set('carHistory', JSON.stringify([])); 
         this.storage.set('carChronoSec', 0); this.storage.set('carAccumulatedTime', 0); this.storage.set('liveCarDist', 0);
@@ -735,7 +774,8 @@ const app = {
             distanceKm: parseFloat((type === 'trucks' ? this.liveTruckDistance : this.liveCarDistance).toFixed(2)), 
             weather: window.gps.currentWeatherLabel, 
             history: history, 
-            summary: JSON.parse(JSON.stringify(type === 'trucks' ? this.truckCounters : this.vehicleCounters)) 
+            summary: JSON.parse(JSON.stringify(type === 'trucks' ? this.truckCounters : this.vehicleCounters)),
+            predictions: type === 'trucks' ? { ...this.sessionTruckPredictions } : { ...this.sessionCarPredictions }
         };
 
         await this.idb.add(newSession);
@@ -1238,6 +1278,11 @@ const app = {
         let espTemps = itemsCount > 1 && session.durationSec > 0 ? (session.durationSec / itemsCount).toFixed(1) + " s" : "-";
         let espDist = (itemsCount > 1 && dist > 0) ? ((dist * 1000) / itemsCount).toFixed(0) + " m" : "-";
 
+        let predTxt = "-";
+        if (session.predictions && session.predictions.total > 0) {
+            predTxt = Math.round((session.predictions.success / session.predictions.total) * 100) + "% (" + session.predictions.success + "/" + session.predictions.total + ")";
+        }
+
         let html = `
             <div class="session-detail-row"><span class="session-detail-label">Date</span><span class="session-detail-value">${session.date}</span></div>
             <div class="session-detail-row"><span class="session-detail-label" style="color:#27ae60;">🟢 Départ</span><span class="session-detail-value">${session.startAddress || "Inconnue"}</span></div>
@@ -1251,6 +1296,8 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Rythme</span><span class="session-detail-value">${speed} /h</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Moyenne</span><span class="session-detail-value">${avgKm} /km</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Espacement Moyen</span><span class="session-detail-value">${espTemps} / ${espDist}</span></div>
+            <div style="border-top: 2px dashed #eee; margin: 10px 0;"></div>
+            <div class="session-detail-row"><span class="session-detail-label">🔮 Réussite Prédictions</span><span class="session-detail-value" style="color:#8e44ad; font-weight:bold;">${predTxt}</span></div>
         `;
         document.getElementById('modal-session-title').innerText = type === 'trucks' ? '🚛 Détails Session Camions' : '🚗 Détails Session Véhicules';
         document.getElementById('modal-session-content').innerHTML = html;
