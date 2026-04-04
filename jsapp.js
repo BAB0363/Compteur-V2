@@ -16,7 +16,6 @@ const app = {
     },
 
     brands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
-    // Ordre mis à jour selon ta demande
     vehicleTypes: ["Voitures", "Utilitaires", "Motos", "Camions", "Camping-cars", "Bus/Car", "Engins agricoles", "Vélos"],
     
     truckCounters: {}, vehicleCounters: {},
@@ -731,7 +730,7 @@ const app = {
         let cgt = document.getElementById('car-grand-total'); if(cgt) cgt.innerText = grandTotal;
 
         const slugMap = { "Voitures": "voitures", "Utilitaires": "utilitaires", "Camions": "camions", "Engins agricoles": "engins", "Bus/Car": "bus", "Camping-cars": "camping", "Motos": "motos", "Vélos": "velos" };
-        const nameMap = { "Camions": "Poids Lourds" }; // Mappe le nom en interface
+        const nameMap = { "Camions": "Poids Lourds" }; 
 
         this.vehicleTypes.forEach(v => {
             let pct = grandTotal === 0 ? (100 / this.vehicleTypes.length) : Math.round(((this.vehicleCounters[v]||0) / grandTotal) * 100); 
@@ -760,6 +759,10 @@ const app = {
         let count = items.length;
         
         let avgSpeed = (sec > 0) ? (dist / (sec / 3600)).toFixed(1) + " km/h" : "-";
+        
+        // LA CORRECTION EST ICI POUR LA GROSSE CASE
+        let freqApp = (count > 0 && sec > 0) ? (count / (sec / 60)).toFixed(1) + " /min" : "-";
+        
         let rythmeHeure = (sec > 0) ? (count / (sec / 3600)).toFixed(1) + " /h" : "-";
         let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
 
@@ -775,6 +778,7 @@ const app = {
         container.innerHTML = `
             <div class="km-stat-card"><span class="km-stat-title">Météo</span><span class="km-stat-value" style="color:#e67e22;">${weather}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Vitesse Moy.</span><span class="km-stat-value" style="color:#8e44ad;">${avgSpeed}</span></div>
+            <div class="km-stat-card"><span class="km-stat-title">Apparitions / min</span><span class="km-stat-value">${freqApp}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Rythme / Heure</span><span class="km-stat-value">${rythmeHeure}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Tendance (10m)</span><span class="km-stat-value" style="color:#e67e22;">${mobilePace}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Espacement Moyen</span><span class="km-stat-value">${espTemps} / ${espDist}</span></div>
@@ -865,7 +869,9 @@ const app = {
             }
         }
 
-        let freq = (count > 0 && time > 0) ? (time / 60 / count).toFixed(1) + " min/véh." : "-";
+        // CORRECTION ICI AUSSI
+        let freq = (count > 0 && time > 0) ? (count / (time / 60)).toFixed(1) + " /min" : "-";
+        
         let speed = (time > 0) ? (count / (time / 3600)).toFixed(1) + " /h" : "-";
         let avgKm = (dist > 0) ? (count / dist).toFixed(2) + " /km" : "-";
         let espTemps = count > 1 ? (time / count).toFixed(1) + " s" : "-";
@@ -878,7 +884,7 @@ const app = {
             <div style="border-top: 2px dashed #eee; margin: 15px 0;"></div>
             <div class="session-detail-row"><span class="session-detail-label">Quantité globale comptée</span><span class="session-detail-value" style="color:#27ae60; font-size:1.1em;">${count}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Moyenne par km</span><span class="session-detail-value" style="color:#8e44ad;">${avgKm}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Fréquence d'apparition</span><span class="session-detail-value">${freq}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Apparitions par minute</span><span class="session-detail-value">${freq}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Rythme par heure</span><span class="session-detail-value">${speed}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Espacement Moyen</span><span class="session-detail-value">${espTemps} / ${espDist}</span></div>
         `;
@@ -1107,7 +1113,9 @@ const app = {
         let items = session.history ? session.history.filter(h => !h.isEvent) : [];
         let itemsCount = items.length;
         
-        let freq = itemsCount > 0 && session.durationSec > 0 ? (session.durationSec / 60 / itemsCount).toFixed(1) : '-';
+        // CORRECTION ICI AUSSI !
+        let freq = itemsCount > 0 && session.durationSec > 0 ? (itemsCount / (session.durationSec / 60)).toFixed(1) : '-';
+        
         let speed = session.durationSec > 0 ? (itemsCount / (session.durationSec / 3600)).toFixed(1) : '-';
         let dist = session.distanceKm || 0;
         let avgSpeedKmh = session.durationSec > 0 ? (dist / (session.durationSec / 3600)).toFixed(1) : '-';
@@ -1124,7 +1132,7 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne</span><span class="session-detail-value" style="color:#8e44ad;">${avgSpeedKmh} km/h</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Météo globale session</span><span class="session-detail-value">${session.weather || 'Inconnue'}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Véhicules comptés</span><span class="session-detail-value">${itemsCount}</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Fréquence</span><span class="session-detail-value">${freq} min/véh.</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Apparitions par minute</span><span class="session-detail-value">${freq} /min</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Rythme</span><span class="session-detail-value">${speed} /h</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Moyenne</span><span class="session-detail-value">${avgKm} /km</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Espacement Moyen</span><span class="session-detail-value">${espTemps} / ${espDist}</span></div>
@@ -1223,7 +1231,10 @@ const app = {
         let enrichedTruckSessions = truckSessions.map(s => {
             let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
             let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
-            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
+            
+            // CORRECTION ICI AUSSI (et changement du nom pour que ça soit plus clair)
+            let freqMin = (count > 0 && s.durationSec > 0) ? +(count / (s.durationSec / 60)).toFixed(2) : 0;
+            
             let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
             let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
             let rythmeH = s.durationSec > 0 ? +(count / (s.durationSec / 3600)).toFixed(1) : 0;
@@ -1236,13 +1247,16 @@ const app = {
                });
             }
 
-            return { ...s, totalCount: count, camionsParKm: vehPerKm, frequenceMinutes: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
+            return { ...s, totalCount: count, camionsParKm: vehPerKm, apparitionsParMinute: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
         });
 
         let enrichedCarSessions = carSessions.map(s => {
             let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
             let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
-            let freqMin = (count > 0 && s.durationSec > 0) ? +(s.durationSec / 60 / count).toFixed(2) : 0;
+            
+            // CORRECTION ICI AUSSI
+            let freqMin = (count > 0 && s.durationSec > 0) ? +(count / (s.durationSec / 60)).toFixed(2) : 0;
+            
             let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
             let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
             let rythmeH = s.durationSec > 0 ? +(count / (s.durationSec / 3600)).toFixed(1) : 0;
@@ -1255,7 +1269,7 @@ const app = {
                });
             }
 
-            return { ...s, totalCount: count, vehiculesParKm: vehPerKm, frequenceMinutes: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
+            return { ...s, totalCount: count, vehiculesParKm: vehPerKm, apparitionsParMinute: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
         });
 
         let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
