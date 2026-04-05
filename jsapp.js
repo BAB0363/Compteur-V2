@@ -108,7 +108,10 @@ const app = {
             hours: hours,
             days: { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 },
             alts: { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 },
-            seqs: {}, lastVeh: null,
+            byVeh: {}, // NOUVEAU : Statistiques isolées par véhicule
+            seqs: {}, 
+            seqs3: {}, // NOUVEAU : Séquences de 3 véhicules (Ordre 2)
+            lastVehicles: [], // NOUVEAU : Remplacera lastVeh pour garder les 2 derniers
             predictions: { total: 0, success: 0 }
         };
     },
@@ -116,11 +119,22 @@ const app = {
     async buildPermanentAnalyticsFromIDB(type, targetAna) {
         let sessions = await this.idb.getAll(type);
         let dayKeys = Object.keys(targetAna.days);
+        
+        // Initialisation si propriétés manquantes
+        if (!targetAna.byVeh) targetAna.byVeh = {};
+        if (!targetAna.seqs3) targetAna.seqs3 = {};
+        if (!targetAna.lastVehicles) targetAna.lastVehicles = [];
+
         sessions.forEach(s => {
             if (s.history) {
                 let hist = s.history.filter(h => !h.isEvent);
+                let sessionLastVehicles = []; // Historique court pour la boucle
+                
                 for(let i = 0; i < hist.length; i++) {
                     let h = hist[i];
+                    let vehType = type === 'trucks' ? h.brand : h.type;
+
+                    // 1. Mise à jour des stats Globales
                     if (h.timestamp) {
                         let d = new Date(h.timestamp);
                         targetAna.hours[`${d.getHours()}h`]++;
@@ -130,12 +144,28 @@ const app = {
                     let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
                     targetAna.alts[altKey]++;
 
-                    if (i < hist.length - 1) {
-                        let cur = type === 'trucks' ? h.brand : h.type;
-                        let nxt = type === 'trucks' ? hist[i+1].brand : hist[i+1].type;
-                        let pair = `${cur} ➡️ ${nxt}`;
+                    // 2. NOUVEAU : Mise à jour des stats par Véhicule (byVeh)
+                    if (!targetAna.byVeh[vehType]) targetAna.byVeh[vehType] = { hours: {}, days: {}, alts: {} };
+                    if (h.timestamp) {
+                        let d = new Date(h.timestamp);
+                        targetAna.byVeh[vehType].hours[`${d.getHours()}h`] = (targetAna.byVeh[vehType].hours[`${d.getHours()}h`] || 0) + 1;
+                        targetAna.byVeh[vehType].days[dayKeys[d.getDay()]] = (targetAna.byVeh[vehType].days[dayKeys[d.getDay()]] || 0) + 1;
+                    }
+                    targetAna.byVeh[vehType].alts[altKey] = (targetAna.byVeh[vehType].alts[altKey] || 0) + 1;
+
+                    // 3. NOUVEAU : Mise à jour des Séquences (Duos et Triplets)
+                    if (sessionLastVehicles.length >= 1) {
+                        let pair = `${sessionLastVehicles[sessionLastVehicles.length - 1]} ➡️ ${vehType}`;
                         targetAna.seqs[pair] = (targetAna.seqs[pair] || 0) + 1;
                     }
+                    if (sessionLastVehicles.length >= 2) {
+                        let triplet = `${sessionLastVehicles[0]} ➡️ ${sessionLastVehicles[1]} ➡️ ${vehType}`;
+                        targetAna.seqs3[triplet] = (targetAna.seqs3[triplet] || 0) + 1;
+                    }
+
+                    // On pousse le véhicule actuel et on garde maximum les 2 derniers
+                    sessionLastVehicles.push(vehType);
+                    if (sessionLastVehicles.length > 2) sessionLastVehicles.shift();
                 }
             }
         });
@@ -234,16 +264,24 @@ const app = {
         let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
         let candidates = type === 'trucks' ? this.brands : this.vehicleTypes;
 
-        // Récupération des données pour nos 4 concepts
-        let recentItems = history.filter(h => !h.isEvent).slice(-2);
-        let lastVeh1 = recentItems.length > 0 ? (type === 'trucks' ? recentItems[recentItems.length-1].brand : recentItems[recentItems.length-1].type) : null;
-        
+        // Récupération des données temporelles et géographiques
+        let d = new Date();
+        let currentHourKey = `${d.getHours()}h`;
+        let currentDayKey = Object.keys(ana.days)[d.getDay()];
+        let currentAlt = window.gps && window.gps.currentPos && window.gps.currentPos.alt ? window.gps.currentPos.alt : 0;
+        let altKey = currentAlt < 200 ? "< 200m" : currentAlt < 500 ? "200-500m" : currentAlt < 1000 ? "500-1000m" : "> 1000m";
+
         let currentSpeedKmh = window.gps && window.gps.currentSpeed ? window.gps.currentSpeed * 3.6 : 0;
         let isHighway = currentSpeedKmh > 75; 
         let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue"; 
         
         let sec = type === 'trucks' ? this.truckSeconds : this.carSeconds;
         let isDenseTraffic = sec > 0 && (history.length / (sec / 3600)) > 500; 
+
+        // Récupération pour Markov Ordre 2
+        let recentItems = history.filter(h => !h.isEvent).slice(-2);
+        let lastV1 = recentItems.length > 1 ? (type === 'trucks' ? recentItems[0].brand : recentItems[0].type) : null; // Avant-dernier
+        let lastV2 = recentItems.length > 0 ? (type === 'trucks' ? recentItems[recentItems.length-1].brand : recentItems[recentItems.length-1].type) : null; // Dernier
 
         // Initialisation des scores
         let scores = {};
@@ -255,17 +293,37 @@ const app = {
             scores[c] += count; 
         });
 
-        // ÉTAPE 2 : Séquence de Markov (Dernier véhicule)
-        if (lastVeh1) {
-            Object.keys(ana.seqs).forEach(pair => {
-                if (pair.startsWith(lastVeh1 + ' ➡️ ')) {
-                    let nextVeh = pair.split(' ➡️ ')[1];
-                    if (scores[nextVeh] !== undefined) scores[nextVeh] += (ana.seqs[pair] * 3); 
+        // ÉTAPE 2 : Séquences de Markov (Duos et Triplets)
+        candidates.forEach(c => {
+            // 1. Le Graal : Séquence de 3 véhicules (Ordre 2)
+            if (lastV1 && lastV2 && ana.seqs3) {
+                let triplet = `${lastV1} ➡️ ${lastV2} ➡️ ${c}`;
+                if (ana.seqs3[triplet]) {
+                    scores[c] += (ana.seqs3[triplet] * 10); // Coefficient très fort !
                 }
-            });
-        }
+            }
+            
+            // 2. Filet de sécurité : Séquence de 2 véhicules (Ordre 1)
+            if (lastV2 && ana.seqs) {
+                let pair = `${lastV2} ➡️ ${c}`;
+                if (ana.seqs[pair]) {
+                    scores[c] += (ana.seqs[pair] * 3); // Coefficient normal
+                }
+            }
+        });
 
-        // ÉTAPE 3 : Ajustements Métier (Météo & Vitesse)
+        // ÉTAPE 3 : Ajustements Data-Driven (Habitudes réelles)
+        candidates.forEach(c => {
+            if (ana.byVeh && ana.byVeh[c]) {
+                let pointsHeure = (ana.byVeh[c].hours[currentHourKey] || 0) * 2; 
+                let pointsJour = (ana.byVeh[c].days[currentDayKey] || 0) * 2;
+                let pointsAlt = (ana.byVeh[c].alts[altKey] || 0) * 3; // L'altitude est un indice très fort
+
+                scores[c] += (pointsHeure + pointsJour + pointsAlt);
+            }
+        });
+
+        // ÉTAPE 4 : Ajustements Métier (Ceux qui dépendent du temps réel pur)
         if (type === 'cars') {
             if (isHighway) {
                 scores['Camions'] += 50; 
@@ -302,6 +360,10 @@ const app = {
             let chanceEtranger = (etr / (fr + etr || 1));
             if (isHighway) chanceEtranger += 0.2; 
             
+            let currentHour = d.getHours();
+            if (currentHour < 5 || currentHour > 22) chanceEtranger += 0.15;
+            if (d.getDay() === 0 || d.getDay() === 6) chanceEtranger += 0.15;
+            
             let nat = Math.random() < chanceEtranger ? 'etr' : 'fr';
 
             this.currentPredictionTruck = { brand: bestCandidate, nat: nat };
@@ -313,6 +375,7 @@ const app = {
             if(el) el.innerText = bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate;
         }
     },
+
 
     async init(isProfileSwitch = false) {
         if (!isProfileSwitch) { await this.idb.init(); await this.migrateData(); }
@@ -348,7 +411,11 @@ const app = {
             this.globalAnaTrucks = this.getEmptyAnalytics(); 
             await this.buildPermanentAnalyticsFromIDB('trucks', this.globalAnaTrucks);
         }
+        // Sécurités pour les profils existants
         if (!this.globalAnaTrucks.predictions) this.globalAnaTrucks.predictions = { total: 0, success: 0 };
+        if (!this.globalAnaTrucks.byVeh) this.globalAnaTrucks.byVeh = {};
+        if (!this.globalAnaTrucks.seqs3) this.globalAnaTrucks.seqs3 = {};
+        if (!this.globalAnaTrucks.lastVehicles) this.globalAnaTrucks.lastVehicles = [];
         this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
 
         try { this.globalAnaCars = JSON.parse(this.storage.get('globalAnaCars')); } catch(e) {}
@@ -356,7 +423,11 @@ const app = {
             this.globalAnaCars = this.getEmptyAnalytics(); 
             await this.buildPermanentAnalyticsFromIDB('cars', this.globalAnaCars);
         }
+        // Sécurités pour les profils existants
         if (!this.globalAnaCars.predictions) this.globalAnaCars.predictions = { total: 0, success: 0 };
+        if (!this.globalAnaCars.byVeh) this.globalAnaCars.byVeh = {};
+        if (!this.globalAnaCars.seqs3) this.globalAnaCars.seqs3 = {};
+        if (!this.globalAnaCars.lastVehicles) this.globalAnaCars.lastVehicles = [];
         this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
 
         if(Object.keys(this.truckCounters).length === 0) this.brands.forEach(b => this.truckCounters[b] = { fr: 0, etr: 0 });
@@ -470,7 +541,7 @@ const app = {
             clearInterval(this.truckInterval); 
             this.truckAccumulatedTime = this.truckSeconds;
             this.storage.set('truckAccumulatedTime', this.truckAccumulatedTime);
-            this.globalAnaTrucks.lastVeh = null;
+            this.globalAnaTrucks.lastVehicles = []; // Réinitialise la mémoire courte des séquences
             this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
         }
     },
@@ -511,7 +582,7 @@ const app = {
             clearInterval(this.carInterval); 
             this.carAccumulatedTime = this.carSeconds;
             this.storage.set('carAccumulatedTime', this.carAccumulatedTime);
-            this.globalAnaCars.lastVeh = null; 
+            this.globalAnaCars.lastVehicles = []; // Réinitialise la mémoire courte des séquences
             this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
         }
     },
@@ -543,18 +614,46 @@ const app = {
                 this.truckHistory.push(histItem);
 
                 let d = new Date(nowTs);
-                this.globalAnaTrucks.hours[`${d.getHours()}h`]++;
-                this.globalAnaTrucks.days[Object.keys(this.globalAnaTrucks.days)[d.getDay()]]++;
-                
+                let hourKey = `${d.getHours()}h`;
+                let dayKey = Object.keys(this.globalAnaTrucks.days)[d.getDay()];
                 let altVal = window.gps.currentPos.alt || 0;
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+
+                this.globalAnaTrucks.hours[hourKey]++;
+                this.globalAnaTrucks.days[dayKey]++;
                 this.globalAnaTrucks.alts[altKey]++;
 
-                if (this.globalAnaTrucks.lastVeh) {
-                    let pair = `${this.globalAnaTrucks.lastVeh} ➡️ ${brand}`;
+                // NOUVEAU : Enregistrement ultra-détaillé par véhicule
+                if (!this.globalAnaTrucks.byVeh[brand]) {
+                    this.globalAnaTrucks.byVeh[brand] = { hours: {}, days: {}, alts: {} };
+                }
+                this.globalAnaTrucks.byVeh[brand].hours[hourKey] = (this.globalAnaTrucks.byVeh[brand].hours[hourKey] || 0) + 1;
+                this.globalAnaTrucks.byVeh[brand].days[dayKey] = (this.globalAnaTrucks.byVeh[brand].days[dayKey] || 0) + 1;
+                this.globalAnaTrucks.byVeh[brand].alts[altKey] = (this.globalAnaTrucks.byVeh[brand].alts[altKey] || 0) + 1;
+
+                // NOUVEAU : Enregistrement des séquences (Duos et Triplets)
+                if (!this.globalAnaTrucks.lastVehicles) this.globalAnaTrucks.lastVehicles = [];
+                if (!this.globalAnaTrucks.seqs3) this.globalAnaTrucks.seqs3 = {};
+
+                if (this.globalAnaTrucks.lastVehicles.length >= 1) {
+                    let vDernier = this.globalAnaTrucks.lastVehicles[this.globalAnaTrucks.lastVehicles.length - 1];
+                    let pair = `${vDernier} ➡️ ${brand}`;
                     this.globalAnaTrucks.seqs[pair] = (this.globalAnaTrucks.seqs[pair] || 0) + 1;
                 }
-                this.globalAnaTrucks.lastVeh = brand;
+
+                if (this.globalAnaTrucks.lastVehicles.length >= 2) {
+                    let vAvantDernier = this.globalAnaTrucks.lastVehicles[0];
+                    let vDernier = this.globalAnaTrucks.lastVehicles[1];
+                    let triplet = `${vAvantDernier} ➡️ ${vDernier} ➡️ ${brand}`;
+                    this.globalAnaTrucks.seqs3[triplet] = (this.globalAnaTrucks.seqs3[triplet] || 0) + 1;
+                }
+
+                // Mémoire courte
+                this.globalAnaTrucks.lastVehicles.push(brand);
+                if (this.globalAnaTrucks.lastVehicles.length > 2) {
+                    this.globalAnaTrucks.lastVehicles.shift();
+                }
+
                 this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
                 
                 if(window.ui && e) { window.ui.triggerHapticFeedback('truck'); window.ui.showClickParticle(e, `+1`); }
@@ -600,18 +699,46 @@ const app = {
                 this.carHistory.push(histItem);
 
                 let d = new Date(nowTs);
-                this.globalAnaCars.hours[`${d.getHours()}h`]++;
-                this.globalAnaCars.days[Object.keys(this.globalAnaCars.days)[d.getDay()]]++;
-                
+                let hourKey = `${d.getHours()}h`;
+                let dayKey = Object.keys(this.globalAnaCars.days)[d.getDay()];
                 let altVal = window.gps.currentPos.alt || 0;
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+
+                this.globalAnaCars.hours[hourKey]++;
+                this.globalAnaCars.days[dayKey]++;
                 this.globalAnaCars.alts[altKey]++;
 
-                if (this.globalAnaCars.lastVeh) {
-                    let pair = `${this.globalAnaCars.lastVeh} ➡️ ${type}`;
+                // NOUVEAU : Enregistrement ultra-détaillé par véhicule
+                if (!this.globalAnaCars.byVeh[type]) {
+                    this.globalAnaCars.byVeh[type] = { hours: {}, days: {}, alts: {} };
+                }
+                this.globalAnaCars.byVeh[type].hours[hourKey] = (this.globalAnaCars.byVeh[type].hours[hourKey] || 0) + 1;
+                this.globalAnaCars.byVeh[type].days[dayKey] = (this.globalAnaCars.byVeh[type].days[dayKey] || 0) + 1;
+                this.globalAnaCars.byVeh[type].alts[altKey] = (this.globalAnaCars.byVeh[type].alts[altKey] || 0) + 1;
+
+                // NOUVEAU : Enregistrement des séquences (Duos et Triplets)
+                if (!this.globalAnaCars.lastVehicles) this.globalAnaCars.lastVehicles = [];
+                if (!this.globalAnaCars.seqs3) this.globalAnaCars.seqs3 = {};
+
+                if (this.globalAnaCars.lastVehicles.length >= 1) {
+                    let vDernier = this.globalAnaCars.lastVehicles[this.globalAnaCars.lastVehicles.length - 1];
+                    let pair = `${vDernier} ➡️ ${type}`;
                     this.globalAnaCars.seqs[pair] = (this.globalAnaCars.seqs[pair] || 0) + 1;
                 }
-                this.globalAnaCars.lastVeh = type;
+
+                if (this.globalAnaCars.lastVehicles.length >= 2) {
+                    let vAvantDernier = this.globalAnaCars.lastVehicles[0];
+                    let vDernier = this.globalAnaCars.lastVehicles[1];
+                    let triplet = `${vAvantDernier} ➡️ ${vDernier} ➡️ ${type}`;
+                    this.globalAnaCars.seqs3[triplet] = (this.globalAnaCars.seqs3[triplet] || 0) + 1;
+                }
+
+                // Mémoire courte
+                this.globalAnaCars.lastVehicles.push(type);
+                if (this.globalAnaCars.lastVehicles.length > 2) {
+                    this.globalAnaCars.lastVehicles.shift();
+                }
+
                 this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
                 
                 let hapticType = 'car';
@@ -652,7 +779,18 @@ const app = {
                 if(this.globalAnaTrucks.hours[hourKey] > 0) this.globalAnaTrucks.hours[hourKey]--;
                 if(this.globalAnaTrucks.days[dayKey] > 0) this.globalAnaTrucks.days[dayKey]--;
                 if(this.globalAnaTrucks.alts[altKey] > 0) this.globalAnaTrucks.alts[altKey]--;
-                if(index === this.truckHistory.length - 1) this.globalAnaTrucks.lastVeh = null;
+
+                if(this.globalAnaTrucks.byVeh && this.globalAnaTrucks.byVeh[item.brand]) {
+                    if(this.globalAnaTrucks.byVeh[item.brand].hours[hourKey] > 0) this.globalAnaTrucks.byVeh[item.brand].hours[hourKey]--;
+                    if(this.globalAnaTrucks.byVeh[item.brand].days[dayKey] > 0) this.globalAnaTrucks.byVeh[item.brand].days[dayKey]--;
+                    if(this.globalAnaTrucks.byVeh[item.brand].alts[altKey] > 0) this.globalAnaTrucks.byVeh[item.brand].alts[altKey]--;
+                }
+
+                if(index === this.truckHistory.length - 1) {
+                    if(this.globalAnaTrucks.lastVehicles && this.globalAnaTrucks.lastVehicles.length > 0) {
+                        this.globalAnaTrucks.lastVehicles.pop();
+                    }
+                }
                 this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
             }
         }
@@ -682,7 +820,18 @@ const app = {
                 if(this.globalAnaCars.hours[hourKey] > 0) this.globalAnaCars.hours[hourKey]--;
                 if(this.globalAnaCars.days[dayKey] > 0) this.globalAnaCars.days[dayKey]--;
                 if(this.globalAnaCars.alts[altKey] > 0) this.globalAnaCars.alts[altKey]--;
-                if(index === this.carHistory.length - 1) this.globalAnaCars.lastVeh = null; 
+
+                if(this.globalAnaCars.byVeh && this.globalAnaCars.byVeh[item.type]) {
+                    if(this.globalAnaCars.byVeh[item.type].hours[hourKey] > 0) this.globalAnaCars.byVeh[item.type].hours[hourKey]--;
+                    if(this.globalAnaCars.byVeh[item.type].days[dayKey] > 0) this.globalAnaCars.byVeh[item.type].days[dayKey]--;
+                    if(this.globalAnaCars.byVeh[item.type].alts[altKey] > 0) this.globalAnaCars.byVeh[item.type].alts[altKey]--;
+                }
+
+                if(index === this.carHistory.length - 1) {
+                    if(this.globalAnaCars.lastVehicles && this.globalAnaCars.lastVehicles.length > 0) {
+                        this.globalAnaCars.lastVehicles.pop();
+                    }
+                }
                 this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
             }
         }
@@ -695,6 +844,7 @@ const app = {
         this.updatePrediction('cars');
         if (document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
     },
+
 
     undoLast() {
         if(window.ui && window.ui.activeTab === 'trucks' && this.truckHistory.length > 0) { 
@@ -1094,7 +1244,7 @@ const app = {
         let counters = {};
         let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
         let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
-        let seqs = {};
+        let seqs = {}; // NOUVEAU: Va stocker à la fois les paires et les triplets
         let weathers = {}; 
         let dayKeys = Object.keys(days);
         let gTotal = 0;
@@ -1136,10 +1286,19 @@ const app = {
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
                 alts[altKey]++;
 
+                // Calcul dynamique des séquences d'Ordre 1 (Paires)
                 if (i < sHist.length - 1) {
                     let nxt = type === 'trucks' ? sHist[i+1].brand : sHist[i+1].type;
                     let pair = `${vehType} ➡️ ${nxt}`;
                     seqs[pair] = (seqs[pair] || 0) + 1;
+                }
+                
+                // NOUVEAU: Calcul dynamique des séquences d'Ordre 2 (Triplets)
+                if (i < sHist.length - 2) {
+                    let nxt1 = type === 'trucks' ? sHist[i+1].brand : sHist[i+1].type;
+                    let nxt2 = type === 'trucks' ? sHist[i+2].brand : sHist[i+2].type;
+                    let triplet = `${vehType} ➡️ ${nxt1} ➡️ ${nxt2}`;
+                    seqs[triplet] = (seqs[triplet] || 0) + 1;
                 }
             });
         });
@@ -1254,6 +1413,7 @@ const app = {
             });
         }
 
+        // Tri et affichage du Top 5 (Mélange de paires et de triplets !)
         let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
         let seqHtml = '';
         if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
