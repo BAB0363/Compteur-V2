@@ -185,10 +185,20 @@
             <h4>📅 Répartition Hebdomadaire</h4>
             <div class="chart-wrapper"><canvas id="weeklyChart"></canvas></div>
         </div>
+        
+        <div class="km-stats-container">
+            <h4>📆 Saisonnalité (Mensuelle)</h4>
+            <div class="chart-wrapper"><canvas id="monthlyChart"></canvas></div>
+        </div>
 
         <div class="km-stats-container">
             <h4>⛰️ Analyse de l'Altitude</h4>
             <div class="chart-wrapper"><canvas id="altitudeChart"></canvas></div>
+        </div>
+        
+        <div class="km-stats-container">
+            <h4>🛣️ Type de Trajet (Routes)</h4>
+            <div class="chart-wrapper"><canvas id="roadTypeChart"></canvas></div>
         </div>
 
         <div class="km-stats-container">
@@ -268,9 +278,19 @@
                     <div class="chart-wrapper" style="height: 150px;"><canvas id="weeklyGlobalChart"></canvas></div>
                 </div>
                 
+                <div id="modal-monthly-section" style="display: none;">
+                    <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">📆 Répartition par Mois</h4>
+                    <div class="chart-wrapper" style="height: 150px;"><canvas id="monthlyModalChart"></canvas></div>
+                </div>
+
                 <div id="modal-altitude-section" style="display: none;">
                     <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">⛰️ Répartition par Altitude</h4>
                     <div class="chart-wrapper" style="height: 150px;"><canvas id="altitudeModalChart"></canvas></div>
+                </div>
+                
+                <div id="modal-road-section" style="display: none;">
+                    <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">🛣️ Répartition par Route</h4>
+                    <div class="chart-wrapper" style="height: 150px;"><canvas id="roadModalChart"></canvas></div>
                 </div>
             </div>
             

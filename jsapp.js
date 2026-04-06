@@ -40,7 +40,8 @@ const app = {
     
     mainDashboardChart: null, natChart: null,
     temporalChart: null, weeklyChart: null, altitudeChart: null, weeklyGlobalChart: null,
-    altitudeModalChart: null,
+    altitudeModalChart: null, 
+    monthlyChart: null, roadTypeChart: null, monthlyModalChart: null, roadModalChart: null, // NOUVEAUX GRAPHIQUES
 
     currentDashboardFilter: 'all',
     activeDashboardType: 'trucks',
@@ -107,6 +108,8 @@ const app = {
         return {
             hours: hours,
             days: { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 },
+            months: { "Jan":0, "Fév":0, "Mar":0, "Avr":0, "Mai":0, "Juin":0, "Juil":0, "Aoû":0, "Sep":0, "Oct":0, "Nov":0, "Déc":0 }, // NOUVEAU
+            roads: { "Ville (<50km/h)": 0, "Route (50-80km/h)": 0, "Autoroute (>80km/h)": 0, "Inconnu": 0 }, // NOUVEAU
             alts: { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 },
             byVeh: {}, 
             seqs: {}, 
@@ -119,10 +122,13 @@ const app = {
     async buildPermanentAnalyticsFromIDB(type, targetAna) {
         let sessions = await this.idb.getAll(type);
         let dayKeys = Object.keys(targetAna.days);
+        let monthKeys = Object.keys(targetAna.months);
         
         if (!targetAna.byVeh) targetAna.byVeh = {};
         if (!targetAna.seqs3) targetAna.seqs3 = {};
         if (!targetAna.lastVehicles) targetAna.lastVehicles = [];
+        if (!targetAna.months) { targetAna.months = this.getEmptyAnalytics().months; }
+        if (!targetAna.roads) { targetAna.roads = this.getEmptyAnalytics().roads; }
 
         sessions.forEach(s => {
             if (s.history) {
@@ -133,22 +139,31 @@ const app = {
                     let h = hist[i];
                     let vehType = type === 'trucks' ? h.brand : h.type;
 
+                    if (!targetAna.byVeh[vehType]) {
+                        targetAna.byVeh[vehType] = { hours: {}, days: {}, alts: {}, months: {}, roads: {} };
+                    }
+                    if (!targetAna.byVeh[vehType].months) targetAna.byVeh[vehType].months = {};
+                    if (!targetAna.byVeh[vehType].roads) targetAna.byVeh[vehType].roads = {};
+
                     if (h.timestamp) {
                         let d = new Date(h.timestamp);
                         targetAna.hours[`${d.getHours()}h`]++;
                         targetAna.days[dayKeys[d.getDay()]]++;
+                        targetAna.months[monthKeys[d.getMonth()]]++;
+                        
+                        targetAna.byVeh[vehType].hours[`${d.getHours()}h`] = (targetAna.byVeh[vehType].hours[`${d.getHours()}h`] || 0) + 1;
+                        targetAna.byVeh[vehType].days[dayKeys[d.getDay()]] = (targetAna.byVeh[vehType].days[dayKeys[d.getDay()]] || 0) + 1;
+                        targetAna.byVeh[vehType].months[monthKeys[d.getMonth()]] = (targetAna.byVeh[vehType].months[monthKeys[d.getMonth()]] || 0) + 1;
                     }
+                    
                     let altVal = h.alt || 0;
                     let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
                     targetAna.alts[altKey]++;
-
-                    if (!targetAna.byVeh[vehType]) targetAna.byVeh[vehType] = { hours: {}, days: {}, alts: {} };
-                    if (h.timestamp) {
-                        let d = new Date(h.timestamp);
-                        targetAna.byVeh[vehType].hours[`${d.getHours()}h`] = (targetAna.byVeh[vehType].hours[`${d.getHours()}h`] || 0) + 1;
-                        targetAna.byVeh[vehType].days[dayKeys[d.getDay()]] = (targetAna.byVeh[vehType].days[dayKeys[d.getDay()]] || 0) + 1;
-                    }
                     targetAna.byVeh[vehType].alts[altKey] = (targetAna.byVeh[vehType].alts[altKey] || 0) + 1;
+
+                    let roadKey = h.road || "Inconnu";
+                    targetAna.roads[roadKey] = (targetAna.roads[roadKey] || 0) + 1;
+                    targetAna.byVeh[vehType].roads[roadKey] = (targetAna.byVeh[vehType].roads[roadKey] || 0) + 1;
 
                     if (sessionLastVehicles.length >= 1) {
                         let pair = `${sessionLastVehicles[sessionLastVehicles.length - 1]} ➡️ ${vehType}`;
@@ -262,11 +277,13 @@ const app = {
         let d = new Date();
         let currentHourKey = `${d.getHours()}h`;
         let currentDayKey = Object.keys(ana.days)[d.getDay()];
+        let currentMonthKey = Object.keys(ana.months)[d.getMonth()];
         let currentAlt = window.gps && window.gps.currentPos && window.gps.currentPos.alt ? window.gps.currentPos.alt : 0;
         let altKey = currentAlt < 200 ? "< 200m" : currentAlt < 500 ? "200-500m" : currentAlt < 1000 ? "500-1000m" : "> 1000m";
 
-        let currentSpeedKmh = window.gps && window.gps.currentSpeed ? window.gps.currentSpeed * 3.6 : 0;
-        let isHighway = currentSpeedKmh > 75; 
+        let currentSpeedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
+        let isHighway = currentSpeedKmh > 80; 
+        let currentRoad = currentSpeedKmh === 0 ? "Inconnu" : (currentSpeedKmh < 50 ? "Ville (<50km/h)" : (currentSpeedKmh <= 80 ? "Route (50-80km/h)" : "Autoroute (>80km/h)"));
         
         let sec = type === 'trucks' ? this.truckSeconds : this.carSeconds;
         let isDenseTraffic = sec > 0 && (history.length / (sec / 3600)) > 500; 
@@ -276,53 +293,61 @@ const app = {
         let lastV2 = recentItems.length > 0 ? (type === 'trucks' ? recentItems[recentItems.length-1].brand : recentItems[recentItems.length-1].type) : null; 
 
         let scores = {};
-        candidates.forEach(c => scores[c] = 0);
-
+        let totalGlobalCount = 0;
+        
         candidates.forEach(c => {
             let count = type === 'trucks' ? ((globalCounters[c]?.fr || 0) + (globalCounters[c]?.etr || 0)) : (globalCounters[c] || 0);
-            scores[c] += count; 
+            scores[c] = count; 
+            totalGlobalCount += count;
         });
 
+        // Conversion en probabilités de base (base 100)
+        if(totalGlobalCount > 0) {
+            candidates.forEach(c => { scores[c] = (scores[c] / totalGlobalCount) * 100; });
+        } else {
+            candidates.forEach(c => { scores[c] = 10; });
+        }
+
         candidates.forEach(c => {
+            // Bonus Séquences
             if (lastV1 && lastV2 && ana.seqs3) {
                 let triplet = `${lastV1} ➡️ ${lastV2} ➡️ ${c}`;
-                if (ana.seqs3[triplet]) {
-                    scores[c] += (ana.seqs3[triplet] * 10); 
-                }
+                if (ana.seqs3[triplet]) scores[c] += 25; 
             }
             if (lastV2 && ana.seqs) {
                 let pair = `${lastV2} ➡️ ${c}`;
-                if (ana.seqs[pair]) {
-                    scores[c] += (ana.seqs[pair] * 3); 
-                }
+                if (ana.seqs[pair]) scores[c] += 10; 
             }
-        });
 
-        candidates.forEach(c => {
+            // Bonus Contextuels basés sur les probabilités normalisées
             if (ana.byVeh && ana.byVeh[c]) {
-                let pointsHeure = (ana.byVeh[c].hours[currentHourKey] || 0) * 2; 
-                let pointsJour = (ana.byVeh[c].days[currentDayKey] || 0) * 2;
-                let pointsAlt = (ana.byVeh[c].alts[altKey] || 0) * 3; 
+                let pHeure = (ana.hours[currentHourKey] > 0) ? ((ana.byVeh[c].hours[currentHourKey] || 0) / ana.hours[currentHourKey]) * 100 : 0;
+                let pJour = (ana.days[currentDayKey] > 0) ? ((ana.byVeh[c].days[currentDayKey] || 0) / ana.days[currentDayKey]) * 100 : 0;
+                let pAlt = (ana.alts[altKey] > 0) ? ((ana.byVeh[c].alts[altKey] || 0) / ana.alts[altKey]) * 100 : 0;
+                let pMois = (ana.months[currentMonthKey] > 0) ? ((ana.byVeh[c].months[currentMonthKey] || 0) / ana.months[currentMonthKey]) * 100 : 0;
+                let pRoute = (ana.roads[currentRoad] > 0) ? ((ana.byVeh[c].roads[currentRoad] || 0) / ana.roads[currentRoad]) * 100 : 0;
 
-                scores[c] += (pointsHeure + pointsJour + pointsAlt);
+                // Application des poids d'importance
+                scores[c] += (pHeure * 0.1) + (pJour * 0.1) + (pAlt * 0.1) + (pMois * 0.15) + (pRoute * 0.25);
             }
         });
 
+        // Forçages Terrain
         if (type === 'cars') {
             if (isHighway) {
-                scores['Camions'] += 50; 
+                scores['Camions'] += 40; 
                 scores['Vélos'] = 0; 
                 scores['Engins agricoles'] = 0;
             }
             if (isDenseTraffic) {
-                scores['Voitures'] += 100; 
+                scores['Voitures'] += 30; 
             }
         }
 
         let bestCandidate = null;
         let maxScore = -1;
-        Object.keys(scores).forEach(c => {
-            let finalScore = scores[c] + (Math.random() * (scores[c] * 0.2)); 
+        candidates.forEach(c => {
+            let finalScore = scores[c] + (Math.random() * (scores[c] * 0.1)); // 10% de bruit aléatoire
             if (finalScore > maxScore && scores[c] >= 0) {
                 maxScore = finalScore;
                 bestCandidate = c;
@@ -330,6 +355,10 @@ const app = {
         });
 
         if (!bestCandidate) bestCandidate = candidates[Math.floor(Math.random() * candidates.length)];
+
+        // Calcul de l'indice de confiance (approximatif)
+        let totalScoreSum = Object.values(scores).reduce((a, b) => a + b, 0);
+        let confidence = totalScoreSum > 0 ? Math.min(99, Math.round((maxScore / totalScoreSum) * 100)) : 50;
 
         if (type === 'trucks') {
             let fr = this.globalTruckCounters[bestCandidate]?.fr || 0;
@@ -346,11 +375,11 @@ const app = {
 
             this.currentPredictionTruck = { brand: bestCandidate, nat: nat };
             let el = document.getElementById('pred-text-trucks');
-            if(el) el.innerText = `${bestCandidate} (${nat === 'fr' ? '🇫🇷' : '🌍'})`;
+            if(el) el.innerText = `${bestCandidate} (${nat === 'fr' ? '🇫🇷' : '🌍'}) ~${confidence}%`;
         } else {
             this.currentPredictionCar = { type: bestCandidate };
             let el = document.getElementById('pred-text-cars');
-            if(el) el.innerText = bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate;
+            if(el) el.innerText = `${bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate} ~${confidence}%`;
         }
     },
 
@@ -385,7 +414,7 @@ const app = {
         try { this.carHistory = JSON.parse(this.storage.get('carHistory')) || []; } catch(e) { this.carHistory = []; }
         
         try { this.globalAnaTrucks = JSON.parse(this.storage.get('globalAnaTrucks')); } catch(e) {}
-        if (!this.globalAnaTrucks) { 
+        if (!this.globalAnaTrucks || !this.globalAnaTrucks.months) { 
             this.globalAnaTrucks = this.getEmptyAnalytics(); 
             await this.buildPermanentAnalyticsFromIDB('trucks', this.globalAnaTrucks);
         }
@@ -396,7 +425,7 @@ const app = {
         this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
 
         try { this.globalAnaCars = JSON.parse(this.storage.get('globalAnaCars')); } catch(e) {}
-        if (!this.globalAnaCars) { 
+        if (!this.globalAnaCars || !this.globalAnaCars.months) { 
             this.globalAnaCars = this.getEmptyAnalytics(); 
             await this.buildPermanentAnalyticsFromIDB('cars', this.globalAnaCars);
         }
@@ -585,25 +614,36 @@ const app = {
                 this.globalTruckCounters[brand][type] += amount; 
                 
                 let nowTs = new Date().getTime();
-                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.truckSeconds), timestamp: nowTs };
+                let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
+                let roadType = speedKmh === 0 ? "Inconnu" : (speedKmh < 50 ? "Ville (<50km/h)" : (speedKmh <= 80 ? "Route (50-80km/h)" : "Autoroute (>80km/h)"));
+                
+                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, speed: speedKmh, road: roadType, chronoTime: this.formatTime(this.truckSeconds), timestamp: nowTs };
                 this.truckHistory.push(histItem);
 
                 let d = new Date(nowTs);
                 let hourKey = `${d.getHours()}h`;
                 let dayKey = Object.keys(this.globalAnaTrucks.days)[d.getDay()];
+                let monthKey = Object.keys(this.globalAnaTrucks.months)[d.getMonth()];
                 let altVal = window.gps.currentPos.alt || 0;
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
 
                 this.globalAnaTrucks.hours[hourKey]++;
                 this.globalAnaTrucks.days[dayKey]++;
+                this.globalAnaTrucks.months[monthKey]++;
                 this.globalAnaTrucks.alts[altKey]++;
+                this.globalAnaTrucks.roads[roadType]++;
 
                 if (!this.globalAnaTrucks.byVeh[brand]) {
-                    this.globalAnaTrucks.byVeh[brand] = { hours: {}, days: {}, alts: {} };
+                    this.globalAnaTrucks.byVeh[brand] = { hours: {}, days: {}, alts: {}, months: {}, roads: {} };
                 }
+                if (!this.globalAnaTrucks.byVeh[brand].months) this.globalAnaTrucks.byVeh[brand].months = {};
+                if (!this.globalAnaTrucks.byVeh[brand].roads) this.globalAnaTrucks.byVeh[brand].roads = {};
+
                 this.globalAnaTrucks.byVeh[brand].hours[hourKey] = (this.globalAnaTrucks.byVeh[brand].hours[hourKey] || 0) + 1;
                 this.globalAnaTrucks.byVeh[brand].days[dayKey] = (this.globalAnaTrucks.byVeh[brand].days[dayKey] || 0) + 1;
+                this.globalAnaTrucks.byVeh[brand].months[monthKey] = (this.globalAnaTrucks.byVeh[brand].months[monthKey] || 0) + 1;
                 this.globalAnaTrucks.byVeh[brand].alts[altKey] = (this.globalAnaTrucks.byVeh[brand].alts[altKey] || 0) + 1;
+                this.globalAnaTrucks.byVeh[brand].roads[roadType] = (this.globalAnaTrucks.byVeh[brand].roads[roadType] || 0) + 1;
 
                 if (!this.globalAnaTrucks.lastVehicles) this.globalAnaTrucks.lastVehicles = [];
                 if (!this.globalAnaTrucks.seqs3) this.globalAnaTrucks.seqs3 = {};
@@ -666,25 +706,36 @@ const app = {
                 this.globalCarCounters[type] += amount; 
 
                 let nowTs = new Date().getTime();
-                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.carSeconds), timestamp: nowTs };
+                let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
+                let roadType = speedKmh === 0 ? "Inconnu" : (speedKmh < 50 ? "Ville (<50km/h)" : (speedKmh <= 80 ? "Route (50-80km/h)" : "Autoroute (>80km/h)"));
+                
+                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, speed: speedKmh, road: roadType, chronoTime: this.formatTime(this.carSeconds), timestamp: nowTs };
                 this.carHistory.push(histItem);
 
                 let d = new Date(nowTs);
                 let hourKey = `${d.getHours()}h`;
                 let dayKey = Object.keys(this.globalAnaCars.days)[d.getDay()];
+                let monthKey = Object.keys(this.globalAnaCars.months)[d.getMonth()];
                 let altVal = window.gps.currentPos.alt || 0;
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
 
                 this.globalAnaCars.hours[hourKey]++;
                 this.globalAnaCars.days[dayKey]++;
+                this.globalAnaCars.months[monthKey]++;
                 this.globalAnaCars.alts[altKey]++;
+                this.globalAnaCars.roads[roadType]++;
 
                 if (!this.globalAnaCars.byVeh[type]) {
-                    this.globalAnaCars.byVeh[type] = { hours: {}, days: {}, alts: {} };
+                    this.globalAnaCars.byVeh[type] = { hours: {}, days: {}, alts: {}, months: {}, roads: {} };
                 }
+                if (!this.globalAnaCars.byVeh[type].months) this.globalAnaCars.byVeh[type].months = {};
+                if (!this.globalAnaCars.byVeh[type].roads) this.globalAnaCars.byVeh[type].roads = {};
+
                 this.globalAnaCars.byVeh[type].hours[hourKey] = (this.globalAnaCars.byVeh[type].hours[hourKey] || 0) + 1;
                 this.globalAnaCars.byVeh[type].days[dayKey] = (this.globalAnaCars.byVeh[type].days[dayKey] || 0) + 1;
+                this.globalAnaCars.byVeh[type].months[monthKey] = (this.globalAnaCars.byVeh[type].months[monthKey] || 0) + 1;
                 this.globalAnaCars.byVeh[type].alts[altKey] = (this.globalAnaCars.byVeh[type].alts[altKey] || 0) + 1;
+                this.globalAnaCars.byVeh[type].roads[roadType] = (this.globalAnaCars.byVeh[type].roads[roadType] || 0) + 1;
 
                 if (!this.globalAnaCars.lastVehicles) this.globalAnaCars.lastVehicles = [];
                 if (!this.globalAnaCars.seqs3) this.globalAnaCars.seqs3 = {};
@@ -741,17 +792,23 @@ const app = {
                 let d = new Date(item.timestamp);
                 let hourKey = `${d.getHours()}h`;
                 let dayKey = Object.keys(this.globalAnaTrucks.days)[d.getDay()];
+                let monthKey = Object.keys(this.globalAnaTrucks.months)[d.getMonth()];
                 let altVal = item.alt || 0;
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+                let roadType = item.road || "Inconnu";
 
                 if(this.globalAnaTrucks.hours[hourKey] > 0) this.globalAnaTrucks.hours[hourKey]--;
                 if(this.globalAnaTrucks.days[dayKey] > 0) this.globalAnaTrucks.days[dayKey]--;
+                if(this.globalAnaTrucks.months[monthKey] > 0) this.globalAnaTrucks.months[monthKey]--;
                 if(this.globalAnaTrucks.alts[altKey] > 0) this.globalAnaTrucks.alts[altKey]--;
+                if(this.globalAnaTrucks.roads[roadType] > 0) this.globalAnaTrucks.roads[roadType]--;
 
                 if(this.globalAnaTrucks.byVeh && this.globalAnaTrucks.byVeh[item.brand]) {
                     if(this.globalAnaTrucks.byVeh[item.brand].hours[hourKey] > 0) this.globalAnaTrucks.byVeh[item.brand].hours[hourKey]--;
                     if(this.globalAnaTrucks.byVeh[item.brand].days[dayKey] > 0) this.globalAnaTrucks.byVeh[item.brand].days[dayKey]--;
+                    if(this.globalAnaTrucks.byVeh[item.brand].months && this.globalAnaTrucks.byVeh[item.brand].months[monthKey] > 0) this.globalAnaTrucks.byVeh[item.brand].months[monthKey]--;
                     if(this.globalAnaTrucks.byVeh[item.brand].alts[altKey] > 0) this.globalAnaTrucks.byVeh[item.brand].alts[altKey]--;
+                    if(this.globalAnaTrucks.byVeh[item.brand].roads && this.globalAnaTrucks.byVeh[item.brand].roads[roadType] > 0) this.globalAnaTrucks.byVeh[item.brand].roads[roadType]--;
                 }
 
                 if(index === this.truckHistory.length - 1) {
@@ -782,17 +839,23 @@ const app = {
                 let d = new Date(item.timestamp);
                 let hourKey = `${d.getHours()}h`;
                 let dayKey = Object.keys(this.globalAnaCars.days)[d.getDay()];
+                let monthKey = Object.keys(this.globalAnaCars.months)[d.getMonth()];
                 let altVal = item.alt || 0;
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+                let roadType = item.road || "Inconnu";
 
                 if(this.globalAnaCars.hours[hourKey] > 0) this.globalAnaCars.hours[hourKey]--;
                 if(this.globalAnaCars.days[dayKey] > 0) this.globalAnaCars.days[dayKey]--;
+                if(this.globalAnaCars.months[monthKey] > 0) this.globalAnaCars.months[monthKey]--;
                 if(this.globalAnaCars.alts[altKey] > 0) this.globalAnaCars.alts[altKey]--;
+                if(this.globalAnaCars.roads[roadType] > 0) this.globalAnaCars.roads[roadType]--;
 
                 if(this.globalAnaCars.byVeh && this.globalAnaCars.byVeh[item.type]) {
                     if(this.globalAnaCars.byVeh[item.type].hours[hourKey] > 0) this.globalAnaCars.byVeh[item.type].hours[hourKey]--;
                     if(this.globalAnaCars.byVeh[item.type].days[dayKey] > 0) this.globalAnaCars.byVeh[item.type].days[dayKey]--;
+                    if(this.globalAnaCars.byVeh[item.type].months && this.globalAnaCars.byVeh[item.type].months[monthKey] > 0) this.globalAnaCars.byVeh[item.type].months[monthKey]--;
                     if(this.globalAnaCars.byVeh[item.type].alts[altKey] > 0) this.globalAnaCars.byVeh[item.type].alts[altKey]--;
+                    if(this.globalAnaCars.byVeh[item.type].roads && this.globalAnaCars.byVeh[item.type].roads[roadType] > 0) this.globalAnaCars.byVeh[item.type].roads[roadType]--;
                 }
 
                 if(index === this.carHistory.length - 1) {
@@ -1150,25 +1213,20 @@ const app = {
         let hoursSource = key === 'Total' ? anaData.hours : (anaData.byVeh[key]?.hours || {});
         let daysSource = key === 'Total' ? anaData.days : (anaData.byVeh[key]?.days || {});
         let altsSource = key === 'Total' ? anaData.alts : (anaData.byVeh[key]?.alts || {});
+        let monthsSource = key === 'Total' ? anaData.months : (anaData.byVeh[key]?.months || {});
+        let roadsSource = key === 'Total' ? anaData.roads : (anaData.byVeh[key]?.roads || {});
+
+        let isDark = document.body.classList.contains('dark-mode');
+        let tColor = isDark ? '#d2dae2' : '#333';
 
         let ctxD = document.getElementById('temporalDensityChart');
         if(ctxD) {
             if(this.temporalChart) this.temporalChart.destroy();
             let hasData = Object.values(hoursSource).some(v => v > 0);
             if(hasData) {
-                let isDark = document.body.classList.contains('dark-mode');
-                let tColor = isDark ? '#d2dae2' : '#333';
                 this.temporalChart = new Chart(ctxD, {
                     type: 'bar',
-                    data: { 
-                        labels: Object.keys(hoursSource), 
-                        datasets: [{ 
-                            label: 'Véhicules par heure', 
-                            data: Object.values(hoursSource), 
-                            backgroundColor: type === 'trucks' ? '#27ae60' : '#3498db', 
-                            borderRadius: 4 
-                        }] 
-                    },
+                    data: { labels: Object.keys(hoursSource), datasets: [{ label: 'Véhicules par heure', data: Object.values(hoursSource), backgroundColor: type === 'trucks' ? '#27ae60' : '#3498db', borderRadius: 4 }] },
                     options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, x: { ticks: { color: tColor } } } }
                 });
             }
@@ -1179,47 +1237,58 @@ const app = {
             if(this.weeklyGlobalChart) this.weeklyGlobalChart.destroy();
             let hasDayData = Object.values(daysSource).some(v => v > 0);
             if(hasDayData) {
-                let isDark = document.body.classList.contains('dark-mode');
-                let tColor = isDark ? '#d2dae2' : '#333';
                 this.weeklyGlobalChart = new Chart(ctxW, {
                     type: 'bar',
-                    data: { 
-                        labels: Object.keys(daysSource), 
-                        datasets: [{ 
-                            label: 'Véhicules par jour', 
-                            data: Object.values(daysSource), 
-                            backgroundColor: type === 'trucks' ? '#e67e22' : '#9b59b6', 
-                            borderRadius: 4 
-                        }] 
-                    },
+                    data: { labels: Object.keys(daysSource), datasets: [{ label: 'Véhicules par jour', data: Object.values(daysSource), backgroundColor: type === 'trucks' ? '#e67e22' : '#9b59b6', borderRadius: 4 }] },
                     options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, x: { ticks: { color: tColor } } } }
                 });
             }
         }
 
-        // --- GRAPHIQUE ALTITUDE INDIVIDUEL ---
         let ctxA = document.getElementById('altitudeModalChart');
         if (ctxA) {
             if (this.altitudeModalChart) this.altitudeModalChart.destroy();
             let hasAltData = Object.values(altsSource).some(v => v > 0);
-            
             let altSection = document.getElementById('modal-altitude-section');
             if (altSection) altSection.style.display = hasAltData ? 'block' : 'none';
 
             if (hasAltData) {
-                let isDark = document.body.classList.contains('dark-mode');
-                let tColor = isDark ? '#d2dae2' : '#333';
                 this.altitudeModalChart = new Chart(ctxA, {
                     type: 'pie',
-                    data: {
-                        labels: Object.keys(altsSource),
-                        datasets: [{
-                            data: Object.values(altsSource),
-                            backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'],
-                            borderWidth: 1,
-                            borderColor: isDark ? '#2f3640' : '#fff'
-                        }]
-                    },
+                    data: { labels: Object.keys(altsSource), datasets: [{ data: Object.values(altsSource), backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
+                    options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: tColor } } } }
+                });
+            }
+        }
+
+        // --- NOUVEAUX GRAPHIQUES (MODAL) ---
+        let ctxM = document.getElementById('monthlyModalChart');
+        if(ctxM) {
+            if(this.monthlyModalChart) this.monthlyModalChart.destroy();
+            let hasMonthData = Object.values(monthsSource).some(v => v > 0);
+            let monthSection = document.getElementById('modal-monthly-section');
+            if (monthSection) monthSection.style.display = hasMonthData ? 'block' : 'none';
+
+            if(hasMonthData) {
+                this.monthlyModalChart = new Chart(ctxM, {
+                    type: 'bar',
+                    data: { labels: Object.keys(monthsSource), datasets: [{ label: 'Véhicules par mois', data: Object.values(monthsSource), backgroundColor: '#8e44ad', borderRadius: 4 }] },
+                    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, x: { ticks: { color: tColor } } } }
+                });
+            }
+        }
+
+        let ctxR = document.getElementById('roadModalChart');
+        if (ctxR) {
+            if (this.roadModalChart) this.roadModalChart.destroy();
+            let hasRoadData = Object.values(roadsSource).some(v => v > 0);
+            let roadSection = document.getElementById('modal-road-section');
+            if (roadSection) roadSection.style.display = hasRoadData ? 'block' : 'none';
+
+            if (hasRoadData) {
+                this.roadModalChart = new Chart(ctxR, {
+                    type: 'doughnut',
+                    data: { labels: Object.keys(roadsSource), datasets: [{ data: Object.values(roadsSource), backgroundColor: ['#3498db', '#f1c40f', '#e74c3c', '#95a5a6'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
                     options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: tColor } } } }
                 });
             }
@@ -1258,8 +1327,12 @@ const app = {
         let counters = {};
         let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
         let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
+        let months = { "Jan":0, "Fév":0, "Mar":0, "Avr":0, "Mai":0, "Juin":0, "Juil":0, "Aoû":0, "Sep":0, "Oct":0, "Nov":0, "Déc":0 }; // NOUVEAU
+        let roads = { "Ville (<50km/h)": 0, "Route (50-80km/h)": 0, "Autoroute (>80km/h)": 0, "Inconnu": 0 }; // NOUVEAU
+
         let seqs = {}; 
         let dayKeys = Object.keys(days);
+        let monthKeys = Object.keys(months);
         let gTotal = 0;
         let gTotalDist = 0;
         let frTotal = 0, etrTotal = 0;
@@ -1292,10 +1365,15 @@ const app = {
                 if (h.timestamp) {
                     let d = new Date(h.timestamp);
                     days[dayKeys[d.getDay()]]++;
+                    months[monthKeys[d.getMonth()]]++;
                 }
+
                 let altVal = h.alt || 0;
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
                 alts[altKey]++;
+
+                let roadKey = h.road || "Inconnu";
+                roads[roadKey]++;
 
                 if (i < sHist.length - 1) {
                     let nxt = type === 'trucks' ? sHist[i+1].brand : sHist[i+1].type;
@@ -1400,6 +1478,27 @@ const app = {
             });
         }
 
+        // --- NOUVEAUX GRAPHIQUES (DASHBOARD) ---
+        let ctxM = document.getElementById('monthlyChart');
+        if(ctxM) {
+            if(this.monthlyChart) this.monthlyChart.destroy();
+            this.monthlyChart = new Chart(ctxM, {
+                type: 'bar',
+                data: { labels: Object.keys(months), datasets: [{ label: 'Total par Mois', data: Object.values(months), backgroundColor: '#8e44ad', borderRadius: 4 }] },
+                options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { color: textColor } }, x: { ticks: { color: textColor } } } }
+            });
+        }
+
+        let ctxR = document.getElementById('roadTypeChart');
+        if(ctxR) {
+            if(this.roadTypeChart) this.roadTypeChart.destroy();
+            this.roadTypeChart = new Chart(ctxR, {
+                type: 'doughnut',
+                data: { labels: Object.keys(roads), datasets: [{ data: Object.values(roads), backgroundColor: ['#3498db', '#f1c40f', '#e74c3c', '#95a5a6'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
+                options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
+            });
+        }
+
         let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
         let seqHtml = '';
         if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
@@ -1453,6 +1552,12 @@ const app = {
         
         let altSection = document.getElementById('modal-altitude-section');
         if (altSection) altSection.style.display = 'none'; 
+        
+        let monthSection = document.getElementById('modal-monthly-section');
+        if (monthSection) monthSection.style.display = 'none';
+        
+        let roadSection = document.getElementById('modal-road-section');
+        if (roadSection) roadSection.style.display = 'none';
 
         document.getElementById('session-detail-modal').style.display = 'flex';
 

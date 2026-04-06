@@ -2,10 +2,24 @@
 export const gps = {
     currentPos: { lat: null, lon: null, alt: null },
     currentSpeed: 0,
+    speedHistory: [], // NOUVEAU : Pour stocker les vitesses des 2 dernières minutes
     lastTrackedPos: null,
 
     init() {
         this.startTracking();
+    },
+
+    // NOUVEAU : Fonction pour obtenir la vitesse lissée
+    getSlidingSpeedKmh() {
+        let now = Date.now();
+        // On nettoie l'historique pour ne garder que les 120 dernières secondes (120 000 ms)
+        this.speedHistory = this.speedHistory.filter(item => now - item.time <= 120000);
+        
+        if (this.speedHistory.length === 0) return 0;
+        
+        // On calcule la moyenne des vitesses enregistrées
+        let totalSpeed = this.speedHistory.reduce((sum, item) => sum + item.speed, 0);
+        return totalSpeed / this.speedHistory.length;
     },
 
     startTracking() {
@@ -20,6 +34,10 @@ export const gps = {
                     }; 
                     this.currentSpeed = pos.coords.speed || 0; 
                     
+                    // NOUVEAU : On enregistre la vitesse instantanée en km/h pour la fenêtre glissante
+                    let instantSpeedKmh = pos.coords.speed ? pos.coords.speed * 3.6 : 0;
+                    this.speedHistory.push({ time: Date.now(), speed: instantSpeedKmh });
+                    
                     let accuracy = Math.round(pos.coords.accuracy);
 
                     if(gpsStatus) { 
@@ -29,7 +47,7 @@ export const gps = {
                     
                     if (this.lastTrackedPos) {
                         let linearD = parseFloat(this.calculateDistance(this.lastTrackedPos.lat, this.lastTrackedPos.lon, this.currentPos.lat, this.currentPos.lon));
-                        let speedKmh = this.currentSpeed * 3.6;
+                        let speedKmh = instantSpeedKmh;
 
                         if (linearD > 0.1 && linearD < 3.0 && accuracy <= 20 && (speedKmh > 5 || pos.coords.speed === null)) { 
                             let d = linearD;
