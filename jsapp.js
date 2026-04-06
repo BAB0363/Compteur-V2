@@ -40,7 +40,7 @@ const app = {
     
     mainDashboardChart: null, natChart: null,
     temporalChart: null, weeklyChart: null, altitudeChart: null, weeklyGlobalChart: null,
-    weatherChart: null, 
+    altitudeModalChart: null,
 
     currentDashboardFilter: 'all',
     activeDashboardType: 'trucks',
@@ -108,10 +108,10 @@ const app = {
             hours: hours,
             days: { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 },
             alts: { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 },
-            byVeh: {}, // NOUVEAU : Statistiques isolées par véhicule
+            byVeh: {}, 
             seqs: {}, 
-            seqs3: {}, // NOUVEAU : Séquences de 3 véhicules (Ordre 2)
-            lastVehicles: [], // NOUVEAU : Remplacera lastVeh pour garder les 2 derniers
+            seqs3: {}, 
+            lastVehicles: [], 
             predictions: { total: 0, success: 0 }
         };
     },
@@ -120,7 +120,6 @@ const app = {
         let sessions = await this.idb.getAll(type);
         let dayKeys = Object.keys(targetAna.days);
         
-        // Initialisation si propriétés manquantes
         if (!targetAna.byVeh) targetAna.byVeh = {};
         if (!targetAna.seqs3) targetAna.seqs3 = {};
         if (!targetAna.lastVehicles) targetAna.lastVehicles = [];
@@ -128,13 +127,12 @@ const app = {
         sessions.forEach(s => {
             if (s.history) {
                 let hist = s.history.filter(h => !h.isEvent);
-                let sessionLastVehicles = []; // Historique court pour la boucle
+                let sessionLastVehicles = []; 
                 
                 for(let i = 0; i < hist.length; i++) {
                     let h = hist[i];
                     let vehType = type === 'trucks' ? h.brand : h.type;
 
-                    // 1. Mise à jour des stats Globales
                     if (h.timestamp) {
                         let d = new Date(h.timestamp);
                         targetAna.hours[`${d.getHours()}h`]++;
@@ -144,7 +142,6 @@ const app = {
                     let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
                     targetAna.alts[altKey]++;
 
-                    // 2. NOUVEAU : Mise à jour des stats par Véhicule (byVeh)
                     if (!targetAna.byVeh[vehType]) targetAna.byVeh[vehType] = { hours: {}, days: {}, alts: {} };
                     if (h.timestamp) {
                         let d = new Date(h.timestamp);
@@ -153,7 +150,6 @@ const app = {
                     }
                     targetAna.byVeh[vehType].alts[altKey] = (targetAna.byVeh[vehType].alts[altKey] || 0) + 1;
 
-                    // 3. NOUVEAU : Mise à jour des Séquences (Duos et Triplets)
                     if (sessionLastVehicles.length >= 1) {
                         let pair = `${sessionLastVehicles[sessionLastVehicles.length - 1]} ➡️ ${vehType}`;
                         targetAna.seqs[pair] = (targetAna.seqs[pair] || 0) + 1;
@@ -163,7 +159,6 @@ const app = {
                         targetAna.seqs3[triplet] = (targetAna.seqs3[triplet] || 0) + 1;
                     }
 
-                    // On pousse le véhicule actuel et on garde maximum les 2 derniers
                     sessionLastVehicles.push(vehType);
                     if (sessionLastVehicles.length > 2) sessionLastVehicles.shift();
                 }
@@ -264,7 +259,6 @@ const app = {
         let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
         let candidates = type === 'trucks' ? this.brands : this.vehicleTypes;
 
-        // Récupération des données temporelles et géographiques
         let d = new Date();
         let currentHourKey = `${d.getHours()}h`;
         let currentDayKey = Object.keys(ana.days)[d.getDay()];
@@ -273,73 +267,58 @@ const app = {
 
         let currentSpeedKmh = window.gps && window.gps.currentSpeed ? window.gps.currentSpeed * 3.6 : 0;
         let isHighway = currentSpeedKmh > 75; 
-        let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue"; 
         
         let sec = type === 'trucks' ? this.truckSeconds : this.carSeconds;
         let isDenseTraffic = sec > 0 && (history.length / (sec / 3600)) > 500; 
 
-        // Récupération pour Markov Ordre 2
         let recentItems = history.filter(h => !h.isEvent).slice(-2);
-        let lastV1 = recentItems.length > 1 ? (type === 'trucks' ? recentItems[0].brand : recentItems[0].type) : null; // Avant-dernier
-        let lastV2 = recentItems.length > 0 ? (type === 'trucks' ? recentItems[recentItems.length-1].brand : recentItems[recentItems.length-1].type) : null; // Dernier
+        let lastV1 = recentItems.length > 1 ? (type === 'trucks' ? recentItems[0].brand : recentItems[0].type) : null; 
+        let lastV2 = recentItems.length > 0 ? (type === 'trucks' ? recentItems[recentItems.length-1].brand : recentItems[recentItems.length-1].type) : null; 
 
-        // Initialisation des scores
         let scores = {};
         candidates.forEach(c => scores[c] = 0);
 
-        // ÉTAPE 1 : Poids de base (Volumes globaux)
         candidates.forEach(c => {
             let count = type === 'trucks' ? ((globalCounters[c]?.fr || 0) + (globalCounters[c]?.etr || 0)) : (globalCounters[c] || 0);
             scores[c] += count; 
         });
 
-        // ÉTAPE 2 : Séquences de Markov (Duos et Triplets)
         candidates.forEach(c => {
-            // 1. Le Graal : Séquence de 3 véhicules (Ordre 2)
             if (lastV1 && lastV2 && ana.seqs3) {
                 let triplet = `${lastV1} ➡️ ${lastV2} ➡️ ${c}`;
                 if (ana.seqs3[triplet]) {
-                    scores[c] += (ana.seqs3[triplet] * 10); // Coefficient très fort !
+                    scores[c] += (ana.seqs3[triplet] * 10); 
                 }
             }
-            
-            // 2. Filet de sécurité : Séquence de 2 véhicules (Ordre 1)
             if (lastV2 && ana.seqs) {
                 let pair = `${lastV2} ➡️ ${c}`;
                 if (ana.seqs[pair]) {
-                    scores[c] += (ana.seqs[pair] * 3); // Coefficient normal
+                    scores[c] += (ana.seqs[pair] * 3); 
                 }
             }
         });
 
-        // ÉTAPE 3 : Ajustements Data-Driven (Habitudes réelles)
         candidates.forEach(c => {
             if (ana.byVeh && ana.byVeh[c]) {
                 let pointsHeure = (ana.byVeh[c].hours[currentHourKey] || 0) * 2; 
                 let pointsJour = (ana.byVeh[c].days[currentDayKey] || 0) * 2;
-                let pointsAlt = (ana.byVeh[c].alts[altKey] || 0) * 3; // L'altitude est un indice très fort
+                let pointsAlt = (ana.byVeh[c].alts[altKey] || 0) * 3; 
 
                 scores[c] += (pointsHeure + pointsJour + pointsAlt);
             }
         });
 
-        // ÉTAPE 4 : Ajustements Métier (Ceux qui dépendent du temps réel pur)
         if (type === 'cars') {
             if (isHighway) {
                 scores['Camions'] += 50; 
                 scores['Vélos'] = 0; 
                 scores['Engins agricoles'] = 0;
             }
-            if (weather === 'Pluie / Difficile') {
-                scores['Motos'] = Math.max(0, scores['Motos'] - 30);
-                scores['Vélos'] = Math.max(0, scores['Vélos'] - 30);
-            }
             if (isDenseTraffic) {
                 scores['Voitures'] += 100; 
             }
         }
 
-        // Sélection du Gagnant
         let bestCandidate = null;
         let maxScore = -1;
         Object.keys(scores).forEach(c => {
@@ -352,7 +331,6 @@ const app = {
 
         if (!bestCandidate) bestCandidate = candidates[Math.floor(Math.random() * candidates.length)];
 
-        // Attribution de la prédiction
         if (type === 'trucks') {
             let fr = this.globalTruckCounters[bestCandidate]?.fr || 0;
             let etr = this.globalTruckCounters[bestCandidate]?.etr || 0;
@@ -411,7 +389,6 @@ const app = {
             this.globalAnaTrucks = this.getEmptyAnalytics(); 
             await this.buildPermanentAnalyticsFromIDB('trucks', this.globalAnaTrucks);
         }
-        // Sécurités pour les profils existants
         if (!this.globalAnaTrucks.predictions) this.globalAnaTrucks.predictions = { total: 0, success: 0 };
         if (!this.globalAnaTrucks.byVeh) this.globalAnaTrucks.byVeh = {};
         if (!this.globalAnaTrucks.seqs3) this.globalAnaTrucks.seqs3 = {};
@@ -423,7 +400,6 @@ const app = {
             this.globalAnaCars = this.getEmptyAnalytics(); 
             await this.buildPermanentAnalyticsFromIDB('cars', this.globalAnaCars);
         }
-        // Sécurités pour les profils existants
         if (!this.globalAnaCars.predictions) this.globalAnaCars.predictions = { total: 0, success: 0 };
         if (!this.globalAnaCars.byVeh) this.globalAnaCars.byVeh = {};
         if (!this.globalAnaCars.seqs3) this.globalAnaCars.seqs3 = {};
@@ -541,7 +517,7 @@ const app = {
             clearInterval(this.truckInterval); 
             this.truckAccumulatedTime = this.truckSeconds;
             this.storage.set('truckAccumulatedTime', this.truckAccumulatedTime);
-            this.globalAnaTrucks.lastVehicles = []; // Réinitialise la mémoire courte des séquences
+            this.globalAnaTrucks.lastVehicles = []; 
             this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
         }
     },
@@ -582,7 +558,7 @@ const app = {
             clearInterval(this.carInterval); 
             this.carAccumulatedTime = this.carSeconds;
             this.storage.set('carAccumulatedTime', this.carAccumulatedTime);
-            this.globalAnaCars.lastVehicles = []; // Réinitialise la mémoire courte des séquences
+            this.globalAnaCars.lastVehicles = []; 
             this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
         }
     },
@@ -609,8 +585,7 @@ const app = {
                 this.globalTruckCounters[brand][type] += amount; 
                 
                 let nowTs = new Date().getTime();
-                let wLabel = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
-                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, weather: wLabel, chronoTime: this.formatTime(this.truckSeconds), timestamp: nowTs };
+                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.truckSeconds), timestamp: nowTs };
                 this.truckHistory.push(histItem);
 
                 let d = new Date(nowTs);
@@ -623,7 +598,6 @@ const app = {
                 this.globalAnaTrucks.days[dayKey]++;
                 this.globalAnaTrucks.alts[altKey]++;
 
-                // NOUVEAU : Enregistrement ultra-détaillé par véhicule
                 if (!this.globalAnaTrucks.byVeh[brand]) {
                     this.globalAnaTrucks.byVeh[brand] = { hours: {}, days: {}, alts: {} };
                 }
@@ -631,7 +605,6 @@ const app = {
                 this.globalAnaTrucks.byVeh[brand].days[dayKey] = (this.globalAnaTrucks.byVeh[brand].days[dayKey] || 0) + 1;
                 this.globalAnaTrucks.byVeh[brand].alts[altKey] = (this.globalAnaTrucks.byVeh[brand].alts[altKey] || 0) + 1;
 
-                // NOUVEAU : Enregistrement des séquences (Duos et Triplets)
                 if (!this.globalAnaTrucks.lastVehicles) this.globalAnaTrucks.lastVehicles = [];
                 if (!this.globalAnaTrucks.seqs3) this.globalAnaTrucks.seqs3 = {};
 
@@ -648,7 +621,6 @@ const app = {
                     this.globalAnaTrucks.seqs3[triplet] = (this.globalAnaTrucks.seqs3[triplet] || 0) + 1;
                 }
 
-                // Mémoire courte
                 this.globalAnaTrucks.lastVehicles.push(brand);
                 if (this.globalAnaTrucks.lastVehicles.length > 2) {
                     this.globalAnaTrucks.lastVehicles.shift();
@@ -694,8 +666,7 @@ const app = {
                 this.globalCarCounters[type] += amount; 
 
                 let nowTs = new Date().getTime();
-                let wLabel = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
-                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, weather: wLabel, chronoTime: this.formatTime(this.carSeconds), timestamp: nowTs };
+                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, chronoTime: this.formatTime(this.carSeconds), timestamp: nowTs };
                 this.carHistory.push(histItem);
 
                 let d = new Date(nowTs);
@@ -708,7 +679,6 @@ const app = {
                 this.globalAnaCars.days[dayKey]++;
                 this.globalAnaCars.alts[altKey]++;
 
-                // NOUVEAU : Enregistrement ultra-détaillé par véhicule
                 if (!this.globalAnaCars.byVeh[type]) {
                     this.globalAnaCars.byVeh[type] = { hours: {}, days: {}, alts: {} };
                 }
@@ -716,7 +686,6 @@ const app = {
                 this.globalAnaCars.byVeh[type].days[dayKey] = (this.globalAnaCars.byVeh[type].days[dayKey] || 0) + 1;
                 this.globalAnaCars.byVeh[type].alts[altKey] = (this.globalAnaCars.byVeh[type].alts[altKey] || 0) + 1;
 
-                // NOUVEAU : Enregistrement des séquences (Duos et Triplets)
                 if (!this.globalAnaCars.lastVehicles) this.globalAnaCars.lastVehicles = [];
                 if (!this.globalAnaCars.seqs3) this.globalAnaCars.seqs3 = {};
 
@@ -733,7 +702,6 @@ const app = {
                     this.globalAnaCars.seqs3[triplet] = (this.globalAnaCars.seqs3[triplet] || 0) + 1;
                 }
 
-                // Mémoire courte
                 this.globalAnaCars.lastVehicles.push(type);
                 if (this.globalAnaCars.lastVehicles.length > 2) {
                     this.globalAnaCars.lastVehicles.shift();
@@ -922,7 +890,6 @@ const app = {
             endAddress: endAddress, 
             durationSec: type === 'trucks' ? this.truckSeconds : this.carSeconds, 
             distanceKm: parseFloat((type === 'trucks' ? this.liveTruckDistance : this.liveCarDistance).toFixed(2)), 
-            weather: window.gps.currentWeatherLabel, 
             history: history, 
             summary: JSON.parse(JSON.stringify(type === 'trucks' ? this.truckCounters : this.vehicleCounters)),
             predictions: type === 'trucks' ? { ...this.sessionTruckPredictions } : { ...this.sessionCarPredictions }
@@ -1034,7 +1001,6 @@ const app = {
         
         let avgSpeed = (sec > 0) ? (dist / (sec / 3600)).toFixed(1) + " km/h" : "-";
         let rythmeHeure = (sec > 0) ? (count / (sec / 3600)).toFixed(1) + " /h" : "-";
-        let weather = window.gps ? window.gps.currentWeatherLabel : "Inconnue";
 
         let espTemps = count > 1 ? (sec / count).toFixed(1) + " s" : "-";
         let espDist = (count > 1 && dist > 0) ? ((dist * 1000) / count).toFixed(0) + " m" : "-";
@@ -1046,7 +1012,6 @@ const app = {
         let proj = sec > 0 ? Math.round(count + (ratePerSec * 3600)) : "-";
 
         container.innerHTML = `
-            <div class="km-stat-card"><span class="km-stat-title">Météo</span><span class="km-stat-value" style="color:#e67e22;">${weather}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Vitesse Moy.</span><span class="km-stat-value" style="color:#8e44ad;">${avgSpeed}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Rythme / Heure</span><span class="km-stat-value">${rythmeHeure}</span></div>
             <div class="km-stat-card"><span class="km-stat-title">Tendance (10m)</span><span class="km-stat-value" style="color:#e67e22;">${mobilePace}</span></div>
@@ -1181,16 +1146,29 @@ const app = {
 
         let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
 
+        // --- CORRECTIONS STATS INDIVIDUELLES ---
+        let hoursSource = key === 'Total' ? anaData.hours : (anaData.byVeh[key]?.hours || {});
+        let daysSource = key === 'Total' ? anaData.days : (anaData.byVeh[key]?.days || {});
+        let altsSource = key === 'Total' ? anaData.alts : (anaData.byVeh[key]?.alts || {});
+
         let ctxD = document.getElementById('temporalDensityChart');
         if(ctxD) {
             if(this.temporalChart) this.temporalChart.destroy();
-            let hasData = Object.values(anaData.hours).some(v => v > 0);
+            let hasData = Object.values(hoursSource).some(v => v > 0);
             if(hasData) {
                 let isDark = document.body.classList.contains('dark-mode');
                 let tColor = isDark ? '#d2dae2' : '#333';
                 this.temporalChart = new Chart(ctxD, {
                     type: 'bar',
-                    data: { labels: Object.keys(anaData.hours), datasets: [{ label: 'Véhicules par heure', data: Object.values(anaData.hours), backgroundColor: type === 'trucks' ? '#27ae60' : '#3498db', borderRadius: 4 }] },
+                    data: { 
+                        labels: Object.keys(hoursSource), 
+                        datasets: [{ 
+                            label: 'Véhicules par heure', 
+                            data: Object.values(hoursSource), 
+                            backgroundColor: type === 'trucks' ? '#27ae60' : '#3498db', 
+                            borderRadius: 4 
+                        }] 
+                    },
                     options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, x: { ticks: { color: tColor } } } }
                 });
             }
@@ -1199,14 +1177,50 @@ const app = {
         let ctxW = document.getElementById('weeklyGlobalChart');
         if(ctxW) {
             if(this.weeklyGlobalChart) this.weeklyGlobalChart.destroy();
-            let hasDayData = Object.values(anaData.days).some(v => v > 0);
+            let hasDayData = Object.values(daysSource).some(v => v > 0);
             if(hasDayData) {
                 let isDark = document.body.classList.contains('dark-mode');
                 let tColor = isDark ? '#d2dae2' : '#333';
                 this.weeklyGlobalChart = new Chart(ctxW, {
                     type: 'bar',
-                    data: { labels: Object.keys(anaData.days), datasets: [{ label: 'Véhicules par jour', data: Object.values(anaData.days), backgroundColor: type === 'trucks' ? '#e67e22' : '#9b59b6', borderRadius: 4 }] },
+                    data: { 
+                        labels: Object.keys(daysSource), 
+                        datasets: [{ 
+                            label: 'Véhicules par jour', 
+                            data: Object.values(daysSource), 
+                            backgroundColor: type === 'trucks' ? '#e67e22' : '#9b59b6', 
+                            borderRadius: 4 
+                        }] 
+                    },
                     options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: tColor, stepSize: 1 } }, x: { ticks: { color: tColor } } } }
+                });
+            }
+        }
+
+        // --- GRAPHIQUE ALTITUDE INDIVIDUEL ---
+        let ctxA = document.getElementById('altitudeModalChart');
+        if (ctxA) {
+            if (this.altitudeModalChart) this.altitudeModalChart.destroy();
+            let hasAltData = Object.values(altsSource).some(v => v > 0);
+            
+            let altSection = document.getElementById('modal-altitude-section');
+            if (altSection) altSection.style.display = hasAltData ? 'block' : 'none';
+
+            if (hasAltData) {
+                let isDark = document.body.classList.contains('dark-mode');
+                let tColor = isDark ? '#d2dae2' : '#333';
+                this.altitudeModalChart = new Chart(ctxA, {
+                    type: 'pie',
+                    data: {
+                        labels: Object.keys(altsSource),
+                        datasets: [{
+                            data: Object.values(altsSource),
+                            backgroundColor: ['#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'],
+                            borderWidth: 1,
+                            borderColor: isDark ? '#2f3640' : '#fff'
+                        }]
+                    },
+                    options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: tColor } } } }
                 });
             }
         }
@@ -1237,15 +1251,14 @@ const app = {
         let now = new Date();
         
         if (liveHistory && liveHistory.length > 0) {
-            allHistories.push({ history: liveHistory, weather: window.gps ? window.gps.currentWeatherLabel : "Inconnue" });
+            allHistories.push({ history: liveHistory });
         }
         sessions.forEach(s => allHistories.push(s)); 
 
         let counters = {};
         let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
         let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
-        let seqs = {}; // NOUVEAU: Va stocker à la fois les paires et les triplets
-        let weathers = {}; 
+        let seqs = {}; 
         let dayKeys = Object.keys(days);
         let gTotal = 0;
         let gTotalDist = 0;
@@ -1267,10 +1280,8 @@ const app = {
             
             sHist.forEach((h, i) => {
                 let vehType = type === 'trucks' ? h.brand : h.type;
-                let weatherLabel = h.weather || s.weather || "Inconnue";
                 
                 counters[vehType] = (counters[vehType] || 0) + 1;
-                weathers[weatherLabel] = (weathers[weatherLabel] || 0) + 1;
                 gTotal++;
 
                 if (type === 'trucks') {
@@ -1286,14 +1297,12 @@ const app = {
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
                 alts[altKey]++;
 
-                // Calcul dynamique des séquences d'Ordre 1 (Paires)
                 if (i < sHist.length - 1) {
                     let nxt = type === 'trucks' ? sHist[i+1].brand : sHist[i+1].type;
                     let pair = `${vehType} ➡️ ${nxt}`;
                     seqs[pair] = (seqs[pair] || 0) + 1;
                 }
                 
-                // NOUVEAU: Calcul dynamique des séquences d'Ordre 2 (Triplets)
                 if (i < sHist.length - 2) {
                     let nxt1 = type === 'trucks' ? sHist[i+1].brand : sHist[i+1].type;
                     let nxt2 = type === 'trucks' ? sHist[i+2].brand : sHist[i+2].type;
@@ -1391,29 +1400,6 @@ const app = {
             });
         }
 
-        let ctxWeather = document.getElementById('weatherChart');
-        if(ctxWeather) {
-            if(this.weatherChart) this.weatherChart.destroy();
-            this.weatherChart = new Chart(ctxWeather, {
-                type: 'bar',
-                data: { 
-                    labels: Object.keys(weathers), 
-                    datasets: [{ 
-                        label: 'Véhicules comptés', 
-                        data: Object.values(weathers), 
-                        backgroundColor: ['#f1c40f', '#bdc3c7', '#3498db', '#9b59b6'], 
-                        borderRadius: 4 
-                    }] 
-                },
-                options: { 
-                    maintainAspectRatio: false, 
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { color: textColor, stepSize: 1 } }, x: { ticks: { color: textColor } } } 
-                }
-            });
-        }
-
-        // Tri et affichage du Top 5 (Mélange de paires et de triplets !)
         let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
         let seqHtml = '';
         if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
@@ -1450,7 +1436,6 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Durée</span><span class="session-detail-value">${this.formatTime(session.durationSec || 0)}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Distance</span><span class="session-detail-value">${dist} km</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne</span><span class="session-detail-value" style="color:#8e44ad;">${avgSpeedKmh} km/h</span></div>
-            <div class="session-detail-row"><span class="session-detail-label">Météo globale session</span><span class="session-detail-value">${session.weather || 'Inconnue'}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Véhicules comptés</span><span class="session-detail-value">${itemsCount}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Apparitions par minute</span><span class="session-detail-value">${freq} /min</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Rythme</span><span class="session-detail-value">${speed} /h</span></div>
@@ -1465,6 +1450,9 @@ const app = {
         let titleEl = document.querySelector('#session-detail-modal h4');
         if (titleEl) titleEl.innerText = "📈 Densité Temporelle (Session)";
         document.getElementById('modal-weekly-section').style.display = 'none';
+        
+        let altSection = document.getElementById('modal-altitude-section');
+        if (altSection) altSection.style.display = 'none'; 
 
         document.getElementById('session-detail-modal').style.display = 'flex';
 

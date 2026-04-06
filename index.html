@@ -40,7 +40,6 @@
     <div class="status-row no-print">
         <div id="wake-lock-status">⚙️ Écran...</div>
         <div id="gps-status">📍 GPS en attente...</div>
-        <div id="weather-status" style="color: #3498db; cursor: pointer; display: flex; align-items: center; gap: 4px;" onclick="window.gps.fetchWeather()">☀️ Météo... 🔄</div>
     </div>
 
     <div id="section-trucks">
@@ -193,11 +192,6 @@
         </div>
 
         <div class="km-stats-container">
-            <h4>☀️ Corrélation Météo</h4>
-            <div class="chart-wrapper"><canvas id="weatherChart"></canvas></div>
-        </div>
-
-        <div class="km-stats-container">
             <h4>🔁 Top 5 des Séquences</h4>
             <div id="sequence-container"></div>
         </div>
@@ -272,6 +266,11 @@
                 <div id="modal-weekly-section" style="display: none;">
                     <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">📅 Répartition par Jour</h4>
                     <div class="chart-wrapper" style="height: 150px;"><canvas id="weeklyGlobalChart"></canvas></div>
+                </div>
+                
+                <div id="modal-altitude-section" style="display: none;">
+                    <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">⛰️ Répartition par Altitude</h4>
+                    <div class="chart-wrapper" style="height: 150px;"><canvas id="altitudeModalChart"></canvas></div>
                 </div>
             </div>
             
