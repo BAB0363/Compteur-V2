@@ -4,12 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=17">
+    <link rel="manifest" href="manifest.json?v=18">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=17">
+    <link rel="stylesheet" href="style.css?v=18">
+    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
 </head>
 <body>
 
@@ -64,7 +66,7 @@
                 <div id="bar-etr"></div>
             </div>
             <div id="prediction-box-trucks" style="text-align: center; font-size: 0.75em; margin-top: 8px; color: #7f8c8d; font-weight: bold;">
-                🔮 Prédiction : <span id="pred-text-trucks" style="color: #8e44ad;">Analyse en cours...</span>
+                🔮 Prédiction IA : <span id="pred-text-trucks" style="color: #8e44ad;">Analyse en cours...</span>
             </div>
         </div>
         
@@ -121,7 +123,7 @@
                 <div id="bar-velos"></div>
             </div>
             <div id="prediction-box-cars" style="text-align: center; font-size: 0.75em; margin-top: 8px; color: #7f8c8d; font-weight: bold;">
-                🔮 Prédiction : <span id="pred-text-cars" style="color: #8e44ad;">Analyse en cours...</span>
+                🔮 Prédiction IA : <span id="pred-text-cars" style="color: #8e44ad;">Analyse en cours...</span>
             </div>
         </div>
         
@@ -152,7 +154,7 @@
     <div id="section-dashboard" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #e67e22;">
             <h3 style="margin-top: 0; color: var(--text-color);">📈 Tableau de Bord</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Données globales et analyses pour ce profil.</p>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Données globales et analyses de performance IA.</p>
         </div>
 
         <div class="main-tabs" style="margin-bottom: 15px;">
@@ -174,6 +176,12 @@
             <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="dash-grand-total" style="color:#27ae60;">0</span></div>
             <div class="chart-wrapper"><canvas id="dashboardMainChart"></canvas></div>
             <div id="dashboard-main-list" class="km-stats-grid"></div>
+        </div>
+
+        <div class="km-stats-container" style="border-top: 3px solid #8e44ad;">
+            <h4 style="color: #8e44ad;">🧠 Évolution de la Précision IA</h4>
+            <div class="chart-wrapper"><canvas id="aiEvolutionChart"></canvas></div>
+            <p style="font-size: 0.75em; color: #7f8c8d; text-align: center; margin-top: 5px;">Affiche le taux de réussite des prédictions sur les 10 dernières sessions.</p>
         </div>
 
         <div class="km-stats-container" id="dash-nat-container" style="display: none;">
@@ -210,7 +218,28 @@
     <div id="section-settings" style="display: none;" class="no-print">
         <div class="header-dashboard" style="border-left: 4px solid #34495e;">
             <h3 style="margin-top: 0; color: var(--text-color);">⚙️ Paramètres & Données</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Gère ton profil, tes sauvegardes et tes effacements.</p>
+            <p style="font-size: 0.85em; color: #7f8c8d;">Gère ton profil, tes sauvegardes et l'IA.</p>
+        </div>
+
+        <div class="km-stats-container" style="border: 1px solid #8e44ad;">
+            <h4 style="color: #8e44ad;">🧠 Intelligence Artificielle (Prédictions)</h4>
+            <p style="font-size: 0.85em; color: #7f8c8d;">L'IA s'entraîne automatiquement en arrière-plan à chaque session pour deviner le prochain véhicule.</p>
+            
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9em;">
+                <span>Statut Modèle Camions :</span>
+                <span id="ai-status-trucks" style="font-weight: bold; color: #e74c3c;">Non entraîné ❌</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 0.9em;">
+                <span>Statut Modèle Voitures :</span>
+                <span id="ai-status-cars" style="font-weight: bold; color: #e74c3c;">Non entraîné ❌</span>
+            </div>
+
+            <button class="share-btn" style="width: 100%; background-color: #8e44ad; padding: 12px; font-size: 1em;" onclick="window.ml.forceTraining()">
+                🏋️ Forcer l'entraînement de l'IA maintenant
+            </button>
+            <div id="ai-training-progress" style="display:none; text-align:center; font-size:0.8em; color:#8e44ad; margin-top:10px; font-weight:bold;">
+                Entraînement en cours... ⏳
+            </div>
         </div>
 
         <div class="km-stats-container">
@@ -300,17 +329,18 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsapp.js?v=17"></script>
+    <script type="module" src="jsml.js?v=18"></script>
+    <script type="module" src="jsapp.js?v=18"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=17')
+          navigator.serviceWorker.register('./sw.js?v=18')
             .then(registration => {
-              console.log('Service Worker Compteur enregistré avec succès !', registration.scope);
+              console.log('Service Worker Compteur enregistré !', registration.scope);
             })
             .catch(err => {
-              console.log('Échec de l\'enregistrement du Service Worker:', err);
+              console.log('Erreur SW:', err);
             });
         });
       }

@@ -1,8 +1,9 @@
 // jsapp.js
 import { ui } from './jsui.js';
 import { gps } from './jsgps.js';
+import { ml } from './jsml.js'; // 🧠 Import de l'IA
 
-window.ui = ui; window.gps = gps;
+window.ui = ui; window.gps = gps; window.ml = ml;
 
 const app = {
     currentUser: localStorage.getItem('currentUser') || 'Sylvain',
@@ -41,7 +42,8 @@ const app = {
     mainDashboardChart: null, natChart: null,
     temporalChart: null, weeklyChart: null, altitudeChart: null, weeklyGlobalChart: null,
     altitudeModalChart: null, 
-    monthlyChart: null, roadTypeChart: null, monthlyModalChart: null, roadModalChart: null, // NOUVEAUX GRAPHIQUES
+    monthlyChart: null, roadTypeChart: null, monthlyModalChart: null, roadModalChart: null,
+    aiEvolutionChart: null, // 🧠 Nouveau graphique IA
 
     currentDashboardFilter: 'all',
     activeDashboardType: 'trucks',
@@ -108,8 +110,8 @@ const app = {
         return {
             hours: hours,
             days: { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 },
-            months: { "Jan":0, "Fév":0, "Mar":0, "Avr":0, "Mai":0, "Juin":0, "Juil":0, "Aoû":0, "Sep":0, "Oct":0, "Nov":0, "Déc":0 }, // NOUVEAU
-            roads: { "Ville (<50km/h)": 0, "Route (50-80km/h)": 0, "Autoroute (>80km/h)": 0, "Inconnu": 0 }, // NOUVEAU
+            months: { "Jan":0, "Fév":0, "Mar":0, "Avr":0, "Mai":0, "Juin":0, "Juil":0, "Aoû":0, "Sep":0, "Oct":0, "Nov":0, "Déc":0 },
+            roads: { "Ville (<50km/h)": 0, "Route (50-80km/h)": 0, "Autoroute (>80km/h)": 0, "Inconnu": 0 },
             alts: { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 },
             byVeh: {}, 
             seqs: {}, 
@@ -268,7 +270,44 @@ const app = {
         if (window.ui) { window.ui.showToast(`🔄 Mode changé : ${newMode === 'voiture' ? '🚘 Voiture' : '🚛 Camion'}`); }
     },
 
-    updatePrediction(type) {
+    // 🧠 Gégé Update : La fonction de prédiction devenue Asynchrone pour interroger l'IA !
+    async updatePrediction(type) {
+        let el = document.getElementById(type === 'trucks' ? 'pred-text-trucks' : 'pred-text-cars');
+        if(el) el.innerText = "Analyse en cours... 🤖";
+
+        // 1️⃣ Tentative via le réseau de neurones (IA)
+        if (window.ml) {
+            let aiResult = await window.ml.predictNext(type);
+            if (aiResult) {
+                let bestCandidate = aiResult.candidate;
+                let confidence = aiResult.confidence;
+
+                if (type === 'trucks') {
+                    let d = new Date();
+                    let fr = this.globalTruckCounters[bestCandidate]?.fr || 0;
+                    let etr = this.globalTruckCounters[bestCandidate]?.etr || 0;
+                    let chanceEtranger = (etr / (fr + etr || 1));
+                    
+                    let currentSpeedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
+                    if (currentSpeedKmh > 80) chanceEtranger += 0.2; 
+                    
+                    let currentHour = d.getHours();
+                    if (currentHour < 5 || currentHour > 22) chanceEtranger += 0.15;
+                    if (d.getDay() === 0 || d.getDay() === 6) chanceEtranger += 0.15;
+                    
+                    let nat = Math.random() < chanceEtranger ? 'etr' : 'fr';
+
+                    this.currentPredictionTruck = { brand: bestCandidate, nat: nat };
+                    if(el) el.innerHTML = `<strong>${bestCandidate}</strong> (${nat === 'fr' ? '🇫🇷' : '🌍'}) ~${confidence}% <span style="color:#8e44ad; font-size:0.8em;">(IA 🧠)</span>`;
+                } else {
+                    this.currentPredictionCar = { type: bestCandidate };
+                    if(el) el.innerHTML = `<strong>${bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate}</strong> ~${confidence}% <span style="color:#8e44ad; font-size:0.8em;">(IA 🧠)</span>`;
+                }
+                return; // 🎯 L'IA a trouvé, on s'arrête ici !
+            }
+        }
+
+        // 2️⃣ Fallback : L'algorithme classique (si l'IA manque de données)
         let ana = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
         let history = type === 'trucks' ? this.truckHistory : this.carHistory;
         let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
@@ -301,7 +340,6 @@ const app = {
             totalGlobalCount += count;
         });
 
-        // Conversion en probabilités de base (base 100)
         if(totalGlobalCount > 0) {
             candidates.forEach(c => { scores[c] = (scores[c] / totalGlobalCount) * 100; });
         } else {
@@ -309,7 +347,6 @@ const app = {
         }
 
         candidates.forEach(c => {
-            // Bonus Séquences
             if (lastV1 && lastV2 && ana.seqs3) {
                 let triplet = `${lastV1} ➡️ ${lastV2} ➡️ ${c}`;
                 if (ana.seqs3[triplet]) scores[c] += 25; 
@@ -319,7 +356,6 @@ const app = {
                 if (ana.seqs[pair]) scores[c] += 10; 
             }
 
-            // Bonus Contextuels basés sur les probabilités normalisées
             if (ana.byVeh && ana.byVeh[c]) {
                 let pHeure = (ana.hours[currentHourKey] > 0) ? ((ana.byVeh[c].hours[currentHourKey] || 0) / ana.hours[currentHourKey]) * 100 : 0;
                 let pJour = (ana.days[currentDayKey] > 0) ? ((ana.byVeh[c].days[currentDayKey] || 0) / ana.days[currentDayKey]) * 100 : 0;
@@ -327,12 +363,10 @@ const app = {
                 let pMois = (ana.months[currentMonthKey] > 0) ? ((ana.byVeh[c].months[currentMonthKey] || 0) / ana.months[currentMonthKey]) * 100 : 0;
                 let pRoute = (ana.roads[currentRoad] > 0) ? ((ana.byVeh[c].roads[currentRoad] || 0) / ana.roads[currentRoad]) * 100 : 0;
 
-                // Application des poids d'importance
                 scores[c] += (pHeure * 0.1) + (pJour * 0.1) + (pAlt * 0.1) + (pMois * 0.15) + (pRoute * 0.25);
             }
         });
 
-        // Forçages Terrain
         if (type === 'cars') {
             if (isHighway) {
                 scores['Camions'] += 40; 
@@ -347,7 +381,7 @@ const app = {
         let bestCandidate = null;
         let maxScore = -1;
         candidates.forEach(c => {
-            let finalScore = scores[c] + (Math.random() * (scores[c] * 0.1)); // 10% de bruit aléatoire
+            let finalScore = scores[c] + (Math.random() * (scores[c] * 0.1));
             if (finalScore > maxScore && scores[c] >= 0) {
                 maxScore = finalScore;
                 bestCandidate = c;
@@ -356,7 +390,6 @@ const app = {
 
         if (!bestCandidate) bestCandidate = candidates[Math.floor(Math.random() * candidates.length)];
 
-        // Calcul de l'indice de confiance (approximatif)
         let totalScoreSum = Object.values(scores).reduce((a, b) => a + b, 0);
         let confidence = totalScoreSum > 0 ? Math.min(99, Math.round((maxScore / totalScoreSum) * 100)) : 50;
 
@@ -374,18 +407,19 @@ const app = {
             let nat = Math.random() < chanceEtranger ? 'etr' : 'fr';
 
             this.currentPredictionTruck = { brand: bestCandidate, nat: nat };
-            let el = document.getElementById('pred-text-trucks');
-            if(el) el.innerText = `${bestCandidate} (${nat === 'fr' ? '🇫🇷' : '🌍'}) ~${confidence}%`;
+            if(el) el.innerHTML = `<strong>${bestCandidate}</strong> (${nat === 'fr' ? '🇫🇷' : '🌍'}) ~${confidence}% <span style="color:#7f8c8d; font-size:0.8em;">(Classique 📊)</span>`;
         } else {
             this.currentPredictionCar = { type: bestCandidate };
-            let el = document.getElementById('pred-text-cars');
-            if(el) el.innerText = `${bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate} ~${confidence}%`;
+            if(el) el.innerHTML = `<strong>${bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate}</strong> ~${confidence}% <span style="color:#7f8c8d; font-size:0.8em;">(Classique 📊)</span>`;
         }
     },
 
 
     async init(isProfileSwitch = false) {
         if (!isProfileSwitch) { await this.idb.init(); await this.migrateData(); }
+
+        // 🧠 Initialisation du réseau de neurones
+        if (window.ml) await window.ml.init();
 
         let userSel = document.getElementById('user-selector');
         if(userSel) {
@@ -960,6 +994,13 @@ const app = {
 
         await this.idb.add(newSession);
 
+        // 🧠 Entraînement automatique de l'IA en arrière-plan à la fin de la session !
+        if (window.ml) {
+            window.ml.trainModel(type).then(success => {
+                if (success) window.ml.updateUIStatus();
+            });
+        }
+
         if (type === 'trucks') this.resetTrucksData(); 
         else this.resetCarsData(); 
         
@@ -1209,7 +1250,6 @@ const app = {
 
         let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
 
-        // --- CORRECTIONS STATS INDIVIDUELLES ---
         let hoursSource = key === 'Total' ? anaData.hours : (anaData.byVeh[key]?.hours || {});
         let daysSource = key === 'Total' ? anaData.days : (anaData.byVeh[key]?.days || {});
         let altsSource = key === 'Total' ? anaData.alts : (anaData.byVeh[key]?.alts || {});
@@ -1261,7 +1301,6 @@ const app = {
             }
         }
 
-        // --- NOUVEAUX GRAPHIQUES (MODAL) ---
         let ctxM = document.getElementById('monthlyModalChart');
         if(ctxM) {
             if(this.monthlyModalChart) this.monthlyModalChart.destroy();
@@ -1327,8 +1366,8 @@ const app = {
         let counters = {};
         let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
         let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
-        let months = { "Jan":0, "Fév":0, "Mar":0, "Avr":0, "Mai":0, "Juin":0, "Juil":0, "Aoû":0, "Sep":0, "Oct":0, "Nov":0, "Déc":0 }; // NOUVEAU
-        let roads = { "Ville (<50km/h)": 0, "Route (50-80km/h)": 0, "Autoroute (>80km/h)": 0, "Inconnu": 0 }; // NOUVEAU
+        let months = { "Jan":0, "Fév":0, "Mar":0, "Avr":0, "Mai":0, "Juin":0, "Juil":0, "Aoû":0, "Sep":0, "Oct":0, "Nov":0, "Déc":0 }; 
+        let roads = { "Ville (<50km/h)": 0, "Route (50-80km/h)": 0, "Autoroute (>80km/h)": 0, "Inconnu": 0 }; 
 
         let seqs = {}; 
         let dayKeys = Object.keys(days);
@@ -1442,6 +1481,53 @@ const app = {
             }
         }
 
+        // 🧠 NOUVEAU : Tracé du graphique d'évolution de l'IA
+        let ctxAi = document.getElementById('aiEvolutionChart');
+        if (ctxAi) {
+            if (this.aiEvolutionChart) this.aiEvolutionChart.destroy();
+            
+            // Prendre les 10 dernières sessions où l'IA a fait au moins 1 prédiction
+            let aiSessions = sessions.filter(s => s.predictions && s.predictions.total > 0).slice(-10);
+            
+            if (aiSessions.length > 0) {
+                let aiLabels = [];
+                let aiData = [];
+                
+                aiSessions.forEach((s, idx) => {
+                    aiLabels.push(`Sess. ${idx + 1}`);
+                    let successRate = Math.round((s.predictions.success / s.predictions.total) * 100);
+                    aiData.push(successRate);
+                });
+
+                this.aiEvolutionChart = new Chart(ctxAi, {
+                    type: 'line',
+                    data: {
+                        labels: aiLabels,
+                        datasets: [{
+                            label: 'Précision IA (%)',
+                            data: aiData,
+                            borderColor: '#8e44ad',
+                            backgroundColor: 'rgba(142, 68, 173, 0.2)',
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: '#8e44ad'
+                        }]
+                    },
+                    options: {
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, max: 100, ticks: { color: textColor, callback: function(val) { return val + '%'; } } },
+                            x: { ticks: { color: textColor } }
+                        }
+                    }
+                });
+                ctxAi.parentElement.style.display = 'block';
+            } else {
+                ctxAi.parentElement.style.display = 'none'; // Pas encore assez de données
+            }
+        }
+
         let natContainer = document.getElementById('dash-nat-container');
         if (type === 'trucks') {
             if (natContainer) natContainer.style.display = 'block';
@@ -1478,7 +1564,6 @@ const app = {
             });
         }
 
-        // --- NOUVEAUX GRAPHIQUES (DASHBOARD) ---
         let ctxM = document.getElementById('monthlyChart');
         if(ctxM) {
             if(this.monthlyChart) this.monthlyChart.destroy();
