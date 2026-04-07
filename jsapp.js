@@ -1,4 +1,4 @@
-// jsapp.js
+// jsapp.js (Partie 1/4)
 import { ui } from './jsui.js';
 import { gps } from './jsgps.js';
 import { ml } from './jsml.js'; // 🧠 Import de l'IA
@@ -411,6 +411,7 @@ const app = {
         }
     },
 
+// jsapp.js (Partie 2/4)
 
     async init(isProfileSwitch = false) {
         if (!isProfileSwitch) { await this.idb.init(); await this.migrateData(); }
@@ -815,6 +816,8 @@ const app = {
         }
     },
 
+// jsapp.js (Partie 3/4)
+
     deleteTruckHistoryItem(index) {
         let item = this.truckHistory[index];
         if (!item.isEvent && this.truckCounters[item.brand] && this.truckCounters[item.brand][item.type] > 0) {
@@ -1010,6 +1013,12 @@ const app = {
     async resetTrucks() { 
         if (confirm(`⚠️ Effacer toutes les sessions Camions de ${this.currentUser} ? Tes stats globales resteront intactes !`)) { 
             await this.idb.clear('trucks'); 
+            // 🧠 NOUVEAU : On supprime le modèle IA des camions
+            try {
+                if (typeof tf !== 'undefined') await tf.io.removeModel('indexeddb://model-trucks');
+                if (window.ml) { window.ml.modelTrucks = null; window.ml.updateUIStatus(); }
+            } catch(e) { console.log("Pas de modèle camions à supprimer"); }
+            
             this.renderAdvancedStats('trucks'); 
             window.ui.showToast("🗑️ Historique des sessions effacé"); 
         } 
@@ -1017,6 +1026,12 @@ const app = {
     async resetCars() { 
         if (confirm(`⚠️ Effacer toutes les sessions Véhicules de ${this.currentUser} ? Tes stats globales resteront intactes !`)) { 
             await this.idb.clear('cars'); 
+            // 🧠 NOUVEAU : On supprime le modèle IA des voitures
+            try {
+                if (typeof tf !== 'undefined') await tf.io.removeModel('indexeddb://model-cars');
+                if (window.ml) { window.ml.modelCars = null; window.ml.updateUIStatus(); }
+            } catch(e) { console.log("Pas de modèle voitures à supprimer"); }
+            
             this.renderAdvancedStats('cars'); 
             window.ui.showToast("🗑️ Historique des sessions effacé"); 
         } 
@@ -1039,8 +1054,21 @@ const app = {
             this.storage.set('globalTruckDistance', 0); this.storage.set('globalTruckTime', 0);
             this.storage.set('globalCarDistance', 0); this.storage.set('globalCarTime', 0);
             
+            // 🧠 NOUVEAU : On supprime tous les modèles IA
+            try {
+                if (typeof tf !== 'undefined') {
+                    tf.io.removeModel('indexeddb://model-trucks').catch(e => {});
+                    tf.io.removeModel('indexeddb://model-cars').catch(e => {});
+                }
+                if (window.ml) { 
+                    window.ml.modelTrucks = null; 
+                    window.ml.modelCars = null; 
+                    window.ml.updateUIStatus(); 
+                }
+            } catch(e) {}
+            
             this.renderDashboard('trucks');
-            if(window.ui) window.ui.showToast("🗑️ Statistiques globales et analyses effacées !");
+            if(window.ui) window.ui.showToast("🗑️ Statistiques globales et IA effacées !");
         }
     },
 
@@ -1216,6 +1244,8 @@ const app = {
             container.innerHTML += `<div class="vehicle-card"><div class="vehicle-name">${icons[v] || "🚘"} ${displayName}</div><div class="vehicle-controls"><button class="btn-corr" onclick="window.app.updateVehicle(event, '${v}', -1)">-</button><span class="vehicle-score">${score}</span><button class="btn-add btn-add-fr" onclick="window.app.updateVehicle(event, '${v}', 1)">+</button></div></div>`;
         });
     },
+
+// jsapp.js (Partie 4/4)
 
     renderLiveStats(type) {
         let container = document.getElementById(type === 'trucks' ? 'truck-live-stats' : 'car-live-stats');
