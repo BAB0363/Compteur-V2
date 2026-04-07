@@ -1,4 +1,4 @@
-// jsgami.js - Le Cerveau du Passe Routier (Version Intégrale)
+// jsgami.js - Le Cerveau du Passe Routier (Version Blindée Anti-Crash)
 export const gami = {
     state: {
         seasonId: "", 
@@ -34,7 +34,14 @@ export const gami = {
         let user = window.app && window.app.currentUser ? window.app.currentUser : "Default";
         let saved = localStorage.getItem(`gami_state_${user}`);
         if (saved) {
-            this.state = JSON.parse(saved);
+            let parsed = JSON.parse(saved);
+            // Fusionne l'état par défaut avec la sauvegarde pour éviter les trous
+            this.state = { ...this.state, ...parsed };
+            
+            // Sécurité absolue : on force la création des tableaux s'ils manquent
+            if (!this.state.dailyQuests) this.state.dailyQuests = [];
+            if (!this.state.weeklyQuests) this.state.weeklyQuests = [];
+            if (!this.state.seasonQuests) this.state.seasonQuests = [];
         }
     },
 
@@ -44,7 +51,6 @@ export const gami = {
         this.updateUI();
     },
 
-    // Trouve le lundi précédent pour les quêtes hebdos
     getMonday(d) {
         d = new Date(d);
         var day = d.getDay(), diff = d.getDate() - day + (day == 0 ? -6 : 1);
@@ -58,6 +64,7 @@ export const gami = {
         let quarter = Math.floor(month / 3) + 1; 
         let currentSeasonId = `${year}-Q${quarter}`;
 
+        // Nouveau trimestre = remise à zéro globale
         if (this.state.seasonId !== currentSeasonId) {
             this.state.seasonId = currentSeasonId;
             this.state.seasonName = this.seasonNames[quarter];
@@ -65,21 +72,28 @@ export const gami = {
             this.state.xp = 0;
             this.state.dailyQuests = [];
             this.state.weeklyQuests = [];
-            this.state.seasonQuests = this.generateSeasonQuests(); // Génération des quêtes de 3 mois
+            this.state.seasonQuests = this.generateSeasonQuests();
             if(window.ui) window.ui.showToast(`🌷 Début de la ${this.state.seasonName} !`);
         }
 
+        // Sécurité sur le nom de la saison si effacé
+        if (!this.state.seasonName) this.state.seasonName = this.seasonNames[quarter];
+
         let today = new Date(year, month, now.getDate()).getTime();
-        if (this.state.lastDailyUpdate < today) {
+        if (!this.state.lastDailyUpdate || this.state.lastDailyUpdate < today || this.state.dailyQuests.length === 0) {
             this.state.dailyQuests = this.generateDailyQuests();
             this.state.lastDailyUpdate = today;
             this.state.hasRerolledToday = false;
         }
 
         let thisMonday = this.getMonday(now);
-        if (this.state.lastWeeklyUpdate < thisMonday) {
+        if (!this.state.lastWeeklyUpdate || this.state.lastWeeklyUpdate < thisMonday || this.state.weeklyQuests.length === 0) {
             this.state.weeklyQuests = this.generateWeeklyQuests();
             this.state.lastWeeklyUpdate = thisMonday;
+        }
+
+        if (!this.state.seasonQuests || this.state.seasonQuests.length === 0) {
+            this.state.seasonQuests = this.generateSeasonQuests();
         }
 
         this.saveState();
@@ -148,7 +162,7 @@ export const gami = {
         let changed = false;
 
         const checkAndUpdate = (q) => {
-            if (q.done) return false;
+            if (!q || q.done) return false;
             let match = false;
             if (q.type === "total") match = true;
             if (q.type === "camion_fr" && nationalite === "fr") match = true;
@@ -171,9 +185,9 @@ export const gami = {
             return false;
         };
 
-        this.state.dailyQuests.forEach(q => { if(checkAndUpdate(q)) changed = true; });
-        this.state.weeklyQuests.forEach(q => { if(checkAndUpdate(q)) changed = true; });
-        this.state.seasonQuests.forEach(q => { if(checkAndUpdate(q)) changed = true; });
+        if (this.state.dailyQuests) this.state.dailyQuests.forEach(q => { if(checkAndUpdate(q)) changed = true; });
+        if (this.state.weeklyQuests) this.state.weeklyQuests.forEach(q => { if(checkAndUpdate(q)) changed = true; });
+        if (this.state.seasonQuests) this.state.seasonQuests.forEach(q => { if(checkAndUpdate(q)) changed = true; });
 
         if (changed) this.saveState();
     },
@@ -217,7 +231,7 @@ export const gami = {
                 btn.style.backgroundColor = "#8e44ad"; 
                 btn.style.color = "white";
                 btn.onclick = () => {
-                    this.updateUI(); // Force refresh visuel à l'ouverture
+                    this.updateUI(); 
                     document.getElementById('gami-overlay').style.display = 'flex';
                 };
                 topBar.insertBefore(btn, topBar.firstChild);
@@ -229,6 +243,13 @@ export const gami = {
         let el = document.getElementById(containerId);
         if(!el) return;
         el.innerHTML = '';
+        
+        // Sécurité ultime contre les bugs d'affichage
+        if (!questsArray || questsArray.length === 0) {
+            el.innerHTML = '<span style="color:#7f8c8d; font-size:0.8em;">Génération des quêtes en cours...</span>';
+            return;
+        }
+
         questsArray.forEach((q, index) => {
             let isDone = q.done ? "gami-quest-done" : "";
             let rerollBtn = (isDaily && !q.done && !this.state.hasRerolledToday) ? `<button class="gami-btn-reroll" onclick="window.gami.rerollQuest(${index})" title="Relancer cette quête">🎲</button>` : '';
@@ -252,7 +273,7 @@ export const gami = {
         let elBar = document.getElementById('gami-xp-bar');
         let elLabel = document.getElementById('gami-xp-label');
 
-        if(elSeason) elSeason.innerText = this.state.seasonName;
+        if(elSeason) elSeason.innerText = this.state.seasonName || "Saison";
         if(elLvl) elLvl.innerText = this.state.level;
         if(elBar) elBar.style.width = ((this.state.xp / this.xpPerLevel) * 100) + '%';
         if(elLabel) elLabel.innerText = `${this.state.xp} / ${this.xpPerLevel} XP`;
