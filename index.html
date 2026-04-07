@@ -275,6 +275,24 @@
             <button class="share-btn" style="width: 100%; background-color: #27ae60; padding: 15px; font-size: 1em;" onclick="document.getElementById('import-save-file').click()">📥 Importer une sauvegarde</button>
         </div>
 
+        <div class="km-stats-container" style="border: 1px solid #e67e22;">
+            <h4 style="color: #e67e22;">🗓️ Nettoyage Ciblé</h4>
+            <p style="font-size: 0.85em; color: #7f8c8d; margin-top:-5px;">Supprimer les sessions enregistrées sur une période précise.</p>
+            <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+                <div style="flex: 1;">
+                    <label style="font-size: 0.75em; color: #7f8c8d; font-weight: bold;">Du :</label>
+                    <input type="date" id="delete-start-date" style="width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color);">
+                </div>
+                <div style="flex: 1;">
+                    <label style="font-size: 0.75em; color: #7f8c8d; font-weight: bold;">Au :</label>
+                    <input type="date" id="delete-end-date" style="width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color);">
+                </div>
+            </div>
+            <button class="reset-btn" style="width: 100%; background-color: #e67e22;" onclick="window.app.deleteSessionsByDateRange()">
+                🗑️ Supprimer la période
+            </button>
+        </div>
+
         <div class="km-stats-container" style="border: 1px solid #e74c3c;">
             <h4 style="color: #e74c3c;">⚠️ Zone de Danger</h4>
             <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Remises à zéro du profil sélectionné.</p>

@@ -96,7 +96,7 @@ const app = {
         },
         async clear(type) {
             return new Promise(async resolve => {
-                let all = await this.getAll(type);
+                let all = await this.idb.getAll(type);
                 let tx = this.db.transaction('sessions', 'readwrite');
                 let store = tx.objectStore('sessions');
                 all.forEach(s => store.delete(s.id));
@@ -1042,6 +1042,131 @@ const app = {
             this.renderDashboard('trucks');
             if(window.ui) window.ui.showToast("🗑️ Statistiques globales et analyses effacées !");
         }
+    },
+
+    async deleteSessionsByDateRange() {
+        let startInput = document.getElementById('delete-start-date').value;
+        let endInput = document.getElementById('delete-end-date').value;
+
+        // Si la date de début est vide, on prend l'an 0. Si la fin est vide, on prend aujourd'hui.
+        let startTs = startInput ? new Date(startInput).setHours(0, 0, 0, 0) : 0; 
+        let endTs = endInput ? new Date(endInput).setHours(23, 59, 59, 999) : Date.now();
+
+        if (startInput && endInput && startTs > endTs) {
+            if(window.ui) window.ui.showToast("⚠️ La date de début doit être avant la date de fin.");
+            return;
+        }
+
+        if (!confirm(`⚠️ Attention Sylvain ! Tu vas supprimer des sessions ET recalculer tous les totaux globaux pour cette période. Cette action est irréversible. Continuer ?`)) {
+            return;
+        }
+
+        // 1. On récupère toutes les sessions de ton profil
+        let allTruckSessions = await this.idb.getAll('trucks');
+        let allCarSessions = await this.idb.getAll('cars');
+        
+        let tx = this.idb.db.transaction('sessions', 'readwrite');
+        let store = tx.objectStore('sessions');
+        
+        let deletedCount = 0;
+        let keptTruckSessions = [];
+        let keptCarSessions = [];
+
+        // 2. On trie : on supprime celles dans la période, on garde les autres
+        allTruckSessions.forEach(s => {
+            let sessionTs = parseInt(s.id);
+            if (sessionTs >= startTs && sessionTs <= endTs) {
+                store.delete(s.id);
+                deletedCount++;
+            } else {
+                keptTruckSessions.push(s);
+            }
+        });
+
+        allCarSessions.forEach(s => {
+            let sessionTs = parseInt(s.id);
+            if (sessionTs >= startTs && sessionTs <= endTs) {
+                store.delete(s.id);
+                deletedCount++;
+            } else {
+                keptCarSessions.push(s);
+            }
+        });
+
+        if (deletedCount === 0) {
+            if(window.ui) window.ui.showToast("🤷‍♂️ Aucune session trouvée sur cette période.");
+            return;
+        }
+
+        // 3. Une fois la suppression terminée, on lance la reconstruction globale
+        tx.oncomplete = async () => {
+            // A. Remise à zéro totale des variables globales
+            this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
+            this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
+            this.globalTruckDistance = 0; this.globalTruckTime = 0;
+            this.globalCarDistance = 0; this.globalCarTime = 0;
+            
+            this.globalAnaTrucks = this.getEmptyAnalytics();
+            this.globalAnaCars = this.getEmptyAnalytics();
+            
+            // B. Recalcul depuis les sessions camions conservées
+            keptTruckSessions.forEach(s => {
+                this.globalTruckDistance += (s.distanceKm || 0);
+                this.globalTruckTime += (s.durationSec || 0);
+                
+                if (s.summary) {
+                    Object.keys(s.summary).forEach(b => {
+                        if (this.globalTruckCounters[b] && s.summary[b]) {
+                            this.globalTruckCounters[b].fr += (s.summary[b].fr || 0);
+                            this.globalTruckCounters[b].etr += (s.summary[b].etr || 0);
+                        }
+                    });
+                }
+                if (s.predictions) {
+                    this.globalAnaTrucks.predictions.total += (s.predictions.total || 0);
+                    this.globalAnaTrucks.predictions.success += (s.predictions.success || 0);
+                }
+            });
+
+            // C. Recalcul depuis les sessions véhicules conservées
+            keptCarSessions.forEach(s => {
+                this.globalCarDistance += (s.distanceKm || 0);
+                this.globalCarTime += (s.durationSec || 0);
+                
+                if (s.summary) {
+                    Object.keys(s.summary).forEach(v => {
+                        if (this.globalCarCounters[v] !== undefined) {
+                            this.globalCarCounters[v] += (s.summary[v] || 0);
+                        }
+                    });
+                }
+                if (s.predictions) {
+                    this.globalAnaCars.predictions.total += (s.predictions.total || 0);
+                    this.globalAnaCars.predictions.success += (s.predictions.success || 0);
+                }
+            });
+
+            // D. Reconstruction des analyses complexes (heures, jours, routes, séquences IA...)
+            await this.buildPermanentAnalyticsFromIDB('trucks', this.globalAnaTrucks);
+            await this.buildPermanentAnalyticsFromIDB('cars', this.globalAnaCars);
+
+            // E. Sauvegarde dans le navigateur
+            this.storage.set('globalTruckCounters', JSON.stringify(this.globalTruckCounters));
+            this.storage.set('globalCarCounters', JSON.stringify(this.globalCarCounters));
+            this.storage.set('globalTruckDistance', this.globalTruckDistance);
+            this.storage.set('globalTruckTime', this.globalTruckTime);
+            this.storage.set('globalCarDistance', this.globalCarDistance);
+            this.storage.set('globalCarTime', this.globalCarTime);
+            this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
+            this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
+
+            // F. Rafraîchissement de l'interface
+            this.renderDashboard('trucks');
+            this.renderAdvancedStats('trucks');
+            this.renderAdvancedStats('cars');
+            
+            if(window.ui) window.ui.showToast(`🧹 ${deletedCount} session(s) et les données globales ont été nettoyées !`);
+        };
     },
 
     renderTrucks() {
