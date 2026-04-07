@@ -108,7 +108,7 @@ const app = {
         },
         async clear(type) {
             return new Promise(async resolve => {
-                let all = await this.idb.getAll(type);
+                let all = await window.app.idb.getAll(type);
                 let tx = this.db.transaction('sessions', 'readwrite');
                 let store = tx.objectStore('sessions');
                 all.forEach(s => store.delete(s.id));
@@ -1763,9 +1763,19 @@ const app = {
 };
 
 window.app = app;
-window.onload = () => { 
+
+// Nouvelle méthode de démarrage pour esquiver le piège du module
+const startApp = () => {
     app.init(); 
-    if(window.ui) ui.init(); 
-    if(window.gps) gps.init(); 
+    if(window.ui) window.ui.init(); 
+    if(window.gps) window.gps.init(); 
     if(window.gami) window.gami.init(); 
 };
+
+// Vérifie si la page est déjà prête pour tout charger correctement
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startApp);
+} else {
+    startApp();
+}
+
