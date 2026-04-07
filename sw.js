@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = 'compteur-cache-v24'; 
+const CACHE_NAME = 'compteur-cache-v25'; 
 const urlsToCache = [
   './',
   './index.html',
@@ -24,7 +24,7 @@ self.addEventListener('install', event => {
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-        console.log('📦 Mise en cache des fichiers Compteur Trafic v24...');
+        console.log('📦 Mise en cache des fichiers Compteur Trafic v25...');
         return cache.addAll(urlsToCache);
     })
   );

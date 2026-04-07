@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=24">
+    <link rel="manifest" href="manifest.json?v=25">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=24">
-    <link rel="stylesheet" href="gami.css?v=24">
+    <link rel="stylesheet" href="style.css?v=25">
+    <link rel="stylesheet" href="gami.css?v=25">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -23,7 +23,7 @@
                 <button class="btn-close-gami" onclick="document.getElementById('gami-overlay').style.display='none'">X</button>
             </div>
             
-            <div class="gami-season-info">
+            <div class="gami-season-info" style="text-align:center; font-size:0.9em; color:#f1c40f; margin-bottom:10px; font-weight:bold;">
                 <span id="gami-season-name">Saison en cours</span><br>
                 <span id="gami-season-dates" style="font-size:0.85em; color:#bdc3c7; font-weight:normal;"></span>
             </div>
@@ -44,6 +44,7 @@
             <div id="gami-season-container"></div>
         </div>
     </div>
+
     <div id="toast-container" class="no-print"></div>
     <div id="lottie-container" class="lottie-fx"></div>
 
@@ -373,14 +374,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsml.js?v=24"></script>
-    <script type="module" src="jsgami.js?v=24"></script>
-    <script type="module" src="jsapp.js?v=24"></script>
+    <script type="module" src="jsml.js?v=25"></script>
+    <script type="module" src="jsgami.js?v=25"></script>
+    <script type="module" src="jsapp.js?v=25"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=24')
+          navigator.serviceWorker.register('./sw.js?v=25')
             .then(registration => {
               console.log('Service Worker Compteur enregistré !', registration.scope);
             })
