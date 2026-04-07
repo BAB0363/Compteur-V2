@@ -1,4 +1,4 @@
-// jsgami.js - Le Cerveau du Passe Routier (Version Blindée Anti-Crash)
+// jsgami.js - Le Cerveau du Passe Routier (Version Auto-Réparatrice)
 export const gami = {
     state: {
         seasonId: "", 
@@ -24,7 +24,26 @@ export const gami = {
     },
 
     init() {
+        // 🧹 NETTOYAGE EXTRÊME : On détruit toute trace de l'ancienne version buggée
+        let oldOverlay = document.getElementById('gami-overlay');
+        if (oldOverlay) oldOverlay.remove();
+        let oldBtn = document.getElementById('btn-open-gami');
+        if (oldBtn) oldBtn.remove();
+        
+        // On supprime aussi les vieux boutons sans ID qui auraient pu rester
+        let topBar = document.querySelector('.top-bar-controls > div:nth-child(2)');
+        if (topBar) {
+            let btns = topBar.querySelectorAll('button');
+            btns.forEach(b => { if (b.innerText.includes("Passe")) b.remove(); });
+        }
+
         this.loadState();
+        
+        // 🛡️ SÉCURITÉ : On s'assure que les tableaux existent pour ne pas faire planter le clic
+        if (!Array.isArray(this.state.dailyQuests)) this.state.dailyQuests = [];
+        if (!Array.isArray(this.state.weeklyQuests)) this.state.weeklyQuests = [];
+        if (!Array.isArray(this.state.seasonQuests)) this.state.seasonQuests = [];
+
         this.createUI(); 
         this.checkSeasonAndQuests();
         this.updateUI();
@@ -34,21 +53,19 @@ export const gami = {
         let user = window.app && window.app.currentUser ? window.app.currentUser : "Default";
         let saved = localStorage.getItem(`gami_state_${user}`);
         if (saved) {
-            let parsed = JSON.parse(saved);
-            // Fusionne l'état par défaut avec la sauvegarde pour éviter les trous
-            this.state = { ...this.state, ...parsed };
-            
-            // Sécurité absolue : on force la création des tableaux s'ils manquent
-            if (!this.state.dailyQuests) this.state.dailyQuests = [];
-            if (!this.state.weeklyQuests) this.state.weeklyQuests = [];
-            if (!this.state.seasonQuests) this.state.seasonQuests = [];
+            try {
+                let parsed = JSON.parse(saved);
+                this.state = { ...this.state, ...parsed };
+            } catch(e) {
+                console.error("Sauvegarde corrompue, remise à zéro du Passe.");
+            }
         }
     },
 
     saveState() {
         let user = window.app && window.app.currentUser ? window.app.currentUser : "Default";
         localStorage.setItem(`gami_state_${user}`, JSON.stringify(this.state));
-        this.updateUI();
+        try { this.updateUI(); } catch(e) {} 
     },
 
     getMonday(d) {
@@ -64,7 +81,6 @@ export const gami = {
         let quarter = Math.floor(month / 3) + 1; 
         let currentSeasonId = `${year}-Q${quarter}`;
 
-        // Nouveau trimestre = remise à zéro globale
         if (this.state.seasonId !== currentSeasonId) {
             this.state.seasonId = currentSeasonId;
             this.state.seasonName = this.seasonNames[quarter];
@@ -76,7 +92,6 @@ export const gami = {
             if(window.ui) window.ui.showToast(`🌷 Début de la ${this.state.seasonName} !`);
         }
 
-        // Sécurité sur le nom de la saison si effacé
         if (!this.state.seasonName) this.state.seasonName = this.seasonNames[quarter];
 
         let today = new Date(year, month, now.getDate()).getTime();
@@ -193,9 +208,9 @@ export const gami = {
     },
 
     createUI() {
-        if(document.getElementById('gami-overlay')) return;
         let div = document.createElement('div');
         div.id = 'gami-overlay';
+        div.style.display = 'none'; // Caché par défaut
         div.innerHTML = `
             <div id="gami-modal">
                 <div class="gami-header">
@@ -224,7 +239,7 @@ export const gami = {
 
         setTimeout(() => {
             let topBar = document.querySelector('.top-bar-controls > div:nth-child(2)');
-            if(topBar && !document.getElementById('btn-open-gami')) {
+            if(topBar) {
                 let btn = document.createElement('button');
                 btn.id = "btn-open-gami";
                 btn.innerText = "🎁 Passe";
@@ -244,9 +259,8 @@ export const gami = {
         if(!el) return;
         el.innerHTML = '';
         
-        // Sécurité ultime contre les bugs d'affichage
         if (!questsArray || questsArray.length === 0) {
-            el.innerHTML = '<span style="color:#7f8c8d; font-size:0.8em;">Génération des quêtes en cours...</span>';
+            el.innerHTML = '<span style="color:#7f8c8d; font-size:0.8em;">Génération...</span>';
             return;
         }
 
@@ -274,9 +288,9 @@ export const gami = {
         let elLabel = document.getElementById('gami-xp-label');
 
         if(elSeason) elSeason.innerText = this.state.seasonName || "Saison";
-        if(elLvl) elLvl.innerText = this.state.level;
-        if(elBar) elBar.style.width = ((this.state.xp / this.xpPerLevel) * 100) + '%';
-        if(elLabel) elLabel.innerText = `${this.state.xp} / ${this.xpPerLevel} XP`;
+        if(elLvl) elLvl.innerText = this.state.level || 1;
+        if(elBar) elBar.style.width = (((this.state.xp || 0) / this.xpPerLevel) * 100) + '%';
+        if(elLabel) elLabel.innerText = `${this.state.xp || 0} / ${this.xpPerLevel} XP`;
 
         this.renderQuests('gami-daily-container', this.state.dailyQuests, true);
         this.renderQuests('gami-weekly-container', this.state.weeklyQuests, false);
