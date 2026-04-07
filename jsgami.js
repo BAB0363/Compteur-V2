@@ -1,4 +1,4 @@
-// jsgami.js - Le Cerveau du Passe Routier (Version Auto-Réparatrice)
+// jsgami.js - Le Cerveau du Passe Routier
 export const gami = {
     state: {
         seasonId: "", 
@@ -24,27 +24,12 @@ export const gami = {
     },
 
     init() {
-        // 🧹 NETTOYAGE EXTRÊME : On détruit toute trace de l'ancienne version buggée
-        let oldOverlay = document.getElementById('gami-overlay');
-        if (oldOverlay) oldOverlay.remove();
-        let oldBtn = document.getElementById('btn-open-gami');
-        if (oldBtn) oldBtn.remove();
-        
-        // On supprime aussi les vieux boutons sans ID qui auraient pu rester
-        let topBar = document.querySelector('.top-bar-controls > div:nth-child(2)');
-        if (topBar) {
-            let btns = topBar.querySelectorAll('button');
-            btns.forEach(b => { if (b.innerText.includes("Passe")) b.remove(); });
-        }
-
         this.loadState();
         
-        // 🛡️ SÉCURITÉ : On s'assure que les tableaux existent pour ne pas faire planter le clic
         if (!Array.isArray(this.state.dailyQuests)) this.state.dailyQuests = [];
         if (!Array.isArray(this.state.weeklyQuests)) this.state.weeklyQuests = [];
         if (!Array.isArray(this.state.seasonQuests)) this.state.seasonQuests = [];
 
-        this.createUI(); 
         this.checkSeasonAndQuests();
         this.updateUI();
     },
@@ -56,9 +41,7 @@ export const gami = {
             try {
                 let parsed = JSON.parse(saved);
                 this.state = { ...this.state, ...parsed };
-            } catch(e) {
-                console.error("Sauvegarde corrompue, remise à zéro du Passe.");
-            }
+            } catch(e) { console.error("Sauvegarde corrompue, remise à zéro du Passe."); }
         }
     },
 
@@ -72,6 +55,22 @@ export const gami = {
         d = new Date(d);
         var day = d.getDay(), diff = d.getDate() - day + (day == 0 ? -6 : 1);
         return new Date(d.setDate(diff)).setHours(0,0,0,0);
+    },
+
+    // NOUVEAU : Fonction de calcul des dates de la saison
+    getSeasonDatesString() {
+        let now = new Date();
+        let year = now.getFullYear();
+        let quarter = Math.floor(now.getMonth() / 3) + 1;
+        
+        let startMonth = (quarter - 1) * 3;
+        let endMonth = startMonth + 2;
+        
+        let startDate = new Date(year, startMonth, 1);
+        let endDate = new Date(year, endMonth + 1, 0); // Le jour 0 du mois suivant = dernier jour
+        
+        const format = (d) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+        return `(du ${format(startDate)} au ${format(endDate)})`;
     },
 
     checkSeasonAndQuests() {
@@ -207,53 +206,6 @@ export const gami = {
         if (changed) this.saveState();
     },
 
-    createUI() {
-        let div = document.createElement('div');
-        div.id = 'gami-overlay';
-        div.style.display = 'none'; // Caché par défaut
-        div.innerHTML = `
-            <div id="gami-modal">
-                <div class="gami-header">
-                    <h2 class="gami-title">🎁 Passe Routier</h2>
-                    <button class="btn-close-gami" onclick="document.getElementById('gami-overlay').style.display='none'">X</button>
-                </div>
-                
-                <div style="text-align:center; font-size:0.9em; color:#f1c40f; margin-bottom:10px; font-weight:bold;" id="gami-season-name">Saison en cours</div>
-                <div class="gami-level-info">Niveau <span id="gami-lvl-text">1</span></div>
-                <div class="gami-xp-container">
-                    <div class="gami-xp-fill" id="gami-xp-bar"></div>
-                    <div class="gami-xp-text" id="gami-xp-label">0 / 1000 XP</div>
-                </div>
-
-                <div class="gami-section-title" style="border-color:#3498db;">📅 Quêtes Journalières</div>
-                <div id="gami-daily-container"></div>
-
-                <div class="gami-section-title" style="border-color:#9b59b6; margin-top:20px;">🗓️ Quêtes Hebdomadaires</div>
-                <div id="gami-weekly-container"></div>
-
-                <div class="gami-section-title" style="border-color:#e67e22; margin-top:20px;">🏆 Défis de Saison</div>
-                <div id="gami-season-container"></div>
-            </div>
-        `;
-        document.body.appendChild(div);
-
-        setTimeout(() => {
-            let topBar = document.querySelector('.top-bar-controls > div:nth-child(2)');
-            if(topBar) {
-                let btn = document.createElement('button');
-                btn.id = "btn-open-gami";
-                btn.innerText = "🎁 Passe";
-                btn.style.backgroundColor = "#8e44ad"; 
-                btn.style.color = "white";
-                btn.onclick = () => {
-                    this.updateUI(); 
-                    document.getElementById('gami-overlay').style.display = 'flex';
-                };
-                topBar.insertBefore(btn, topBar.firstChild);
-            }
-        }, 500);
-    },
-
     renderQuests(containerId, questsArray, isDaily) {
         let el = document.getElementById(containerId);
         if(!el) return;
@@ -283,11 +235,13 @@ export const gami = {
 
     updateUI() {
         let elSeason = document.getElementById('gami-season-name');
+        let elDates = document.getElementById('gami-season-dates');
         let elLvl = document.getElementById('gami-lvl-text');
         let elBar = document.getElementById('gami-xp-bar');
         let elLabel = document.getElementById('gami-xp-label');
 
         if(elSeason) elSeason.innerText = this.state.seasonName || "Saison";
+        if(elDates) elDates.innerText = this.getSeasonDatesString(); // Injection dynamique des dates
         if(elLvl) elLvl.innerText = this.state.level || 1;
         if(elBar) elBar.style.width = (((this.state.xp || 0) / this.xpPerLevel) * 100) + '%';
         if(elLabel) elLabel.innerText = `${this.state.xp || 0} / ${this.xpPerLevel} XP`;

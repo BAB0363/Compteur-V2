@@ -2,24 +2,55 @@
 export const gps = {
     currentPos: { lat: null, lon: null, alt: null },
     currentSpeed: 0,
-    speedHistory: [], // NOUVEAU : Pour stocker les vitesses des 2 dernières minutes
+    speedHistory: [], // Historique sur 120s
     lastTrackedPos: null,
+    
+    // Variables pour le verrou "Autoroute" (Bouchons)
+    highwayLock: false,
+    lastHighwayLat: null,
+    lastHighwayLon: null,
 
     init() {
         this.startTracking();
     },
 
-    // NOUVEAU : Fonction pour obtenir la vitesse lissée
+    // Vitesse lissée avec Médiane + Verrou Autoroute
     getSlidingSpeedKmh() {
         let now = Date.now();
-        // On nettoie l'historique pour ne garder que les 120 dernières secondes (120 000 ms)
+        // On nettoie l'historique pour ne garder que les 120 dernières secondes
         this.speedHistory = this.speedHistory.filter(item => now - item.time <= 120000);
         
         if (this.speedHistory.length === 0) return 0;
         
-        // On calcule la moyenne des vitesses enregistrées
-        let totalSpeed = this.speedHistory.reduce((sum, item) => sum + item.speed, 0);
-        return totalSpeed / this.speedHistory.length;
+        // Calcul de la médiane
+        let speeds = this.speedHistory.map(item => item.speed).sort((a, b) => a - b);
+        let medianSpeed = speeds[Math.floor(speeds.length / 2)];
+
+        // Logique de Verrouillage Autoroute (Bouchons)
+        if (medianSpeed >= 100) {
+            this.highwayLock = true;
+            // On met à jour le point d'ancrage tant qu'on roule vite
+            if (this.currentPos.lat) {
+                this.lastHighwayLat = this.currentPos.lat;
+                this.lastHighwayLon = this.currentPos.lon;
+            }
+        } else if (this.highwayLock) {
+            // Si la vitesse chute, on calcule la distance parcourue depuis la chute
+            if (this.lastHighwayLat && this.currentPos.lat) {
+                let distSinceDrop = parseFloat(this.calculateDistance(this.lastHighwayLat, this.lastHighwayLon, this.currentPos.lat, this.currentPos.lon));
+                
+                // Si on a fait plus de 3km à faible allure, on considère qu'on est sorti de l'autoroute
+                if (distSinceDrop > 3.0) {
+                    this.highwayLock = false;
+                } else {
+                    // On est toujours sur l'autoroute (bouchon/ralentissement)
+                    // On renvoie une fausse vitesse de 85 km/h minimum pour forcer la stat "Autoroute"
+                    return Math.max(medianSpeed, 85);
+                }
+            }
+        }
+        
+        return medianSpeed;
     },
 
     startTracking() {
@@ -34,7 +65,6 @@ export const gps = {
                     }; 
                     this.currentSpeed = pos.coords.speed || 0; 
                     
-                    // NOUVEAU : On enregistre la vitesse instantanée en km/h pour la fenêtre glissante
                     let instantSpeedKmh = pos.coords.speed ? pos.coords.speed * 3.6 : 0;
                     this.speedHistory.push({ time: Date.now(), speed: instantSpeedKmh });
                     
@@ -57,7 +87,7 @@ export const gps = {
                                 window.app.globalTruckDistance += d;
                                 window.app.storage.set('liveTruckDist', window.app.liveTruckDistance); 
                                 window.app.storage.set('globalTruckDistance', window.app.globalTruckDistance); 
-                                window.app.updateTruckChronoDisp(); 
+                                window.app.updateChronoDisp('trucks'); 
                                 window.app.renderKmStats(); 
                             }
                             if (window.app && window.app.isCarRunning) { 
@@ -65,7 +95,7 @@ export const gps = {
                                 window.app.globalCarDistance += d;
                                 window.app.storage.set('liveCarDist', window.app.liveCarDistance); 
                                 window.app.storage.set('globalCarDistance', window.app.globalCarDistance); 
-                                window.app.updateCarChronoDisp(); 
+                                window.app.updateChronoDisp('cars'); 
                                 window.app.renderKmStats(); 
                             }
                             this.lastTrackedPos = { lat: this.currentPos.lat, lon: this.currentPos.lon };
@@ -99,7 +129,6 @@ export const gps = {
             }
             return "Adresse introuvable";
         } catch (e) {
-            console.warn("Erreur Reverse Geocoding", e);
             return "Position inconnue";
         }
     },
@@ -130,7 +159,7 @@ export const gps = {
         let latlngs = []; 
         let heatData = []; 
         
-        let sessions = []; try { sessions = JSON.parse(window.app.storage.get(mapType === 'trucks' ? 'truckSessions' : 'carSessions')) || []; } catch(e){}
+        let sessions = []; try { sessions = window.app.storage.get(mapType === 'trucks' ? 'truckSessions' : 'carSessions') || []; } catch(e){}
         sessions.forEach(s => {
             if(s.history) { 
                 s.history.forEach(h => { 

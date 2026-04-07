@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=23">
+    <link rel="manifest" href="manifest.json?v=24">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=23">
-    <link rel="stylesheet" href="gami.css?v=23">
+    <link rel="stylesheet" href="style.css?v=24">
+    <link rel="stylesheet" href="gami.css?v=24">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -16,20 +16,49 @@
 </head>
 <body>
 
+    <div id="gami-overlay" class="no-print">
+        <div id="gami-modal">
+            <div class="gami-header">
+                <h2 class="gami-title">🎁 Passe Routier</h2>
+                <button class="btn-close-gami" onclick="document.getElementById('gami-overlay').style.display='none'">X</button>
+            </div>
+            
+            <div class="gami-season-info">
+                <span id="gami-season-name">Saison en cours</span><br>
+                <span id="gami-season-dates" style="font-size:0.85em; color:#bdc3c7; font-weight:normal;"></span>
+            </div>
+            
+            <div class="gami-level-info">Niveau <span id="gami-lvl-text">1</span></div>
+            <div class="gami-xp-container">
+                <div class="gami-xp-fill" id="gami-xp-bar"></div>
+                <div class="gami-xp-text" id="gami-xp-label">0 / 1000 XP</div>
+            </div>
+
+            <div class="gami-section-title" style="border-color:#3498db;">📅 Quêtes Journalières</div>
+            <div id="gami-daily-container"></div>
+
+            <div class="gami-section-title" style="border-color:#9b59b6; margin-top:20px;">🗓️ Quêtes Hebdomadaires</div>
+            <div id="gami-weekly-container"></div>
+
+            <div class="gami-section-title" style="border-color:#e67e22; margin-top:20px;">🏆 Défis de Saison</div>
+            <div id="gami-season-container"></div>
+        </div>
+    </div>
     <div id="toast-container" class="no-print"></div>
-    <div id="lottie-container" style="position: fixed; pointer-events: none; z-index: 10000; width: 100px; height: 100px; display: none; transform: translate(-50%, -50%);"></div>
+    <div id="lottie-container" class="lottie-fx"></div>
 
     <div class="top-bar-controls no-print">
-        <div id="current-profile-display" style="font-weight: bold; font-size: 0.85em; background: var(--card-bg); padding: 6px 12px; border-radius: 20px; box-shadow: 0 1px 2px var(--shadow); display: flex; align-items: center; gap: 5px;">
-            👤 <span id="display-user">Sylvain</span> <span style="color:var(--border-color)">|</span> <span id="display-mode">🚗 Voiture</span>
+        <div id="current-profile-display" class="profile-badge">
+            👤 <span id="display-user">Sylvain</span> <span class="badge-separator">|</span> <span id="display-mode">🚗 Voiture</span>
         </div>
-        <div style="display: flex; gap: 5px;">
+        <div class="top-bar-btns">
+            <button id="btn-open-gami" class="btn-gami-header" onclick="window.gami.updateUI(); document.getElementById('gami-overlay').style.display = 'flex';">🎁 Passe</button>
             <button id="btn-theme" onclick="window.ui.toggleDarkMode()">🌙 Nuit</button>
             <button id="btn-undo" onclick="window.app.undoLast()">↩️ Annuler</button>
         </div>
     </div>
 
-    <button id="btn-install-pwa" class="no-print" style="display: none; width: 100%; margin-bottom: 15px; padding: 12px; background-color: #27ae60; color: white; border-radius: 6px; font-weight: bold; border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+    <button id="btn-install-pwa" class="btn-install no-print">
         📲 Installer l'application
     </button>
 
@@ -53,21 +82,21 @@
                         <span id="truck-chrono" class="chrono-time">⏱️ 00:00:00</span>
                         <span id="truck-dist" class="chrono-dist">📍 0.00 km</span>
                     </div>
-                    <button id="btn-truck-chrono" class="btn-chrono" onclick="window.app.toggleTruckChrono()">▶️ Start</button>
-                    <button class="btn-chrono-reset" onclick="window.app.stopTruckSession()">⏹️ Stop</button>
+                    <button id="btn-truck-chrono" class="btn-chrono" onclick="window.app.toggleChrono('trucks')">▶️ Start</button>
+                    <button class="btn-chrono-reset" onclick="window.app.stopSession('trucks')">⏹️ Stop</button>
                 </div>
-                <button id="btn-truck-stats" class="btn-stats-toggle" onclick="window.ui.toggleTruckStats()">🗺️ Carte & Actuel</button>
+                <button id="btn-truck-stats" class="btn-stats-toggle" onclick="window.ui.toggleStats('trucks')">🗺️ Carte & Actuel</button>
             </div>
             
             <div class="totals-row">
-                Total : <span id="grand-total" style="color:#27ae60;">0</span> | 🏆 <span id="leader-name">Aucune</span>
+                Total : <span id="grand-total" class="text-success">0</span> | 🏆 <span id="leader-name">Aucune</span>
             </div>
             <div class="proportion-bar">
                 <div id="bar-fr"></div>
                 <div id="bar-etr"></div>
             </div>
-            <div id="prediction-box-trucks" style="text-align: center; font-size: 0.75em; margin-top: 8px; color: #7f8c8d; font-weight: bold;">
-                🔮 Prédiction IA : <span id="pred-text-trucks" style="color: #8e44ad;">Analyse en cours...</span>
+            <div id="prediction-box-trucks" class="prediction-box">
+                🔮 Prédiction IA : <span id="pred-text-trucks" class="text-purple">Analyse en cours...</span>
             </div>
         </div>
         
@@ -76,7 +105,7 @@
             
             <div class="km-stats-container" id="truck-adv-stats">
                 <h4>📊 Détails au kilomètre</h4>
-                <div id="truck-km-list" class="km-stats-grid" style="margin-bottom: 15px;"></div>
+                <div id="truck-km-list" class="km-stats-grid mb-15"></div>
                 
                 <h4>📈 Statistiques de la session (Temps Réel)</h4>
                 <div id="truck-live-stats" class="km-stats-grid"></div>
@@ -84,14 +113,14 @@
         </div>
 
         <div id="truck-stats-view" style="display: none;">
-            <button class="btn-return-large no-print" onclick="window.ui.toggleTruckStats()">⬅️ Retour aux compteurs</button>
-            <div id="map-trucks" class=\"mini-map no-print"></div>
+            <button class="btn-return-large no-print" onclick="window.ui.toggleStats('trucks')">⬅️ Retour aux compteurs</button>
+            <div id="map-trucks" class="mini-map no-print"></div>
 
-            <h3 style="margin-top:10px;" class="no-print">Historique Actuel</h3>
+            <h3 class="mt-10 no-print">Historique Actuel</h3>
             <div class="history-list no-print" id="truck-history-container"></div>
             
             <h3 class="no-print">Sessions Précédentes</h3>
-            <p style="font-size: 0.8em; color: #7f8c8d; margin-top: -10px;">Clique sur une session pour voir les détails temporels.</p>
+            <p class="history-help">Clique sur une session pour voir les détails temporels.</p>
             <div class="history-list no-print" id="truck-sessions-container"></div>
         </div>
     </div>
@@ -104,16 +133,16 @@
                         <span id="car-chrono" class="chrono-time">⏱️ 00:00:00</span>
                         <span id="car-dist" class="chrono-dist">📍 0.00 km</span>
                     </div>
-                    <button id="btn-car-chrono" class="btn-chrono" onclick="window.app.toggleCarChrono()">▶️ Start</button>
-                    <button class="btn-chrono-reset" onclick="window.app.stopCarSession()">⏹️ Stop</button>
+                    <button id="btn-car-chrono" class="btn-chrono" onclick="window.app.toggleChrono('cars')">▶️ Start</button>
+                    <button class="btn-chrono-reset" onclick="window.app.stopSession('cars')">⏹️ Stop</button>
                 </div>
-                <button id="btn-car-stats" class="btn-stats-toggle" onclick="window.ui.toggleCarStats()">🗺️ Carte & Actuel</button>
+                <button id="btn-car-stats" class="btn-stats-toggle" onclick="window.ui.toggleStats('cars')">🗺️ Carte & Actuel</button>
             </div>
 
             <div class="totals-row">
-                Total : <span id="car-grand-total" style="color:#27ae60;">0</span>
+                Total : <span id="car-grand-total" class="text-success">0</span>
             </div>
-            <div class="proportion-bar" style="font-size: 0.65em;">
+            <div class="proportion-bar text-small">
                 <div id="bar-voitures"></div>
                 <div id="bar-utilitaires"></div>
                 <div id="bar-camions"></div>
@@ -123,8 +152,8 @@
                 <div id="bar-motos"></div>
                 <div id="bar-velos"></div>
             </div>
-            <div id="prediction-box-cars" style="text-align: center; font-size: 0.75em; margin-top: 8px; color: #7f8c8d; font-weight: bold;">
-                🔮 Prédiction IA : <span id="pred-text-cars" style="color: #8e44ad;">Analyse en cours...</span>
+            <div id="prediction-box-cars" class="prediction-box">
+                🔮 Prédiction IA : <span id="pred-text-cars" class="text-purple">Analyse en cours...</span>
             </div>
         </div>
         
@@ -133,7 +162,7 @@
 
             <div class="km-stats-container" id="car-adv-stats">
                 <h4>📊 Détails au kilomètre</h4>
-                <div id="car-km-list" class="km-stats-grid" style="margin-bottom: 15px;"></div>
+                <div id="car-km-list" class="km-stats-grid mb-15"></div>
                 
                 <h4>📈 Statistiques de la session (Temps Réel)</h4>
                 <div id="car-live-stats" class="km-stats-grid"></div>
@@ -141,10 +170,10 @@
         </div>
 
         <div id="car-stats-view" style="display: none;">
-            <button class="btn-return-large no-print" onclick="window.ui.toggleCarStats()">⬅️ Retour aux compteurs</button>
+            <button class="btn-return-large no-print" onclick="window.ui.toggleStats('cars')">⬅️ Retour aux compteurs</button>
             <div id="map-cars" class="mini-map no-print"></div>
 
-            <h3 style="margin-top:10px;" class="no-print">Historique Actuel</h3>
+            <h3 class="mt-10 no-print">Historique Actuel</h3>
             <div class="history-list no-print" id="car-history-container"></div>
             
             <h3 class="no-print">Sessions Précédentes</h3>
@@ -153,19 +182,19 @@
     </div>
 
     <div id="section-dashboard" style="display: none;" class="no-print">
-        <div class="header-dashboard" style="border-left: 4px solid #e67e22;">
-            <h3 style="margin-top: 0; color: var(--text-color);">📈 Tableau de Bord</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Données globales et analyses de performance IA.</p>
+        <div class="header-dashboard border-orange">
+            <h3 class="header-title">📈 Tableau de Bord</h3>
+            <p class="header-desc">Données globales et analyses de performance IA.</p>
         </div>
 
-        <div class="main-tabs" style="margin-bottom: 15px;">
-            <button id="btn-ana-trucks" class="active" onclick="window.app.renderDashboard('trucks')" style="background-color: #e67e22; color:white;">🚛 Global Camions</button>
-            <button id="btn-ana-cars" onclick="window.app.renderDashboard('cars')" style="background-color: var(--btn-bg);">🚗 Global Véhicules</button>
+        <div class="main-tabs mb-15">
+            <button id="btn-ana-trucks" class="active btn-ana-trucks" onclick="window.app.renderDashboard('trucks')">🚛 Global Camions</button>
+            <button id="btn-ana-cars" class="btn-ana-cars" onclick="window.app.renderDashboard('cars')">🚗 Global Véhicules</button>
         </div>
 
-        <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
-            <span style="font-weight: bold; color: var(--text-color);">Filtre :</span>
-            <select id="dash-time-filter" onchange="window.app.applyDashboardFilter(this.value)" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);">
+        <div class="filter-row mb-15">
+            <span class="filter-label">Filtre :</span>
+            <select id="dash-time-filter" class="input-styled flex-1" onchange="window.app.applyDashboardFilter(this.value)">
                 <option value="all">Historique complet</option>
                 <option value="month">Ce mois-ci</option>
                 <option value="week">Cette semaine</option>
@@ -173,16 +202,16 @@
         </div>
 
         <div class="km-stats-container">
-            <h4 id="dash-title-total" style="color: #e67e22;">🚛 Cumul Total</h4>
-            <div style="font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center;">Total : <span id="dash-grand-total" style="color:#27ae60;">0</span></div>
+            <h4 id="dash-title-total" class="text-orange">🚛 Cumul Total</h4>
+            <div class="dash-total-display">Total : <span id="dash-grand-total" class="text-success">0</span></div>
             <div class="chart-wrapper"><canvas id="dashboardMainChart"></canvas></div>
             <div id="dashboard-main-list" class="km-stats-grid"></div>
         </div>
 
-        <div class="km-stats-container" style="border-top: 3px solid #8e44ad;">
-            <h4 style="color: #8e44ad;">🧠 Évolution de la Précision IA</h4>
+        <div class="km-stats-container border-top-purple">
+            <h4 class="text-purple">🧠 Évolution de la Précision IA</h4>
             <div class="chart-wrapper"><canvas id="aiEvolutionChart"></canvas></div>
-            <p style="font-size: 0.75em; color: #7f8c8d; text-align: center; margin-top: 5px;">Affiche le taux de réussite des prédictions sur les 10 dernières sessions.</p>
+            <p class="chart-desc">Affiche le taux de réussite des prédictions sur les 10 dernières sessions.</p>
         </div>
 
         <div class="km-stats-container" id="dash-nat-container" style="display: none;">
@@ -217,28 +246,28 @@
     </div>
 
     <div id="section-settings" style="display: none;" class="no-print">
-        <div class="header-dashboard" style="border-left: 4px solid #34495e;">
-            <h3 style="margin-top: 0; color: var(--text-color);">⚙️ Paramètres & Données</h3>
-            <p style="font-size: 0.85em; color: #7f8c8d;">Gère ton profil, tes sauvegardes et l'IA.</p>
+        <div class="header-dashboard border-blue">
+            <h3 class="header-title">⚙️ Paramètres & Données</h3>
+            <p class="header-desc">Gère ton profil, tes sauvegardes et l'IA.</p>
         </div>
 
-        <div class="km-stats-container" style="border: 1px solid #8e44ad;">
-            <h4 style="color: #8e44ad;">🧠 Intelligence Artificielle (Prédictions)</h4>
-            <p style="font-size: 0.85em; color: #7f8c8d;">L'IA s'entraîne automatiquement en arrière-plan à chaque session pour deviner le prochain véhicule.</p>
+        <div class="km-stats-container border-purple">
+            <h4 class="text-purple">🧠 Intelligence Artificielle</h4>
+            <p class="header-desc mt-neg5">L'IA s'entraîne automatiquement en arrière-plan à chaque session.</p>
             
-            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9em;">
-                <span>Statut Modèle Camions :</span>
-                <span id="ai-status-trucks" style="font-weight: bold; color: #e74c3c;">Non entraîné ❌</span>
+            <div class="ai-status-row">
+                <span>Modèle Camions :</span>
+                <span id="ai-status-trucks" class="text-danger font-bold">Non entraîné ❌</span>
             </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 0.9em;">
-                <span>Statut Modèle Voitures :</span>
-                <span id="ai-status-cars" style="font-weight: bold; color: #e74c3c;">Non entraîné ❌</span>
+            <div class="ai-status-row mb-15">
+                <span>Modèle Voitures :</span>
+                <span id="ai-status-cars" class="text-danger font-bold">Non entraîné ❌</span>
             </div>
 
-            <button class="share-btn" style="width: 100%; background-color: #8e44ad; padding: 12px; font-size: 1em;" onclick="window.ml.forceTraining()">
+            <button class="share-btn btn-full btn-purple" onclick="window.ml.forceTraining()">
                 🏋️ Forcer l'entraînement de l'IA maintenant
             </button>
-            <div id="ai-training-progress" style="display:none; text-align:center; font-size:0.8em; color:#8e44ad; margin-top:10px; font-weight:bold;">
+            <div id="ai-training-progress" class="ai-progress">
                 Entraînement en cours... ⏳
             </div>
         </div>
@@ -246,22 +275,21 @@
         <div class="km-stats-container">
             <h4>👤 Profils et Modes</h4>
             
-            <div style="margin-bottom: 15px;">
-                <label style="font-size: 0.85em; color: #7f8c8d; font-weight: bold; margin-bottom: 5px; display: block;">Utilisateur :</label>
-                <div style="display: flex; gap: 5px; margin-bottom: 8px;">
-                    <select id="user-selector" onchange="window.app.changeUser(this.value)" style="flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); font-weight: bold; cursor: pointer;">
-                        </select>
-                    <button class="btn-corr" style="padding: 0 12px; border-radius: 6px;" onclick="window.app.deleteUser()" title="Supprimer cet utilisateur">🗑️</button>
+            <div class="mb-15">
+                <label class="input-label">Utilisateur :</label>
+                <div class="input-group">
+                    <select id="user-selector" class="input-styled flex-1 font-bold" onchange="window.app.changeUser(this.value)"></select>
+                    <button class="btn-corr btn-icon" onclick="window.app.deleteUser()" title="Supprimer cet utilisateur">🗑️</button>
                 </div>
-                <div style="display: flex; gap: 5px;">
-                    <input type="text" id="new-user-input" placeholder="Nouvel utilisateur..." style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);">
-                    <button class="btn-add-fr" style="padding: 0 12px; border-radius: 6px; font-size: 0.9em;" onclick="window.app.createUser()">Ajouter</button>
+                <div class="input-group">
+                    <input type="text" id="new-user-input" class="input-styled flex-1" placeholder="Nouvel utilisateur...">
+                    <button class="btn-add-fr btn-small" onclick="window.app.createUser()">Ajouter</button>
                 </div>
             </div>
 
             <div>
-                <label style="font-size: 0.85em; color: #7f8c8d; font-weight: bold; margin-bottom: 5px; display: block;">Mode de comptage :</label>
-                <select id="mode-selector" onchange="window.app.changeMode(this.value)" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); font-weight: bold; cursor: pointer;">
+                <label class="input-label">Mode de comptage :</label>
+                <select id="mode-selector" class="input-styled btn-full font-bold" onchange="window.app.changeMode(this.value)">
                     <option value="voiture">🚘 Mode : Compteur Véhicules</option>
                     <option value="camion">🚛 Mode : Compteur Camions</option>
                 </select>
@@ -270,75 +298,72 @@
 
         <div class="km-stats-container">
             <h4>💾 Export / Import</h4>
-            <button class="share-btn" style="width: 100%; margin-bottom: 10px; background-color: #2980b9; padding: 15px; font-size: 1em;" onclick="window.app.exportSaveFile()">📤 Exporter les données (.txt)</button>
+            <button class="share-btn btn-full mb-10" onclick="window.app.exportSaveFile()">📤 Exporter les données (.txt)</button>
             <input type="file" id="import-save-file" accept=".json,.gege,.txt" style="display:none;" onchange="window.app.importSaveFile(event)">
-            <button class="share-btn" style="width: 100%; background-color: #27ae60; padding: 15px; font-size: 1em;" onclick="document.getElementById('import-save-file').click()">📥 Importer une sauvegarde</button>
+            <button class="share-btn btn-full btn-green" onclick="document.getElementById('import-save-file').click()">📥 Importer une sauvegarde</button>
         </div>
 
-        <div class="km-stats-container" style="border: 1px solid #e67e22;">
-            <h4 style="color: #e67e22;">🗓️ Nettoyage Ciblé</h4>
-            <p style="font-size: 0.85em; color: #7f8c8d; margin-top:-5px;">Supprimer les sessions enregistrées sur une période précise.</p>
-            <div style="display: flex; gap: 5px; margin-bottom: 10px;">
-                <div style="flex: 1;">
-                    <label style="font-size: 0.75em; color: #7f8c8d; font-weight: bold;">Du :</label>
-                    <input type="date" id="delete-start-date" style="width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color);">
+        <div class="km-stats-container border-red">
+            <h4 class="text-danger">🧨 Gestion Globale des Données</h4>
+            <p class="header-desc mt-neg5">Gère la suppression de l'historique et des statistiques.</p>
+            
+            <div class="date-filter-row mb-10">
+                <div class="flex-1">
+                    <label class="input-label text-small">Du :</label>
+                    <input type="date" id="delete-start-date" class="input-styled btn-full">
                 </div>
-                <div style="flex: 1;">
-                    <label style="font-size: 0.75em; color: #7f8c8d; font-weight: bold;">Au :</label>
-                    <input type="date" id="delete-end-date" style="width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; background: var(--bg-color); color: var(--text-color); border: 1px solid var(--border-color);">
+                <div class="flex-1">
+                    <label class="input-label text-small">Au :</label>
+                    <input type="date" id="delete-end-date" class="input-styled btn-full">
                 </div>
             </div>
-            <button class="reset-btn" style="width: 100%; background-color: #e67e22;" onclick="window.app.deleteSessionsByDateRange()">
-                🗑️ Supprimer la période
-            </button>
-        </div>
-
-        <div class="km-stats-container" style="border: 1px solid #e74c3c;">
-            <h4 style="color: #e74c3c;">⚠️ Zone de Danger</h4>
-            <p style="font-size: 0.8em; color: #7f8c8d; margin-top:-5px;">Remises à zéro du profil sélectionné.</p>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <button class="reset-btn" onclick="window.app.resetTrucks()">🗑️ Effacer sessions Camions</button>
-                <button class="reset-btn" onclick="window.app.resetCars()">🗑️ Effacer sessions Véhicules</button>
-                <button class="reset-btn" style="background-color: #8b0000;" onclick="window.app.resetGlobalStats()">🧨 Tout remettre à zéro (Global)</button>
+            
+            <div class="danger-buttons-col">
+                <button class="reset-btn btn-full btn-orange mb-10" onclick="window.app.deleteSessionsByDateRange()">
+                    🗑️ Supprimer la période sélectionnée
+                </button>
+                <button class="reset-btn btn-full btn-darkred" onclick="window.app.resetProfileData()">
+                    🚨 Effacer TOUT le profil (Remise à zéro totale)
+                </button>
             </div>
         </div>
     </div>
 
-    <div id="session-detail-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; padding:20px; box-sizing:border-box; align-items: center; justify-content: center;">
-        <div id="pdf-export-content" style="background:var(--card-bg); padding:20px; border-radius:10px; width:100%; max-width:500px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); max-height: 90vh; display: flex; flex-direction: column;">
+    <div id="session-detail-modal" class="modal-overlay" style="display:none;">
+        <div id="pdf-export-content" class="modal-content">
             
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px; flex-shrink: 0;">
-                <h3 id="modal-session-title" style="margin:0; color: var(--text-color);">Détails de la session</h3>
-                <div style="display: flex; gap: 10px;">
-                    <button id="btn-export-pdf" style="background:#2980b9; color:white; border:none; border-radius:6px; padding: 5px 10px; cursor:pointer; font-weight:bold;" class="no-print">📄 PDF</button>
-                    <button onclick="document.getElementById('session-detail-modal').style.display='none'" style="background:#e74c3c; color:white; border:none; border-radius:50%; width:30px; height:30px; flex-shrink: 0; cursor:pointer; font-weight:bold;">X</button>
+            <div class="modal-header-row">
+                <h3 id="modal-session-title" class="modal-title">Détails de la session</h3>
+                <div class="modal-actions">
+                    <button id="btn-export-pdf" class="btn-pdf no-print">📄 PDF</button>
+                    <button onclick="document.getElementById('session-detail-modal').style.display='none'" class="btn-close-modal">X</button>
                 </div>
             </div>
             
-            <div style="overflow-y: auto; padding-right: 5px;">
-                <div id="modal-session-content" style="color: var(--text-color); font-size: 0.95em; line-height: 1.5;"></div>
+            <div class="modal-scroll-area">
+                <div id="modal-session-content" class="modal-text-content"></div>
                 
-                <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">📈 Densité Temporelle</h4>
-                <div class="chart-wrapper" style="height: 150px;"><canvas id="temporalDensityChart"></canvas></div>
+                <h4 class="modal-section-title">📈 Densité Temporelle</h4>
+                <div class="chart-wrapper chart-small"><canvas id="temporalDensityChart"></canvas></div>
 
                 <div id="modal-weekly-section" style="display: none;">
-                    <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">📅 Répartition par Jour</h4>
-                    <div class="chart-wrapper" style="height: 150px;"><canvas id="weeklyGlobalChart"></canvas></div>
+                    <h4 class="modal-section-title">📅 Répartition par Jour</h4>
+                    <div class="chart-wrapper chart-small"><canvas id="weeklyGlobalChart"></canvas></div>
                 </div>
                 
                 <div id="modal-monthly-section" style="display: none;">
-                    <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">📆 Répartition par Mois</h4>
-                    <div class="chart-wrapper" style="height: 150px;"><canvas id="monthlyModalChart"></canvas></div>
+                    <h4 class="modal-section-title">📆 Répartition par Mois</h4>
+                    <div class="chart-wrapper chart-small"><canvas id="monthlyModalChart"></canvas></div>
                 </div>
 
                 <div id="modal-altitude-section" style="display: none;">
-                    <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">⛰️ Répartition par Altitude</h4>
-                    <div class=\"chart-wrapper" style="height: 150px;"><canvas id="altitudeModalChart"></canvas></div>
+                    <h4 class="modal-section-title">⛰️ Répartition par Altitude</h4>
+                    <div class="chart-wrapper chart-small"><canvas id="altitudeModalChart"></canvas></div>
                 </div>
                 
                 <div id="modal-road-section" style="display: none;">
-                    <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">🛣️ Répartition par Route</h4>
-                    <div class="chart-wrapper" style="height: 150px;"><canvas id="roadModalChart"></canvas></div>
+                    <h4 class="modal-section-title">🛣️ Répartition par Route</h4>
+                    <div class="chart-wrapper chart-small"><canvas id="roadModalChart"></canvas></div>
                 </div>
             </div>
             
@@ -348,14 +373,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsml.js?v=23"></script>
-    <script type="module" src="jsgami.js?v=23"></script>
-    <script type="module" src="jsapp.js?v=23"></script>
+    <script type="module" src="jsml.js?v=24"></script>
+    <script type="module" src="jsgami.js?v=24"></script>
+    <script type="module" src="jsapp.js?v=24"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=23')
+          navigator.serviceWorker.register('./sw.js?v=24')
             .then(registration => {
               console.log('Service Worker Compteur enregistré !', registration.scope);
             })

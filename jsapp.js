@@ -1,7 +1,7 @@
-// jsapp.js (Partie 1/4)
+// jsapp.js (Partie 1/4) - Fondations, Stockage Unifié et IndexedDB
 import { ui } from './jsui.js';
 import { gps } from './jsgps.js';
-import { ml } from './jsml.js'; // 🧠 Import de l'IA
+import { ml } from './jsml.js';
 
 window.ui = ui; window.gps = gps; window.ml = ml;
 
@@ -10,21 +10,39 @@ const app = {
     currentMode: localStorage.getItem('currentMode') || 'voiture',
     usersList: JSON.parse(localStorage.getItem('usersList')) || ['Sylvain'],
 
+    // 📦 NOUVEAU SYSTÈME DE STOCKAGE UNIFIÉ
+    // Fini l'éparpillement ! Tout est stocké dans un seul objet JSON par profil.
     storage: {
-        get(key) { return localStorage.getItem(window.app.currentUser + '_' + window.app.currentMode + '_' + key); },
-        set(key, value) { localStorage.setItem(window.app.currentUser + '_' + window.app.currentMode + '_' + key, value); },
-        remove(key) { localStorage.removeItem(window.app.currentUser + '_' + window.app.currentMode + '_' + key); }
+        state: {},
+        init() {
+            let key = `appState_${window.app.currentUser}_${window.app.currentMode}`;
+            let data = localStorage.getItem(key);
+            this.state = data ? JSON.parse(data) : {};
+        },
+        get(k) { 
+            return this.state[k] !== undefined ? this.state[k] : null; 
+        },
+        set(k, v) { 
+            this.state[k] = v; 
+            let key = `appState_${window.app.currentUser}_${window.app.currentMode}`;
+            localStorage.setItem(key, JSON.stringify(this.state));
+        },
+        clearAll() {
+            this.state = {};
+            let key = `appState_${window.app.currentUser}_${window.app.currentMode}`;
+            localStorage.removeItem(key);
+        }
     },
 
     brands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
     vehicleTypes: ["Voitures", "Utilitaires", "Motos", "Camions", "Camping-cars", "Bus/Car", "Engins agricoles", "Vélos"],
     
+    // Variables de session et statistiques globales
     truckCounters: {}, vehicleCounters: {},
     globalTruckCounters: {}, globalCarCounters: {}, 
     truckHistory: [], carHistory: [],
     
     globalAnaTrucks: null, globalAnaCars: null,
-
     sessionTruckPredictions: { total: 0, success: 0 },
     sessionCarPredictions: { total: 0, success: 0 },
 
@@ -39,10 +57,10 @@ const app = {
     liveTruckDistance: 0, liveCarDistance: 0,
     wakeLock: null, 
     
+    // Graphiques
     mainDashboardChart: null, natChart: null,
     temporalChart: null, weeklyChart: null, altitudeChart: null, weeklyGlobalChart: null,
-    altitudeModalChart: null, 
-    monthlyChart: null, roadTypeChart: null, monthlyModalChart: null, roadModalChart: null,
+    altitudeModalChart: null, monthlyChart: null, roadTypeChart: null, monthlyModalChart: null, roadModalChart: null,
     aiEvolutionChart: null, 
 
     currentDashboardFilter: 'all',
@@ -51,6 +69,7 @@ const app = {
     currentPredictionTruck: null, 
     currentPredictionCar: null,
 
+    // 🗄️ BASE DE DONNÉES LOCALE (IndexedDB pour les sessions)
     idb: {
         db: null,
         async init() {
@@ -183,37 +202,60 @@ const app = {
         });
     },
 
+    // 🔄 MIGRATION VERS LE STOCKAGE UNIFIÉ
     async migrateData() {
-        let oldProfile = localStorage.getItem('activeProfile');
-        if (oldProfile) {
-            const keys = ['truckCounters', 'vehicleCounters', 'globalTruckCounters', 'globalCarCounters', 'truckHistory', 'carHistory', 'globalTruckDistance', 'globalCarDistance', 'globalTruckTime', 'globalCarTime', 'truckChronoSec', 'truckAccumulatedTime', 'truckStartTime', 'truckChronoRun', 'carChronoSec', 'carAccumulatedTime', 'carStartTime', 'carChronoRun', 'liveTruckDist', 'liveCarDist', 'globalAnaTrucks', 'globalAnaCars'];
-            
-            ['voiture', 'camion'].forEach(mode => {
-                keys.forEach(k => {
-                    let val = localStorage.getItem(mode + '_' + k);
-                    if (val !== null) { 
-                        localStorage.setItem('Sylvain_' + mode + '_' + k, val); 
-                        localStorage.removeItem(mode + '_' + k); 
-                    }
-                });
-            });
+        this.storage.init(); // On charge l'état actuel (vide si première fois)
+        
+        // Liste des anciennes clés éparpillées
+        const keys = [
+            'truckCounters', 'vehicleCounters', 'globalTruckCounters', 'globalCarCounters', 
+            'truckHistory', 'carHistory', 'globalTruckDistance', 'globalCarDistance', 
+            'globalTruckTime', 'globalCarTime', 'truckChronoSec', 'truckAccumulatedTime', 
+            'truckStartTime', 'truckChronoRun', 'carChronoSec', 'carAccumulatedTime', 
+            'carStartTime', 'carChronoRun', 'liveTruckDist', 'liveCarDist', 
+            'globalAnaTrucks', 'globalAnaCars'
+        ];
+        
+        let hasMigratedSomething = false;
 
-            let allSessions = await this.idb.getAllRaw();
-            if (allSessions.length > 0) {
-                let tx = this.idb.db.transaction('sessions', 'readwrite');
-                let store = tx.objectStore('sessions');
-                allSessions.forEach(s => { 
-                    if (!s.user) { 
-                        s.user = 'Sylvain'; 
-                        s.mode = s.profile || 'voiture';
-                        s.profile = 'Sylvain_' + s.mode;
-                        store.put(s); 
-                    } 
-                });
+        // On parcourt les anciennes clés pour les transférer dans le nouvel objet "appState"
+        keys.forEach(k => {
+            let oldKey = this.currentUser + '_' + this.currentMode + '_' + k;
+            let val = localStorage.getItem(oldKey);
+            if (val !== null) { 
+                // Conversion des types (vrai/faux, nombres) avant de sauvegarder
+                if (val === 'true') val = true;
+                else if (val === 'false') val = false;
+                else if (!isNaN(val) && val.trim() !== '') val = Number(val);
+                else {
+                    try { val = JSON.parse(val); } catch(e) { } // Si c'est un tableau/objet
+                }
+
+                this.storage.set(k, val); 
+                localStorage.removeItem(oldKey); // On efface l'ancienne clé pour faire le ménage
+                hasMigratedSomething = true;
             }
-            localStorage.removeItem('activeProfile');
+        });
+
+        // Migration IDB (si jamais des sessions n'ont pas d'utilisateur assigné)
+        let allSessions = await this.idb.getAllRaw();
+        if (allSessions.length > 0) {
+            let tx = this.idb.db.transaction('sessions', 'readwrite');
+            let store = tx.objectStore('sessions');
+            allSessions.forEach(s => { 
+                if (!s.user) { 
+                    s.user = 'Sylvain'; 
+                    s.mode = s.profile || 'voiture';
+                    s.profile = 'Sylvain_' + s.mode;
+                    store.put(s); 
+                } 
+            });
         }
+        
+        if(hasMigratedSomething) console.log("✅ Migration vers le stockage unifié réussie !");
     },
+
+// jsapp.js (Partie 2/4) - Initialisation, Utilisateurs et Chronomètres Unifiés
 
     updateHeaderDisplay() {
         let elUser = document.getElementById('display-user');
@@ -242,6 +284,7 @@ const app = {
             return;
         }
         if(confirm(`⚠️ Supprimer définitivement le profil de ${this.currentUser} et TOUTES ses données locales ?`)) {
+            this.storage.clearAll(); // On nettoie toutes les préférences de ce profil
             this.usersList = this.usersList.filter(u => u !== this.currentUser);
             localStorage.setItem('usersList', JSON.stringify(this.usersList));
             this.changeUser(this.usersList[0]);
@@ -249,8 +292,8 @@ const app = {
     },
 
     async changeUser(newUser) {
-        if (this.isTruckRunning) this.toggleTruckChrono();
-        if (this.isCarRunning) this.toggleCarChrono();
+        if (this.isTruckRunning) this.toggleChrono('trucks');
+        if (this.isCarRunning) this.toggleChrono('cars');
 
         this.currentUser = newUser;
         localStorage.setItem('currentUser', newUser);
@@ -260,8 +303,8 @@ const app = {
     },
 
     async changeMode(newMode) {
-        if (this.isTruckRunning) this.toggleTruckChrono();
-        if (this.isCarRunning) this.toggleCarChrono();
+        if (this.isTruckRunning) this.toggleChrono('trucks');
+        if (this.isCarRunning) this.toggleChrono('cars');
 
         this.currentMode = newMode;
         localStorage.setItem('currentMode', newMode);
@@ -270,152 +313,11 @@ const app = {
         if (window.ui) { window.ui.showToast(`🔄 Mode changé : ${newMode === 'voiture' ? '🚘 Voiture' : '🚛 Camion'}`); }
     },
 
-    async updatePrediction(type) {
-        let el = document.getElementById(type === 'trucks' ? 'pred-text-trucks' : 'pred-text-cars');
-        if(el) el.innerText = "Analyse en cours... 🤖";
-
-        if (window.ml) {
-            let aiResult = await window.ml.predictNext(type);
-            if (aiResult) {
-                let bestCandidate = aiResult.candidate;
-                let confidence = aiResult.confidence;
-
-                if (type === 'trucks') {
-                    let d = new Date();
-                    let fr = this.globalTruckCounters[bestCandidate]?.fr || 0;
-                    let etr = this.globalTruckCounters[bestCandidate]?.etr || 0;
-                    let chanceEtranger = (etr / (fr + etr || 1));
-                    
-                    let currentSpeedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
-                    if (currentSpeedKmh > 80) chanceEtranger += 0.2; 
-                    
-                    let currentHour = d.getHours();
-                    if (currentHour < 5 || currentHour > 22) chanceEtranger += 0.15;
-                    if (d.getDay() === 0 || d.getDay() === 6) chanceEtranger += 0.15;
-                    
-                    let nat = Math.random() < chanceEtranger ? 'etr' : 'fr';
-
-                    this.currentPredictionTruck = { brand: bestCandidate, nat: nat };
-                    if(el) el.innerHTML = `<strong>${bestCandidate}</strong> (${nat === 'fr' ? '🇫🇷' : '🌍'}) ~${confidence}% <span style="color:#8e44ad; font-size:0.8em;">(IA 🧠)</span>`;
-                } else {
-                    this.currentPredictionCar = { type: bestCandidate };
-                    if(el) el.innerHTML = `<strong>${bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate}</strong> ~${confidence}% <span style="color:#8e44ad; font-size:0.8em;">(IA 🧠)</span>`;
-                }
-                return;
-            }
-        }
-
-        let ana = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
-        let history = type === 'trucks' ? this.truckHistory : this.carHistory;
-        let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
-        let candidates = type === 'trucks' ? this.brands : this.vehicleTypes;
-
-        let d = new Date();
-        let currentHourKey = `${d.getHours()}h`;
-        let currentDayKey = Object.keys(ana.days)[d.getDay()];
-        let currentMonthKey = Object.keys(ana.months)[d.getMonth()];
-        let currentAlt = window.gps && window.gps.currentPos && window.gps.currentPos.alt ? window.gps.currentPos.alt : 0;
-        let altKey = currentAlt < 200 ? "< 200m" : currentAlt < 500 ? "200-500m" : currentAlt < 1000 ? "500-1000m" : "> 1000m";
-
-        let currentSpeedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
-        let isHighway = currentSpeedKmh > 80; 
-        let currentRoad = currentSpeedKmh === 0 ? "Inconnu" : (currentSpeedKmh < 50 ? "Ville (<50km/h)" : (currentSpeedKmh <= 80 ? "Route (50-80km/h)" : "Autoroute (>80km/h)"));
-        
-        let sec = type === 'trucks' ? this.truckSeconds : this.carSeconds;
-        let isDenseTraffic = sec > 0 && (history.length / (sec / 3600)) > 500; 
-
-        let recentItems = history.filter(h => !h.isEvent).slice(-2);
-        let lastV1 = recentItems.length > 1 ? (type === 'trucks' ? recentItems[0].brand : recentItems[0].type) : null; 
-        let lastV2 = recentItems.length > 0 ? (type === 'trucks' ? recentItems[recentItems.length-1].brand : recentItems[recentItems.length-1].type) : null; 
-
-        let scores = {};
-        let totalGlobalCount = 0;
-        
-        candidates.forEach(c => {
-            let count = type === 'trucks' ? ((globalCounters[c]?.fr || 0) + (globalCounters[c]?.etr || 0)) : (globalCounters[c] || 0);
-            scores[c] = count; 
-            totalGlobalCount += count;
-        });
-
-        if(totalGlobalCount > 0) {
-            candidates.forEach(c => { scores[c] = (scores[c] / totalGlobalCount) * 100; });
-        } else {
-            candidates.forEach(c => { scores[c] = 10; });
-        }
-
-        candidates.forEach(c => {
-            if (lastV1 && lastV2 && ana.seqs3) {
-                let triplet = `${lastV1} ➡️ ${lastV2} ➡️ ${c}`;
-                if (ana.seqs3[triplet]) scores[c] += 25; 
-            }
-            if (lastV2 && ana.seqs) {
-                let pair = `${lastV2} ➡️ ${c}`;
-                if (ana.seqs[pair]) scores[c] += 10; 
-            }
-
-            if (ana.byVeh && ana.byVeh[c]) {
-                let pHeure = (ana.hours[currentHourKey] > 0) ? ((ana.byVeh[c].hours[currentHourKey] || 0) / ana.hours[currentHourKey]) * 100 : 0;
-                let pJour = (ana.days[currentDayKey] > 0) ? ((ana.byVeh[c].days[currentDayKey] || 0) / ana.days[currentDayKey]) * 100 : 0;
-                let pAlt = (ana.alts[altKey] > 0) ? ((ana.byVeh[c].alts[altKey] || 0) / ana.alts[altKey]) * 100 : 0;
-                let pMois = (ana.months[currentMonthKey] > 0) ? ((ana.byVeh[c].months[currentMonthKey] || 0) / ana.months[currentMonthKey]) * 100 : 0;
-                let pRoute = (ana.roads[currentRoad] > 0) ? ((ana.byVeh[c].roads[currentRoad] || 0) / ana.roads[currentRoad]) * 100 : 0;
-
-                scores[c] += (pHeure * 0.1) + (pJour * 0.1) + (pAlt * 0.1) + (pMois * 0.15) + (pRoute * 0.25);
-            }
-        });
-
-        if (type === 'cars') {
-            if (isHighway) {
-                scores['Camions'] += 40; 
-                scores['Vélos'] = 0; 
-                scores['Engins agricoles'] = 0;
-            }
-            if (isDenseTraffic) {
-                scores['Voitures'] += 30; 
-            }
-        }
-
-        let bestCandidate = null;
-        let maxScore = -1;
-        candidates.forEach(c => {
-            let finalScore = scores[c] + (Math.random() * (scores[c] * 0.1));
-            if (finalScore > maxScore && scores[c] >= 0) {
-                maxScore = finalScore;
-                bestCandidate = c;
-            }
-        });
-
-        if (!bestCandidate) bestCandidate = candidates[Math.floor(Math.random() * candidates.length)];
-
-        let totalScoreSum = Object.values(scores).reduce((a, b) => a + b, 0);
-        let confidence = totalScoreSum > 0 ? Math.min(99, Math.round((maxScore / totalScoreSum) * 100)) : 50;
-
-        if (type === 'trucks') {
-            let fr = this.globalTruckCounters[bestCandidate]?.fr || 0;
-            let etr = this.globalTruckCounters[bestCandidate]?.etr || 0;
-            
-            let chanceEtranger = (etr / (fr + etr || 1));
-            if (isHighway) chanceEtranger += 0.2; 
-            
-            let currentHour = d.getHours();
-            if (currentHour < 5 || currentHour > 22) chanceEtranger += 0.15;
-            if (d.getDay() === 0 || d.getDay() === 6) chanceEtranger += 0.15;
-            
-            let nat = Math.random() < chanceEtranger ? 'etr' : 'fr';
-
-            this.currentPredictionTruck = { brand: bestCandidate, nat: nat };
-            if(el) el.innerHTML = `<strong>${bestCandidate}</strong> (${nat === 'fr' ? '🇫🇷' : '🌍'}) ~${confidence}% <span style="color:#7f8c8d; font-size:0.8em;">(Classique 📊)</span>`;
-        } else {
-            this.currentPredictionCar = { type: bestCandidate };
-            if(el) el.innerHTML = `<strong>${bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate}</strong> ~${confidence}% <span style="color:#7f8c8d; font-size:0.8em;">(Classique 📊)</span>`;
-        }
-    },
-
-// jsapp.js (Partie 2/4)
-
     async init(isProfileSwitch = false) {
         if (!isProfileSwitch) { await this.idb.init(); await this.migrateData(); }
         if (window.ml) await window.ml.init();
+
+        this.storage.init(); // On charge les données du stockage unifié en mémoire
 
         let userSel = document.getElementById('user-selector');
         if(userSel) {
@@ -436,14 +338,15 @@ const app = {
         if (this.truckInterval) clearInterval(this.truckInterval);
         if (this.carInterval) clearInterval(this.carInterval);
 
-        try { this.truckCounters = JSON.parse(this.storage.get('truckCounters')) || {}; } catch(e) { this.truckCounters = {}; }
-        try { this.vehicleCounters = JSON.parse(this.storage.get('vehicleCounters')) || {}; } catch(e) { this.vehicleCounters = {}; }
-        try { this.globalTruckCounters = JSON.parse(this.storage.get('globalTruckCounters')) || {}; } catch(e) { this.globalTruckCounters = {}; }
-        try { this.globalCarCounters = JSON.parse(this.storage.get('globalCarCounters')) || {}; } catch(e) { this.globalCarCounters = {}; }
-        try { this.truckHistory = JSON.parse(this.storage.get('truckHistory')) || []; } catch(e) { this.truckHistory = []; }
-        try { this.carHistory = JSON.parse(this.storage.get('carHistory')) || []; } catch(e) { this.carHistory = []; }
+        // Récupération simplifiée grâce au nouveau système storage
+        this.truckCounters = this.storage.get('truckCounters') || {};
+        this.vehicleCounters = this.storage.get('vehicleCounters') || {};
+        this.globalTruckCounters = this.storage.get('globalTruckCounters') || {};
+        this.globalCarCounters = this.storage.get('globalCarCounters') || {};
+        this.truckHistory = this.storage.get('truckHistory') || [];
+        this.carHistory = this.storage.get('carHistory') || [];
         
-        try { this.globalAnaTrucks = JSON.parse(this.storage.get('globalAnaTrucks')); } catch(e) {}
+        this.globalAnaTrucks = this.storage.get('globalAnaTrucks');
         if (!this.globalAnaTrucks || !this.globalAnaTrucks.months) { 
             this.globalAnaTrucks = this.getEmptyAnalytics(); 
             await this.buildPermanentAnalyticsFromIDB('trucks', this.globalAnaTrucks);
@@ -452,9 +355,9 @@ const app = {
         if (!this.globalAnaTrucks.byVeh) this.globalAnaTrucks.byVeh = {};
         if (!this.globalAnaTrucks.seqs3) this.globalAnaTrucks.seqs3 = {};
         if (!this.globalAnaTrucks.lastVehicles) this.globalAnaTrucks.lastVehicles = [];
-        this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
+        this.storage.set('globalAnaTrucks', this.globalAnaTrucks);
 
-        try { this.globalAnaCars = JSON.parse(this.storage.get('globalAnaCars')); } catch(e) {}
+        this.globalAnaCars = this.storage.get('globalAnaCars');
         if (!this.globalAnaCars || !this.globalAnaCars.months) { 
             this.globalAnaCars = this.getEmptyAnalytics(); 
             await this.buildPermanentAnalyticsFromIDB('cars', this.globalAnaCars);
@@ -463,7 +366,7 @@ const app = {
         if (!this.globalAnaCars.byVeh) this.globalAnaCars.byVeh = {};
         if (!this.globalAnaCars.seqs3) this.globalAnaCars.seqs3 = {};
         if (!this.globalAnaCars.lastVehicles) this.globalAnaCars.lastVehicles = [];
-        this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
+        this.storage.set('globalAnaCars', this.globalAnaCars);
 
         if(Object.keys(this.truckCounters).length === 0) this.brands.forEach(b => this.truckCounters[b] = { fr: 0, etr: 0 });
         if(Object.keys(this.vehicleCounters).length === 0) this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0);
@@ -478,12 +381,12 @@ const app = {
         this.truckSeconds = parseInt(this.storage.get('truckChronoSec')) || 0;
         this.truckAccumulatedTime = parseInt(this.storage.get('truckAccumulatedTime')) || 0;
         this.truckStartTime = parseInt(this.storage.get('truckStartTime')) || 0;
-        this.isTruckRunning = this.storage.get('truckChronoRun') === 'true';
+        this.isTruckRunning = this.storage.get('truckChronoRun') === true;
 
         this.carSeconds = parseInt(this.storage.get('carChronoSec')) || 0;
         this.carAccumulatedTime = parseInt(this.storage.get('carAccumulatedTime')) || 0;
         this.carStartTime = parseInt(this.storage.get('carStartTime')) || 0;
-        this.isCarRunning = this.storage.get('carChronoRun') === 'true';
+        this.isCarRunning = this.storage.get('carChronoRun') === true;
 
         this.liveTruckDistance = parseFloat(this.storage.get('liveTruckDist')) || 0;
         this.liveCarDistance = parseFloat(this.storage.get('liveCarDist')) || 0;
@@ -491,8 +394,8 @@ const app = {
         if (!this.isTruckRunning) { this.truckAccumulatedTime = this.truckSeconds; }
         if (!this.isCarRunning) { this.carAccumulatedTime = this.carSeconds; }
 
-        if (this.isTruckRunning) { this.isTruckRunning = false; this.toggleTruckChrono(); } else this.updateTruckChronoDisp();
-        if (this.isCarRunning) { this.isCarRunning = false; this.toggleCarChrono(); } else this.updateCarChronoDisp();
+        if (this.isTruckRunning) { this.isTruckRunning = false; this.toggleChrono('trucks'); } else this.updateChronoDisp('trucks');
+        if (this.isCarRunning) { this.isCarRunning = false; this.toggleChrono('cars'); } else this.updateChronoDisp('cars');
         
         this.renderTrucks(); this.renderCars(); this.renderKmStats();
         this.renderLiveStats('trucks'); this.renderLiveStats('cars');
@@ -529,441 +432,409 @@ const app = {
         return `${h}:${m}:${s}`;
     },
 
-    updateTruckChronoDisp() { 
-        let elTime = document.getElementById('truck-chrono'), elDist = document.getElementById('truck-dist');
-        if(elTime) elTime.innerText = `⏱️ ${this.formatTime(this.truckSeconds)}`; 
-        if(elDist) elDist.innerText = `📍 ${this.liveTruckDistance.toFixed(2)} km`; 
-    },
-    updateCarChronoDisp() { 
-        let cc = document.getElementById('car-chrono'), cd = document.getElementById('car-dist');
-        if(cc) cc.innerText = `⏱️ ${this.formatTime(this.carSeconds)}`; 
-        if(cd) cd.innerText = `📍 ${this.liveCarDistance.toFixed(2)} km`; 
-    },
-
-    toggleTruckChrono() {
-        this.isTruckRunning = !this.isTruckRunning; this.storage.set('truckChronoRun', this.isTruckRunning);
-        const btn = document.getElementById('btn-truck-chrono'); if(!btn) return;
+    // ⏱️ FONCTION GÉNÉRIQUE POUR L'AFFICHAGE DU CHRONO
+    updateChronoDisp(type) {
+        let isTruck = type === 'trucks';
+        let elTime = document.getElementById(isTruck ? 'truck-chrono' : 'car-chrono');
+        let elDist = document.getElementById(isTruck ? 'truck-dist' : 'car-dist');
         
-        let eventType = this.isTruckRunning ? "▶️ Reprise" : "⏸️ Pause";
-        let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, chronoTime: this.formatTime(this.truckSeconds), timestamp: new Date().getTime() };
-        this.truckHistory.push(histItem);
-        this.storage.set('truckHistory', JSON.stringify(this.truckHistory));
-        if (document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
+        let sec = isTruck ? this.truckSeconds : this.carSeconds;
+        let dist = isTruck ? this.liveTruckDistance : this.liveCarDistance;
 
-        if (this.isTruckRunning) { 
+        if(elTime) elTime.innerText = `⏱️ ${this.formatTime(sec)}`; 
+        if(elDist) elDist.innerText = `📍 ${dist.toFixed(2)} km`; 
+    },
+
+    // ⏱️ FONCTION GÉNÉRIQUE POUR LANCER/METTRE EN PAUSE
+    toggleChrono(type) {
+        let isTruck = type === 'trucks';
+        let isRunning = isTruck ? this.isTruckRunning : this.isCarRunning;
+        isRunning = !isRunning; // On inverse l'état
+        
+        if (isTruck) { 
+            this.isTruckRunning = isRunning; 
+            this.storage.set('truckChronoRun', isRunning); 
+        } else { 
+            this.isCarRunning = isRunning; 
+            this.storage.set('carChronoRun', isRunning); 
+        }
+
+        const btn = document.getElementById(isTruck ? 'btn-truck-chrono' : 'btn-car-chrono'); 
+        if(!btn) return;
+        
+        let seconds = isTruck ? this.truckSeconds : this.carSeconds;
+        let hist = isTruck ? this.truckHistory : this.carHistory;
+        
+        let eventType = isRunning ? "▶️ Reprise" : "⏸️ Pause";
+        let histItem = { 
+            isEvent: true, eventType: eventType, 
+            lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, 
+            lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, 
+            alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, 
+            chronoTime: this.formatTime(seconds), timestamp: Date.now() 
+        };
+        
+        hist.push(histItem);
+        this.storage.set(isTruck ? 'truckHistory' : 'carHistory', hist);
+        
+        let statsView = document.getElementById(isTruck ? 'truck-stats-view' : 'car-stats-view');
+        if (statsView && statsView.style.display !== 'none') this.renderAdvancedStats(type);
+
+        if (isRunning) { 
             btn.innerText = "⏸️ Pause"; btn.classList.add('running'); 
-            this.truckStartTime = Date.now(); this.storage.set('truckStartTime', this.truckStartTime);
-            this.lastGlobalTruckTick = Date.now();
-            this.truckInterval = setInterval(() => { 
+            let startTime = Date.now();
+            
+            if(isTruck) { 
+                this.truckStartTime = startTime; this.storage.set('truckStartTime', startTime); 
+                this.lastGlobalTruckTick = startTime; 
+            } else { 
+                this.carStartTime = startTime; this.storage.set('carStartTime', startTime); 
+                this.lastGlobalCarTick = startTime; 
+            }
+            
+            let interval = setInterval(() => { 
                 let now = Date.now();
-                let elapsed = Math.floor((now - this.truckStartTime) / 1000);
-                this.truckSeconds = this.truckAccumulatedTime + elapsed; 
-                this.storage.set('truckChronoSec', this.truckSeconds); 
-                
-                let delta = now - this.lastGlobalTruckTick;
-                if(delta >= 1000) {
-                    let add = Math.floor(delta / 1000);
-                    this.globalTruckTime += add;
-                    this.storage.set('globalTruckTime', this.globalTruckTime);
-                    this.lastGlobalTruckTick += add * 1000;
+                if(isTruck) {
+                    let elapsed = Math.floor((now - this.truckStartTime) / 1000);
+                    this.truckSeconds = this.truckAccumulatedTime + elapsed; 
+                    this.storage.set('truckChronoSec', this.truckSeconds); 
+                    
+                    let delta = now - this.lastGlobalTruckTick;
+                    if(delta >= 1000) {
+                        let add = Math.floor(delta / 1000);
+                        this.globalTruckTime += add;
+                        this.storage.set('globalTruckTime', this.globalTruckTime);
+                        this.lastGlobalTruckTick += add * 1000;
+                    }
+                } else {
+                    let elapsed = Math.floor((now - this.carStartTime) / 1000);
+                    this.carSeconds = this.carAccumulatedTime + elapsed; 
+                    this.storage.set('carChronoSec', this.carSeconds); 
+                    
+                    let delta = now - this.lastGlobalCarTick;
+                    if(delta >= 1000) {
+                        let add = Math.floor(delta / 1000);
+                        this.globalCarTime += add;
+                        this.storage.set('globalCarTime', this.globalCarTime);
+                        this.lastGlobalCarTick += add * 1000;
+                    }
                 }
 
-                this.updateTruckChronoDisp(); 
-                this.renderLiveStats('trucks');
+                this.updateChronoDisp(type); 
+                this.renderLiveStats(type);
             }, 1000); 
+            
+            if(isTruck) this.truckInterval = interval; else this.carInterval = interval;
+            
         } else { 
             btn.innerText = "▶️ Start"; btn.classList.remove('running'); 
-            clearInterval(this.truckInterval); 
-            this.truckAccumulatedTime = this.truckSeconds;
-            this.storage.set('truckAccumulatedTime', this.truckAccumulatedTime);
-            this.globalAnaTrucks.lastVehicles = []; 
-            this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
+            
+            if(isTruck) {
+                clearInterval(this.truckInterval); 
+                this.truckAccumulatedTime = this.truckSeconds;
+                this.storage.set('truckAccumulatedTime', this.truckAccumulatedTime);
+                this.globalAnaTrucks.lastVehicles = []; 
+                this.storage.set('globalAnaTrucks', this.globalAnaTrucks);
+            } else {
+                clearInterval(this.carInterval); 
+                this.carAccumulatedTime = this.carSeconds;
+                this.storage.set('carAccumulatedTime', this.carAccumulatedTime);
+                this.globalAnaCars.lastVehicles = []; 
+                this.storage.set('globalAnaCars', this.globalAnaCars);
+            }
         }
     },
 
-    toggleCarChrono() {
-        this.isCarRunning = !this.isCarRunning; this.storage.set('carChronoRun', this.isCarRunning);
-        const btn = document.getElementById('btn-car-chrono'); if(!btn) return;
-        
-        let eventType = this.isCarRunning ? "▶️ Reprise" : "⏸️ Pause";
-        let histItem = { isEvent: true, eventType: eventType, lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, chronoTime: this.formatTime(this.carSeconds), timestamp: new Date().getTime() };
-        this.carHistory.push(histItem);
-        this.storage.set('carHistory', JSON.stringify(this.carHistory));
-        if (document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
+// jsapp.js (Partie 3/4) - Fusion des compteurs et de l'historique
 
-        if (this.isCarRunning) { 
-            btn.innerText = "⏸️ Pause"; btn.classList.add('running'); 
-            this.carStartTime = Date.now(); this.storage.set('carStartTime', this.carStartTime);
-            this.lastGlobalCarTick = Date.now(); 
-            this.carInterval = setInterval(() => { 
-                let now = Date.now();
-                let elapsed = Math.floor((now - this.carStartTime) / 1000);
-                this.carSeconds = this.carAccumulatedTime + elapsed; 
-                this.storage.set('carChronoSec', this.carSeconds); 
-                
-                let delta = now - this.lastGlobalCarTick;
-                if(delta >= 1000) {
-                    let add = Math.floor(delta / 1000);
-                    this.globalCarTime += add;
-                    this.storage.set('globalCarTime', this.globalCarTime);
-                    this.lastGlobalCarTick += add * 1000;
-                }
+    // 🎯 FONCTION GÉNÉRIQUE D'AJOUT/RETRAIT DE VÉHICULE
+    updateCounter(mode, key1, key2, amount, e) {
+        let isTruck = mode === 'trucks';
+        if (isTruck && !this.isTruckRunning) { alert("Lance le chrono Camions d'abord ! ⏱️"); return; }
+        if (!isTruck && !this.isCarRunning) { alert("Lance le chrono Véhicules d'abord ! ⏱️"); return; }
 
-                this.updateCarChronoDisp(); 
-                this.renderLiveStats('cars');
-            }, 1000); 
-        } else { 
-            btn.innerText = "▶️ Start"; btn.classList.remove('running'); 
-            clearInterval(this.carInterval); 
-            this.carAccumulatedTime = this.carSeconds;
-            this.storage.set('carAccumulatedTime', this.carAccumulatedTime);
-            this.globalAnaCars.lastVehicles = []; 
-            this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
+        let counters = isTruck ? this.truckCounters : this.vehicleCounters;
+        let globalCounters = isTruck ? this.globalTruckCounters : this.globalCarCounters;
+        let history = isTruck ? this.truckHistory : this.carHistory;
+        let ana = isTruck ? this.globalAnaTrucks : this.globalAnaCars;
+        let sessionPreds = isTruck ? this.sessionTruckPredictions : this.sessionCarPredictions;
+        let currPred = isTruck ? this.currentPredictionTruck : this.currentPredictionCar;
+
+        // Initialisation de sécurité pour s'assurer que les objets existent
+        if (isTruck) {
+            if (!counters[key1]) counters[key1] = { fr: 0, etr: 0 };
+            if (!globalCounters[key1]) globalCounters[key1] = { fr: 0, etr: 0 };
+        } else {
+            if (typeof counters[key1] === 'undefined') counters[key1] = 0;
+            if (typeof globalCounters[key1] === 'undefined') globalCounters[key1] = 0;
         }
-    },
 
-    updateTruck(e, brand, type, amount) {
-        if (!this.isTruckRunning) { alert("Lance le chrono Camions d'abord ! ⏱️"); return; }
-        if (!this.truckCounters[brand]) this.truckCounters[brand] = { fr: 0, etr: 0 };
-        if (!this.globalTruckCounters[brand]) this.globalTruckCounters[brand] = { fr: 0, etr: 0 };
-        
-        if (this.truckCounters[brand][type] + amount >= 0) {
+        let currentCount = isTruck ? counters[key1][key2] : counters[key1];
+
+        if (currentCount + amount >= 0) {
             if (window.ui) window.ui.playBeep(amount > 0);
+            
             if (amount > 0) {
                 // 🎁 Hook Gamification
-                if (window.gami) window.gami.notifyVehicleAdded(brand, type);
-                
-                if (this.currentPredictionTruck) {
-                    this.globalAnaTrucks.predictions.total++;
-                    this.sessionTruckPredictions.total++;
-                    if (this.currentPredictionTruck.brand === brand && this.currentPredictionTruck.nat === type) {
-                        this.globalAnaTrucks.predictions.success++;
-                        this.sessionTruckPredictions.success++;
+                if (window.gami) window.gami.notifyVehicleAdded(key1, key2);
+
+                // 🔮 Gestion des Prédictions IA
+                if (currPred) {
+                    ana.predictions.total++;
+                    sessionPreds.total++;
+                    let isExact = isTruck ? (currPred.brand === key1 && currPred.nat === key2) : (currPred.type === key1);
+                    if (isExact) {
+                        ana.predictions.success++;
+                        sessionPreds.success++;
                         if(window.ui) window.ui.showToast("🔮 Prédiction exacte !");
                     }
                 }
 
-                this.truckCounters[brand][type] += amount;
-                this.globalTruckCounters[brand][type] += amount; 
-                
-                let nowTs = new Date().getTime();
+                // ➕ Incrémentation des compteurs
+                if (isTruck) { counters[key1][key2] += amount; globalCounters[key1][key2] += amount; }
+                else { counters[key1] += amount; globalCounters[key1] += amount; }
+
+                // 📍 Enregistrement dans l'Historique
+                let nowTs = Date.now();
                 let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
                 let roadType = speedKmh === 0 ? "Inconnu" : (speedKmh < 50 ? "Ville (<50km/h)" : (speedKmh <= 80 ? "Route (50-80km/h)" : "Autoroute (>80km/h)"));
                 
-                let histItem = { brand: brand, type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, speed: speedKmh, road: roadType, chronoTime: this.formatTime(this.truckSeconds), timestamp: nowTs };
-                this.truckHistory.push(histItem);
+                let histItem = { 
+                    lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, 
+                    lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, 
+                    alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, 
+                    speed: speedKmh, road: roadType, 
+                    chronoTime: this.formatTime(isTruck ? this.truckSeconds : this.carSeconds), 
+                    timestamp: nowTs 
+                };
+                
+                if (isTruck) { histItem.brand = key1; histItem.type = key2; }
+                else { histItem.type = key1; }
+                history.push(histItem);
 
+                // 📊 Mise à jour des Analytics (Heures, Jours, Mois, Altitude, Routes)
                 let d = new Date(nowTs);
                 let hourKey = `${d.getHours()}h`;
-                let dayKey = Object.keys(this.globalAnaTrucks.days)[d.getDay()];
-                let monthKey = Object.keys(this.globalAnaTrucks.months)[d.getMonth()];
-                let altVal = window.gps.currentPos.alt || 0;
+                let dayKey = Object.keys(ana.days)[d.getDay()];
+                let monthKey = Object.keys(ana.months)[d.getMonth()];
+                let altVal = histItem.alt || 0;
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
 
-                this.globalAnaTrucks.hours[hourKey]++;
-                this.globalAnaTrucks.days[dayKey]++;
-                this.globalAnaTrucks.months[monthKey]++;
-                this.globalAnaTrucks.alts[altKey]++;
-                this.globalAnaTrucks.roads[roadType]++;
+                ana.hours[hourKey]++; ana.days[dayKey]++; ana.months[monthKey]++; ana.alts[altKey]++; ana.roads[roadType]++;
 
-                if (!this.globalAnaTrucks.byVeh[brand]) {
-                    this.globalAnaTrucks.byVeh[brand] = { hours: {}, days: {}, alts: {}, months: {}, roads: {} };
+                if (!ana.byVeh[key1]) ana.byVeh[key1] = { hours: {}, days: {}, alts: {}, months: {}, roads: {} };
+                if (!ana.byVeh[key1].months) ana.byVeh[key1].months = {};
+                if (!ana.byVeh[key1].roads) ana.byVeh[key1].roads = {};
+
+                ana.byVeh[key1].hours[hourKey] = (ana.byVeh[key1].hours[hourKey] || 0) + 1;
+                ana.byVeh[key1].days[dayKey] = (ana.byVeh[key1].days[dayKey] || 0) + 1;
+                ana.byVeh[key1].months[monthKey] = (ana.byVeh[key1].months[monthKey] || 0) + 1;
+                ana.byVeh[key1].alts[altKey] = (ana.byVeh[key1].alts[altKey] || 0) + 1;
+                ana.byVeh[key1].roads[roadType] = (ana.byVeh[key1].roads[roadType] || 0) + 1;
+
+                // Calcul des Séquences (2 et 3 véhicules)
+                if (!ana.lastVehicles) ana.lastVehicles = [];
+                if (!ana.seqs3) ana.seqs3 = {};
+
+                if (ana.lastVehicles.length >= 1) {
+                    let vDernier = ana.lastVehicles[ana.lastVehicles.length - 1];
+                    let pair = `${vDernier} ➡️ ${key1}`;
+                    ana.seqs[pair] = (ana.seqs[pair] || 0) + 1;
                 }
-                if (!this.globalAnaTrucks.byVeh[brand].months) this.globalAnaTrucks.byVeh[brand].months = {};
-                if (!this.globalAnaTrucks.byVeh[brand].roads) this.globalAnaTrucks.byVeh[brand].roads = {};
-
-                this.globalAnaTrucks.byVeh[brand].hours[hourKey] = (this.globalAnaTrucks.byVeh[brand].hours[hourKey] || 0) + 1;
-                this.globalAnaTrucks.byVeh[brand].days[dayKey] = (this.globalAnaTrucks.byVeh[brand].days[dayKey] || 0) + 1;
-                this.globalAnaTrucks.byVeh[brand].months[monthKey] = (this.globalAnaTrucks.byVeh[brand].months[monthKey] || 0) + 1;
-                this.globalAnaTrucks.byVeh[brand].alts[altKey] = (this.globalAnaTrucks.byVeh[brand].alts[altKey] || 0) + 1;
-                this.globalAnaTrucks.byVeh[brand].roads[roadType] = (this.globalAnaTrucks.byVeh[brand].roads[roadType] || 0) + 1;
-
-                if (!this.globalAnaTrucks.lastVehicles) this.globalAnaTrucks.lastVehicles = [];
-                if (!this.globalAnaTrucks.seqs3) this.globalAnaTrucks.seqs3 = {};
-
-                if (this.globalAnaTrucks.lastVehicles.length >= 1) {
-                    let vDernier = this.globalAnaTrucks.lastVehicles[this.globalAnaTrucks.lastVehicles.length - 1];
-                    let pair = `${vDernier} ➡️ ${brand}`;
-                    this.globalAnaTrucks.seqs[pair] = (this.globalAnaTrucks.seqs[pair] || 0) + 1;
-                }
-
-                if (this.globalAnaTrucks.lastVehicles.length >= 2) {
-                    let vAvantDernier = this.globalAnaTrucks.lastVehicles[0];
-                    let vDernier = this.globalAnaTrucks.lastVehicles[1];
-                    let triplet = `${vAvantDernier} ➡️ ${vDernier} ➡️ ${brand}`;
-                    this.globalAnaTrucks.seqs3[triplet] = (this.globalAnaTrucks.seqs3[triplet] || 0) + 1;
+                if (ana.lastVehicles.length >= 2) {
+                    let vAvantDernier = ana.lastVehicles[0];
+                    let vDernier = ana.lastVehicles[1];
+                    let triplet = `${vAvantDernier} ➡️ ${vDernier} ➡️ ${key1}`;
+                    ana.seqs3[triplet] = (ana.seqs3[triplet] || 0) + 1;
                 }
 
-                this.globalAnaTrucks.lastVehicles.push(brand);
-                if (this.globalAnaTrucks.lastVehicles.length > 2) {
-                    this.globalAnaTrucks.lastVehicles.shift();
+                ana.lastVehicles.push(key1);
+                if (ana.lastVehicles.length > 2) ana.lastVehicles.shift();
+
+                // 💾 Sauvegarde dans le système unifié
+                this.storage.set(isTruck ? 'globalAnaTrucks' : 'globalAnaCars', ana);
+                this.storage.set(isTruck ? 'truckCounters' : 'vehicleCounters', counters);
+                this.storage.set(isTruck ? 'globalTruckCounters' : 'globalCarCounters', globalCounters);
+                this.storage.set(isTruck ? 'truckHistory' : 'carHistory', history);
+
+                // ✨ Effets UI (Haptique & Particules)
+                if(window.ui && e) { 
+                    let hapticType = isTruck ? 'truck' : 'car';
+                    if (!isTruck) {
+                        if(key1 === 'Motos' || key1 === 'Vélos') hapticType = 'moto';
+                        if(key1 === 'Engins agricoles' || key1 === 'Camions' || key1 === 'Bus/Car') hapticType = 'tractor';
+                    }
+                    window.ui.triggerHapticFeedback(hapticType); 
+                    window.ui.showClickParticle(e, `+1`, isTruck ? '#27ae60' : '#e74c3c'); 
                 }
 
-                this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
-                
-                if(window.ui && e) { window.ui.triggerHapticFeedback('truck'); window.ui.showClickParticle(e, `+1`); }
-                this.storage.set('truckCounters', JSON.stringify(this.truckCounters)); 
-                this.storage.set('globalTruckCounters', JSON.stringify(this.globalTruckCounters)); 
-                this.storage.set('truckHistory', JSON.stringify(this.truckHistory));
-                this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
-                this.updatePrediction('trucks');
+                // 🔄 Rafraîchissement des affichages
+                if (isTruck) this.renderTrucks(); else this.renderCars();
+                this.renderKmStats(); 
+                this.renderLiveStats(mode);
+                this.updatePrediction(mode);
+
             } else if (amount < 0) {
-                for (let i = this.truckHistory.length - 1; i >= 0; i--) {
-                    if (!this.truckHistory[i].isEvent && this.truckHistory[i].brand === brand && this.truckHistory[i].type === type) {
-                        this.deleteTruckHistoryItem(i); return;
+                // ➖ Décrémentation (recherche dans l'historique et retrait)
+                for (let i = history.length - 1; i >= 0; i--) {
+                    if (!history[i].isEvent) {
+                        let match = isTruck ? (history[i].brand === key1 && history[i].type === key2) : (history[i].type === key1);
+                        if (match) {
+                            this.deleteHistoryItem(mode, i);
+                            return;
+                        }
                     }
                 }
             }
         }
     },
 
-    updateVehicle(e, type, amount) {
-        if (!this.isCarRunning) { alert("Lance le chrono Véhicules d'abord ! ⏱️"); return; }
-        if (typeof this.vehicleCounters[type] === 'undefined') this.vehicleCounters[type] = 0;
-        if (typeof this.globalCarCounters[type] === 'undefined') this.globalCarCounters[type] = 0;
+    // 🗑️ FONCTION GÉNÉRIQUE DE SUPPRESSION D'HISTORIQUE
+    deleteHistoryItem(mode, index) {
+        let isTruck = mode === 'trucks';
+        let history = isTruck ? this.truckHistory : this.carHistory;
+        let counters = isTruck ? this.truckCounters : this.vehicleCounters;
+        let globalCounters = isTruck ? this.globalTruckCounters : this.globalCarCounters;
+        let ana = isTruck ? this.globalAnaTrucks : this.globalAnaCars;
+
+        let item = history[index];
+        if (!item) return;
+
+        let vehKey = isTruck ? item.brand : item.type;
+        let subKey = isTruck ? item.type : null;
+
+        if (!item.isEvent) {
+            // Diminution des compteurs
+            if (isTruck) {
+                if (counters[vehKey] && counters[vehKey][subKey] > 0) counters[vehKey][subKey]--;
+                if (globalCounters[vehKey] && globalCounters[vehKey][subKey] > 0) globalCounters[vehKey][subKey]--;
+            } else {
+                if (counters[vehKey] > 0) counters[vehKey]--;
+                if (globalCounters[vehKey] > 0) globalCounters[vehKey]--;
+            }
+
+            // Diminution Analytics (si possible)
+            if (item.timestamp) {
+                let d = new Date(item.timestamp);
+                let hourKey = `${d.getHours()}h`;
+                let dayKey = Object.keys(ana.days)[d.getDay()];
+                let monthKey = Object.keys(ana.months)[d.getMonth()];
+                let altVal = item.alt || 0;
+                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+                let roadType = item.road || "Inconnu";
+
+                if(ana.hours[hourKey] > 0) ana.hours[hourKey]--;
+                if(ana.days[dayKey] > 0) ana.days[dayKey]--;
+                if(ana.months[monthKey] > 0) ana.months[monthKey]--;
+                if(ana.alts[altKey] > 0) ana.alts[altKey]--;
+                if(ana.roads[roadType] > 0) ana.roads[roadType]--;
+
+                if(ana.byVeh && ana.byVeh[vehKey]) {
+                    if(ana.byVeh[vehKey].hours[hourKey] > 0) ana.byVeh[vehKey].hours[hourKey]--;
+                    if(ana.byVeh[vehKey].days[dayKey] > 0) ana.byVeh[vehKey].days[dayKey]--;
+                    if(ana.byVeh[vehKey].months && ana.byVeh[vehKey].months[monthKey] > 0) ana.byVeh[vehKey].months[monthKey]--;
+                    if(ana.byVeh[vehKey].alts[altKey] > 0) ana.byVeh[vehKey].alts[altKey]--;
+                    if(ana.byVeh[vehKey].roads && ana.byVeh[vehKey].roads[roadType] > 0) ana.byVeh[vehKey].roads[roadType]--;
+                }
+
+                // Retirer de la mémoire des séquences récentes si c'est le dernier élément ajouté
+                if(index === history.length - 1 && ana.lastVehicles && ana.lastVehicles.length > 0) {
+                    ana.lastVehicles.pop();
+                }
+                this.storage.set(isTruck ? 'globalAnaTrucks' : 'globalAnaCars', ana);
+            }
+        }
+
+        history.splice(index, 1);
+
+        // Sauvegarde globale unifiée
+        this.storage.set(isTruck ? 'truckCounters' : 'vehicleCounters', counters);
+        this.storage.set(isTruck ? 'globalTruckCounters' : 'globalCarCounters', globalCounters);
+        this.storage.set(isTruck ? 'truckHistory' : 'carHistory', history);
+
+        if(window.ui) { 
+            window.ui.triggerHapticFeedback('error'); 
+            window.ui.showToast(item.isEvent ? "🗑️ Événement supprimé" : "❌ Véhicule supprimé"); 
+        }
+
+        // 🔄 Rafraîchissement des affichages
+        if (isTruck) this.renderTrucks(); else this.renderCars();
+        this.renderKmStats(); 
+        this.renderLiveStats(mode);
+        this.updatePrediction(mode);
         
-        if (this.vehicleCounters[type] + amount >= 0) {
-            if (window.ui) window.ui.playBeep(amount > 0);
-            if (amount > 0) {
-                // 🎁 Hook Gamification
-                if (window.gami) window.gami.notifyVehicleAdded(type, null);
-
-                if (this.currentPredictionCar) {
-                    this.globalAnaCars.predictions.total++;
-                    this.sessionCarPredictions.total++;
-                    if (this.currentPredictionCar.type === type) {
-                        this.globalAnaCars.predictions.success++;
-                        this.sessionCarPredictions.success++;
-                        if(window.ui) window.ui.showToast("🔮 Prédiction exacte !");
-                    }
-                }
-
-                this.vehicleCounters[type] += amount; 
-                this.globalCarCounters[type] += amount; 
-
-                let nowTs = new Date().getTime();
-                let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
-                let roadType = speedKmh === 0 ? "Inconnu" : (speedKmh < 50 ? "Ville (<50km/h)" : (speedKmh <= 80 ? "Route (50-80km/h)" : "Autoroute (>80km/h)"));
-                
-                let histItem = { type: type, lat: window.gps.currentPos.lat, lon: window.gps.currentPos.lon, alt: window.gps.currentPos.alt, speed: speedKmh, road: roadType, chronoTime: this.formatTime(this.carSeconds), timestamp: nowTs };
-                this.carHistory.push(histItem);
-
-                let d = new Date(nowTs);
-                let hourKey = `${d.getHours()}h`;
-                let dayKey = Object.keys(this.globalAnaCars.days)[d.getDay()];
-                let monthKey = Object.keys(this.globalAnaCars.months)[d.getMonth()];
-                let altVal = window.gps.currentPos.alt || 0;
-                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
-
-                this.globalAnaCars.hours[hourKey]++;
-                this.globalAnaCars.days[dayKey]++;
-                this.globalAnaCars.months[monthKey]++;
-                this.globalAnaCars.alts[altKey]++;
-                this.globalAnaCars.roads[roadType]++;
-
-                if (!this.globalAnaCars.byVeh[type]) {
-                    this.globalAnaCars.byVeh[type] = { hours: {}, days: {}, alts: {}, months: {}, roads: {} };
-                }
-                if (!this.globalAnaCars.byVeh[type].months) this.globalAnaCars.byVeh[type].months = {};
-                if (!this.globalAnaCars.byVeh[type].roads) this.globalAnaCars.byVeh[type].roads = {};
-
-                this.globalAnaCars.byVeh[type].hours[hourKey] = (this.globalAnaCars.byVeh[type].hours[hourKey] || 0) + 1;
-                this.globalAnaCars.byVeh[type].days[dayKey] = (this.globalAnaCars.byVeh[type].days[dayKey] || 0) + 1;
-                this.globalAnaCars.byVeh[type].months[monthKey] = (this.globalAnaCars.byVeh[type].months[monthKey] || 0) + 1;
-                this.globalAnaCars.byVeh[type].alts[altKey] = (this.globalAnaCars.byVeh[type].alts[altKey] || 0) + 1;
-                this.globalAnaCars.byVeh[type].roads[roadType] = (this.globalAnaCars.byVeh[type].roads[roadType] || 0) + 1;
-
-                if (!this.globalAnaCars.lastVehicles) this.globalAnaCars.lastVehicles = [];
-                if (!this.globalAnaCars.seqs3) this.globalAnaCars.seqs3 = {};
-
-                if (this.globalAnaCars.lastVehicles.length >= 1) {
-                    let vDernier = this.globalAnaCars.lastVehicles[this.globalAnaCars.lastVehicles.length - 1];
-                    let pair = `${vDernier} ➡️ ${type}`;
-                    this.globalAnaCars.seqs[pair] = (this.globalAnaCars.seqs[pair] || 0) + 1;
-                }
-
-                if (this.globalAnaCars.lastVehicles.length >= 2) {
-                    let vAvantDernier = this.globalAnaCars.lastVehicles[0];
-                    let vDernier = this.globalAnaCars.lastVehicles[1];
-                    let triplet = `${vAvantDernier} ➡️ ${vDernier} ➡️ ${type}`;
-                    this.globalAnaCars.seqs3[triplet] = (this.globalAnaCars.seqs3[triplet] || 0) + 1;
-                }
-
-                this.globalAnaCars.lastVehicles.push(type);
-                if (this.globalAnaCars.lastVehicles.length > 2) {
-                    this.globalAnaCars.lastVehicles.shift();
-                }
-
-                this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
-                
-                let hapticType = 'car';
-                if(type === 'Motos' || type === 'Vélos') hapticType = 'moto';
-                if(type === 'Engins agricoles' || type === 'Camions' || type === 'Bus/Car') hapticType = 'tractor';
-
-                if(window.ui && e) { window.ui.triggerHapticFeedback(hapticType); window.ui.showClickParticle(e, `+1`, '#e74c3c'); }
-                this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
-                this.storage.set('globalCarCounters', JSON.stringify(this.globalCarCounters)); 
-                this.storage.set('carHistory', JSON.stringify(this.carHistory));
-                this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
-                this.updatePrediction('cars');
-            } else if (amount < 0) {
-                for (let i = this.carHistory.length - 1; i >= 0; i--) {
-                    if (!this.carHistory[i].isEvent && this.carHistory[i].type === type) {
-                        this.deleteCarHistoryItem(i); return;
-                    }
-                }
-            }
-        }
+        let statsView = document.getElementById(isTruck ? 'truck-stats-view' : 'car-stats-view');
+        if (statsView && statsView.style.display !== 'none') this.renderAdvancedStats(mode);
     },
 
-// jsapp.js (Partie 3/4)
-
-    deleteTruckHistoryItem(index) {
-        let item = this.truckHistory[index];
-        if (!item.isEvent && this.truckCounters[item.brand] && this.truckCounters[item.brand][item.type] > 0) {
-            this.truckCounters[item.brand][item.type]--;
-            if (this.globalTruckCounters[item.brand] && this.globalTruckCounters[item.brand][item.type] > 0) {
-                this.globalTruckCounters[item.brand][item.type]--;
-            }
-
-            if (item.timestamp) {
-                let d = new Date(item.timestamp);
-                let hourKey = `${d.getHours()}h`;
-                let dayKey = Object.keys(this.globalAnaTrucks.days)[d.getDay()];
-                let monthKey = Object.keys(this.globalAnaTrucks.months)[d.getMonth()];
-                let altVal = item.alt || 0;
-                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
-                let roadType = item.road || "Inconnu";
-
-                if(this.globalAnaTrucks.hours[hourKey] > 0) this.globalAnaTrucks.hours[hourKey]--;
-                if(this.globalAnaTrucks.days[dayKey] > 0) this.globalAnaTrucks.days[dayKey]--;
-                if(this.globalAnaTrucks.months[monthKey] > 0) this.globalAnaTrucks.months[monthKey]--;
-                if(this.globalAnaTrucks.alts[altKey] > 0) this.globalAnaTrucks.alts[altKey]--;
-                if(this.globalAnaTrucks.roads[roadType] > 0) this.globalAnaTrucks.roads[roadType]--;
-
-                if(this.globalAnaTrucks.byVeh && this.globalAnaTrucks.byVeh[item.brand]) {
-                    if(this.globalAnaTrucks.byVeh[item.brand].hours[hourKey] > 0) this.globalAnaTrucks.byVeh[item.brand].hours[hourKey]--;
-                    if(this.globalAnaTrucks.byVeh[item.brand].days[dayKey] > 0) this.globalAnaTrucks.byVeh[item.brand].days[dayKey]--;
-                    if(this.globalAnaTrucks.byVeh[item.brand].months && this.globalAnaTrucks.byVeh[item.brand].months[monthKey] > 0) this.globalAnaTrucks.byVeh[item.brand].months[monthKey]--;
-                    if(this.globalAnaTrucks.byVeh[item.brand].alts[altKey] > 0) this.globalAnaTrucks.byVeh[item.brand].alts[altKey]--;
-                    if(this.globalAnaTrucks.byVeh[item.brand].roads && this.globalAnaTrucks.byVeh[item.brand].roads[roadType] > 0) this.globalAnaTrucks.byVeh[item.brand].roads[roadType]--;
-                }
-
-                if(index === this.truckHistory.length - 1) {
-                    if(this.globalAnaTrucks.lastVehicles && this.globalAnaTrucks.lastVehicles.length > 0) {
-                        this.globalAnaTrucks.lastVehicles.pop();
-                    }
-                }
-                this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
-            }
-        }
-        this.truckHistory.splice(index, 1);
-        this.storage.set('truckCounters', JSON.stringify(this.truckCounters)); 
-        this.storage.set('globalTruckCounters', JSON.stringify(this.globalTruckCounters)); 
-        this.storage.set('truckHistory', JSON.stringify(this.truckHistory));
-        if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast(item.isEvent ? "🗑️ Événement supprimé" : "❌ Camion supprimé"); }
-        this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
-        this.updatePrediction('trucks');
-        if (document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
-    },
-
-    deleteCarHistoryItem(index) {
-        let item = this.carHistory[index];
-        if (!item.isEvent && this.vehicleCounters[item.type] > 0) {
-            this.vehicleCounters[item.type]--;
-            if (this.globalCarCounters[item.type] > 0) this.globalCarCounters[item.type]--;
-
-            if (item.timestamp) {
-                let d = new Date(item.timestamp);
-                let hourKey = `${d.getHours()}h`;
-                let dayKey = Object.keys(this.globalAnaCars.days)[d.getDay()];
-                let monthKey = Object.keys(this.globalAnaCars.months)[d.getMonth()];
-                let altVal = item.alt || 0;
-                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
-                let roadType = item.road || "Inconnu";
-
-                if(this.globalAnaCars.hours[hourKey] > 0) this.globalAnaCars.hours[hourKey]--;
-                if(this.globalAnaCars.days[dayKey] > 0) this.globalAnaCars.days[dayKey]--;
-                if(this.globalAnaCars.months[monthKey] > 0) this.globalAnaCars.months[monthKey]--;
-                if(this.globalAnaCars.alts[altKey] > 0) this.globalAnaCars.alts[altKey]--;
-                if(this.globalAnaCars.roads[roadType] > 0) this.globalAnaCars.roads[roadType]--;
-
-                if(this.globalAnaCars.byVeh && this.globalAnaCars.byVeh[item.type]) {
-                    if(this.globalAnaCars.byVeh[item.type].hours[hourKey] > 0) this.globalAnaCars.byVeh[item.type].hours[hourKey]--;
-                    if(this.globalAnaCars.byVeh[item.type].days[dayKey] > 0) this.globalAnaCars.byVeh[item.type].days[dayKey]--;
-                    if(this.globalAnaCars.byVeh[item.type].months && this.globalAnaCars.byVeh[item.type].months[monthKey] > 0) this.globalAnaCars.byVeh[item.type].months[monthKey]--;
-                    if(this.globalAnaCars.byVeh[item.type].alts[altKey] > 0) this.globalAnaCars.byVeh[item.type].alts[altKey]--;
-                    if(this.globalAnaCars.byVeh[item.type].roads && this.globalAnaCars.byVeh[item.type].roads[roadType] > 0) this.globalAnaCars.byVeh[item.type].roads[roadType]--;
-                }
-
-                if(index === this.carHistory.length - 1) {
-                    if(this.globalAnaCars.lastVehicles && this.globalAnaCars.lastVehicles.length > 0) {
-                        this.globalAnaCars.lastVehicles.pop();
-                    }
-                }
-                this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
-            }
-        }
-        this.carHistory.splice(index, 1);
-        this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
-        this.storage.set('globalCarCounters', JSON.stringify(this.globalCarCounters)); 
-        this.storage.set('carHistory', JSON.stringify(this.carHistory));
-        if(window.ui) { window.ui.triggerHapticFeedback('error'); window.ui.showToast(item.isEvent ? "🗑️ Événement supprimé" : "❌ Véhicule supprimé"); }
-        this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
-        this.updatePrediction('cars');
-        if (document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
-    },
-
-
+    // ↩️ ANNULER LE DERNIER AJOUT (S'adapte dynamiquement à l'onglet actif)
     undoLast() {
-        if(window.ui && window.ui.activeTab === 'trucks' && this.truckHistory.length > 0) { 
-            this.deleteTruckHistoryItem(this.truckHistory.length - 1);
-        } else if(window.ui && window.ui.activeTab === 'cars' && this.carHistory.length > 0) { 
-            this.deleteCarHistoryItem(this.carHistory.length - 1);
-        } else if(window.ui) { window.ui.showToast("Rien à annuler ! 🤷‍♂️"); }
+        let activeTab = window.ui ? window.ui.activeTab : 'trucks';
+        let history = activeTab === 'trucks' ? this.truckHistory : this.carHistory;
+        
+        if(history.length > 0) { 
+            this.deleteHistoryItem(activeTab, history.length - 1);
+        } else if(window.ui) { 
+            window.ui.showToast("Rien à annuler ! 🤷‍♂️"); 
+        }
     },
 
-    resetTrucksData() {
-        this.brands.forEach(b => { this.truckCounters[b] = { fr: 0, etr: 0 }; }); 
-        this.truckHistory = []; this.truckSeconds = 0; this.truckAccumulatedTime = 0; this.liveTruckDistance = 0;
-        this.sessionTruckPredictions = { total: 0, success: 0 };
-        this.storage.set('truckCounters', JSON.stringify(this.truckCounters)); 
-        this.storage.set('truckHistory', JSON.stringify([])); 
-        this.storage.set('truckChronoSec', 0); this.storage.set('truckAccumulatedTime', 0); this.storage.set('liveTruckDist', 0);
-        this.updateTruckChronoDisp(); this.renderTrucks(); this.renderKmStats(); this.renderLiveStats('trucks');
+
+ 4/4) - Fin de la refactorisation (Rendu UI, Stop & Réinitialisation Globale)
+
+    // 🔄 RÉINITIALISATION D'UNE SESSION EN COURS
+    resetSessionData(type) {
+        let isTruck = type === 'trucks';
+        if (isTruck) {
+            this.brands.forEach(b => { this.truckCounters[b] = { fr: 0, etr: 0 }; }); 
+            this.truckHistory = []; this.truckSeconds = 0; this.truckAccumulatedTime = 0; this.liveTruckDistance = 0;
+            this.sessionTruckPredictions = { total: 0, success: 0 };
+        } else {
+            this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0); 
+            this.carHistory = []; this.carSeconds = 0; this.carAccumulatedTime = 0; this.liveCarDistance = 0;
+            this.sessionCarPredictions = { total: 0, success: 0 };
+        }
+        
+        this.storage.set(isTruck ? 'truckCounters' : 'vehicleCounters', isTruck ? this.truckCounters : this.vehicleCounters); 
+        this.storage.set(isTruck ? 'truckHistory' : 'carHistory', []); 
+        this.storage.set(isTruck ? 'truckChronoSec' : 'carChronoSec', 0); 
+        this.storage.set(isTruck ? 'truckAccumulatedTime' : 'carAccumulatedTime', 0); 
+        this.storage.set(isTruck ? 'liveTruckDist' : 'liveCarDist', 0);
+        
+        this.updateChronoDisp(type); 
+        if (isTruck) this.renderTrucks(); else this.renderCars();
+        this.renderKmStats(); 
+        this.renderLiveStats(type);
     },
-    async stopTruckSession() {
-        if (this.isTruckRunning) this.toggleTruckChrono(); 
-        if (this.truckSeconds === 0 && this.truckHistory.length === 0) { this.resetTrucksData(); return; }
+
+    // ⏹️ ARRÊT UNIFIÉ DE SESSION
+    async stopSession(type) {
+        let isTruck = type === 'trucks';
+        let isRunning = isTruck ? this.isTruckRunning : this.isCarRunning;
+        let seconds = isTruck ? this.truckSeconds : this.carSeconds;
+        let history = isTruck ? this.truckHistory : this.carHistory;
+
+        if (isRunning) this.toggleChrono(type); 
+        
+        if (seconds === 0 && history.length === 0) { 
+            this.resetSessionData(type); 
+            return; 
+        }
+        
         if (confirm("⏹️ Trajet terminé ! Veux-tu enregistrer cette session ?")) { 
             if(window.ui) window.ui.showToast("⏳ Géocodage des adresses en cours...");
-            await this.saveSession('trucks'); 
+            await this.saveSession(type); 
         } 
-        else if (confirm("⚠️ La session sera effacée. Confirmer ?")) this.resetTrucksData();
+        else if (confirm("⚠️ La session sera effacée. Confirmer ?")) {
+            this.resetSessionData(type);
+        }
     },
 
-    resetCarsData() {
-        this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0); 
-        this.carHistory = []; this.carSeconds = 0; this.carAccumulatedTime = 0; this.liveCarDistance = 0;
-        this.sessionCarPredictions = { total: 0, success: 0 };
-        this.storage.set('vehicleCounters', JSON.stringify(this.vehicleCounters)); 
-        this.storage.set('carHistory', JSON.stringify([])); 
-        this.storage.set('carChronoSec', 0); this.storage.set('carAccumulatedTime', 0); this.storage.set('liveCarDist', 0);
-        this.updateCarChronoDisp(); this.renderCars(); this.renderKmStats(); this.renderLiveStats('cars');
-    },
-    async stopCarSession() {
-        if (this.isCarRunning) this.toggleCarChrono(); 
-        if (this.carSeconds === 0 && this.carHistory.length === 0) { this.resetCarsData(); return; }
-        if (confirm("⏹️ Trajet terminé ! Veux-tu enregistrer cette session ?")) { 
-            if(window.ui) window.ui.showToast("⏳ Géocodage des adresses en cours...");
-            await this.saveSession('cars'); 
-        } 
-        else if (confirm("⚠️ La session sera effacée. Confirmer ?")) this.resetCarsData();
-    },
-
+    // 💾 SAUVEGARDE UNIFIÉE
     async saveSession(type) {
+        let isTruck = type === 'trucks';
         let dateStr = new Date().toLocaleString('fr-FR');
-        let history = type === 'trucks' ? this.truckHistory : this.carHistory;
+        let history = isTruck ? this.truckHistory : this.carHistory;
         
         let startDateStr = dateStr;
         if (history.length > 0 && history[0].timestamp) {
@@ -989,11 +860,11 @@ const app = {
             date: dateStr, 
             startAddress: startAddress, 
             endAddress: endAddress, 
-            durationSec: type === 'trucks' ? this.truckSeconds : this.carSeconds, 
-            distanceKm: parseFloat((type === 'trucks' ? this.liveTruckDistance : this.liveCarDistance).toFixed(2)), 
+            durationSec: isTruck ? this.truckSeconds : this.carSeconds, 
+            distanceKm: parseFloat((isTruck ? this.liveTruckDistance : this.liveCarDistance).toFixed(2)), 
             history: history, 
-            summary: JSON.parse(JSON.stringify(type === 'trucks' ? this.truckCounters : this.vehicleCounters)),
-            predictions: type === 'trucks' ? { ...this.sessionTruckPredictions } : { ...this.sessionCarPredictions }
+            summary: JSON.parse(JSON.stringify(isTruck ? this.truckCounters : this.vehicleCounters)),
+            predictions: isTruck ? { ...this.sessionTruckPredictions } : { ...this.sessionCarPredictions }
         };
 
         await this.idb.add(newSession);
@@ -1004,199 +875,40 @@ const app = {
             });
         }
 
-        if (type === 'trucks') this.resetTrucksData(); 
-        else this.resetCarsData(); 
-        
+        this.resetSessionData(type);
         if(window.ui) window.ui.showToast("💾 Session sauvegardée !");
     },
 
-    async resetTrucks() { 
-        if (confirm(`⚠️ Effacer toutes les sessions Camions de ${this.currentUser} ? Tes stats globales resteront intactes !`)) { 
-            await this.idb.clear('trucks'); 
-            // 🧠 NOUVEAU : On supprime le modèle IA des camions
-            try {
-                if (typeof tf !== 'undefined') await tf.io.removeModel('indexeddb://model-trucks');
-                if (window.ml) { window.ml.modelTrucks = null; window.ml.updateUIStatus(); }
-            } catch(e) { console.log("Pas de modèle camions à supprimer"); }
+    // 🚨 REMISE À ZÉRO TOTALE DU PROFIL (Bouton rouge)
+    async resetProfileData() {
+        if (confirm(`🚨 ATTENTION GÉGÉ... euh SYLVAIN ! Tu es sur le point d'effacer TOUT ton historique, tes sessions, tes stats globales et l'IA pour ton profil actuel (${this.currentUser} - ${this.currentMode}). C'est totalement irréversible. Es-tu VRAIMENT sûr ?`)) {
             
-            this.renderAdvancedStats('trucks'); 
-            window.ui.showToast("🗑️ Historique des sessions effacé"); 
-        } 
-    },
-    async resetCars() { 
-        if (confirm(`⚠️ Effacer toutes les sessions Véhicules de ${this.currentUser} ? Tes stats globales resteront intactes !`)) { 
-            await this.idb.clear('cars'); 
-            // 🧠 NOUVEAU : On supprime le modèle IA des voitures
-            try {
-                if (typeof tf !== 'undefined') await tf.io.removeModel('indexeddb://model-cars');
-                if (window.ml) { window.ml.modelCars = null; window.ml.updateUIStatus(); }
-            } catch(e) { console.log("Pas de modèle voitures à supprimer"); }
-            
-            this.renderAdvancedStats('cars'); 
-            window.ui.showToast("🗑️ Historique des sessions effacé"); 
-        } 
-    },
+            // 1. Vider la base IndexedDB pour ce profil et ce mode
+            await this.idb.clear('trucks');
+            await this.idb.clear('cars');
 
-    resetGlobalStats() {
-        if (confirm(`⚠️ Es-tu sûr de vouloir effacer TOUTES les statistiques globales et analyses pour le profil de ${this.currentUser} ? Action irréversible !`)) {
-            this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
-            this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
-            this.globalTruckDistance = 0; this.globalTruckTime = 0;
-            this.globalCarDistance = 0; this.globalCarTime = 0;
-            
-            this.globalAnaTrucks = this.getEmptyAnalytics();
-            this.globalAnaCars = this.getEmptyAnalytics();
-            this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
-            this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
-            
-            this.storage.set('globalTruckCounters', JSON.stringify(this.globalTruckCounters));
-            this.storage.set('globalCarCounters', JSON.stringify(this.globalCarCounters));
-            this.storage.set('globalTruckDistance', 0); this.storage.set('globalTruckTime', 0);
-            this.storage.set('globalCarDistance', 0); this.storage.set('globalCarTime', 0);
-            
-            // 🧠 NOUVEAU : On supprime tous les modèles IA
+            // 2. Vider le LocalStorage unifié
+            this.storage.clearAll();
+
+            // 3. Effacer la gamification de cet utilisateur
+            localStorage.removeItem(`gami_state_${this.currentUser}`);
+
+            // 4. Détruire les modèles IA de TensorFlow
             try {
                 if (typeof tf !== 'undefined') {
                     tf.io.removeModel('indexeddb://model-trucks').catch(e => {});
                     tf.io.removeModel('indexeddb://model-cars').catch(e => {});
                 }
-                if (window.ml) { 
-                    window.ml.modelTrucks = null; 
-                    window.ml.modelCars = null; 
-                    window.ml.updateUIStatus(); 
-                }
             } catch(e) {}
+
+            if(window.ui) window.ui.showToast("💥 KABOOM ! Profil entièrement réinitialisé ! Redémarrage...");
             
-            this.renderDashboard('trucks');
-            if(window.ui) window.ui.showToast("🗑️ Statistiques globales et IA effacées !");
+            // 5. Recharger la page pour tout remettre au propre
+            setTimeout(() => { location.reload(); }, 1500);
         }
     },
 
-    async deleteSessionsByDateRange() {
-        let startInput = document.getElementById('delete-start-date').value;
-        let endInput = document.getElementById('delete-end-date').value;
-
-        // Si la date de début est vide, on prend l'an 0. Si la fin est vide, on prend aujourd'hui.
-        let startTs = startInput ? new Date(startInput).setHours(0, 0, 0, 0) : 0; 
-        let endTs = endInput ? new Date(endInput).setHours(23, 59, 59, 999) : Date.now();
-
-        if (startInput && endInput && startTs > endTs) {
-            if(window.ui) window.ui.showToast("⚠️ La date de début doit être avant la date de fin.");
-            return;
-        }
-
-        if (!confirm(`⚠️ Attention Sylvain ! Tu vas supprimer des sessions ET recalculer tous les totaux globaux pour cette période. Cette action est irréversible. Continuer ?`)) {
-            return;
-        }
-
-        // 1. On récupère toutes les sessions de ton profil
-        let allTruckSessions = await this.idb.getAll('trucks');
-        let allCarSessions = await this.idb.getAll('cars');
-        
-        let tx = this.idb.db.transaction('sessions', 'readwrite');
-        let store = tx.objectStore('sessions');
-        
-        let deletedCount = 0;
-        let keptTruckSessions = [];
-        let keptCarSessions = [];
-
-        // 2. On trie : on supprime celles dans la période, on garde les autres
-        allTruckSessions.forEach(s => {
-            let sessionTs = parseInt(s.id);
-            if (sessionTs >= startTs && sessionTs <= endTs) {
-                store.delete(s.id);
-                deletedCount++;
-            } else {
-                keptTruckSessions.push(s);
-            }
-        });
-
-        allCarSessions.forEach(s => {
-            let sessionTs = parseInt(s.id);
-            if (sessionTs >= startTs && sessionTs <= endTs) {
-                store.delete(s.id);
-                deletedCount++;
-            } else {
-                keptCarSessions.push(s);
-            }
-        });
-
-        if (deletedCount === 0) {
-            if(window.ui) window.ui.showToast("🤷‍♂️ Aucune session trouvée sur cette période.");
-            return;
-        }
-
-        // 3. Une fois la suppression terminée, on lance la reconstruction globale
-        tx.oncomplete = async () => {
-            // A. Remise à zéro totale des variables globales
-            this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
-            this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
-            this.globalTruckDistance = 0; this.globalTruckTime = 0;
-            this.globalCarDistance = 0; this.globalCarTime = 0;
-            
-            this.globalAnaTrucks = this.getEmptyAnalytics();
-            this.globalAnaCars = this.getEmptyAnalytics();
-            
-            // B. Recalcul depuis les sessions camions conservées
-            keptTruckSessions.forEach(s => {
-                this.globalTruckDistance += (s.distanceKm || 0);
-                this.globalTruckTime += (s.durationSec || 0);
-                
-                if (s.summary) {
-                    Object.keys(s.summary).forEach(b => {
-                        if (this.globalTruckCounters[b] && s.summary[b]) {
-                            this.globalTruckCounters[b].fr += (s.summary[b].fr || 0);
-                            this.globalTruckCounters[b].etr += (s.summary[b].etr || 0);
-                        }
-                    });
-                }
-                if (s.predictions) {
-                    this.globalAnaTrucks.predictions.total += (s.predictions.total || 0);
-                    this.globalAnaTrucks.predictions.success += (s.predictions.success || 0);
-                }
-            });
-
-            // C. Recalcul depuis les sessions véhicules conservées
-            keptCarSessions.forEach(s => {
-                this.globalCarDistance += (s.distanceKm || 0);
-                this.globalCarTime += (s.durationSec || 0);
-                
-                if (s.summary) {
-                    Object.keys(s.summary).forEach(v => {
-                        if (this.globalCarCounters[v] !== undefined) {
-                            this.globalCarCounters[v] += (s.summary[v] || 0);
-                        }
-                    });
-                }
-                if (s.predictions) {
-                    this.globalAnaCars.predictions.total += (s.predictions.total || 0);
-                    this.globalAnaCars.predictions.success += (s.predictions.success || 0);
-                }
-            });
-
-            // D. Reconstruction des analyses complexes (heures, jours, routes, séquences IA...)
-            await this.buildPermanentAnalyticsFromIDB('trucks', this.globalAnaTrucks);
-            await this.buildPermanentAnalyticsFromIDB('cars', this.globalAnaCars);
-
-            // E. Sauvegarde dans le navigateur
-            this.storage.set('globalTruckCounters', JSON.stringify(this.globalTruckCounters));
-            this.storage.set('globalCarCounters', JSON.stringify(this.globalCarCounters));
-            this.storage.set('globalTruckDistance', this.globalTruckDistance);
-            this.storage.set('globalTruckTime', this.globalTruckTime);
-            this.storage.set('globalCarDistance', this.globalCarDistance);
-            this.storage.set('globalCarTime', this.globalCarTime);
-            this.storage.set('globalAnaTrucks', JSON.stringify(this.globalAnaTrucks));
-            this.storage.set('globalAnaCars', JSON.stringify(this.globalAnaCars));
-
-            // F. Rafraîchissement de l'interface
-            this.renderDashboard('trucks');
-            this.renderAdvancedStats('trucks');
-            this.renderAdvancedStats('cars');
-            
-            if(window.ui) window.ui.showToast(`🧹 ${deletedCount} session(s) et les données globales ont été nettoyées !`);
-        };
-    },
-
+    // 🚛 RENDU DES COMPTEURS CAMIONS
     renderTrucks() {
         const container = document.getElementById('truck-container'); if(!container) return;
         container.innerHTML = '';
@@ -1209,7 +921,22 @@ const app = {
             grandTotal += tot; totalFr += fr; totalEtr += etr;
             if (tot > maxScore) { maxScore = tot; leader = brand; }
             
-            container.innerHTML += `<div class="brand-card"><div class="brand-name">${brand}</div><div class="counter-section"><span class="flag">🇫🇷</span><button class="btn-corr" onclick="window.app.updateTruck(event, '${brand}', 'fr', -1)">-</button><span class="score">${fr}</span><button class="btn-add btn-add-fr" onclick="window.app.updateTruck(event, '${brand}', 'fr', 1)">+</button></div><div class="counter-section"><span class="flag">🌍</span><button class="btn-corr" onclick="window.app.updateTruck(event, '${brand}', 'etr', -1)">-</button><span class="score">${etr}</span><button class="btn-add btn-add-etr" onclick="window.app.updateTruck(event, '${brand}', 'etr', 1)">+</button></div></div>`;
+            container.innerHTML += `
+                <div class="brand-card">
+                    <div class="brand-name">${brand}</div>
+                    <div class="counter-section">
+                        <span class="flag">🇫🇷</span>
+                        <button class="btn-corr" onclick="window.app.updateCounter('trucks', '${brand}', 'fr', -1, event)">-</button>
+                        <span class="score">${fr}</span>
+                        <button class="btn-add btn-add-fr" onclick="window.app.updateCounter('trucks', '${brand}', 'fr', 1, event)">+</button>
+                    </div>
+                    <div class="counter-section">
+                        <span class="flag">🌍</span>
+                        <button class="btn-corr" onclick="window.app.updateCounter('trucks', '${brand}', 'etr', -1, event)">-</button>
+                        <span class="score">${etr}</span>
+                        <button class="btn-add btn-add-etr" onclick="window.app.updateCounter('trucks', '${brand}', 'etr', 1, event)">+</button>
+                    </div>
+                </div>`;
         });
 
         let gtEl = document.getElementById('grand-total'); if(gtEl) gtEl.innerText = grandTotal; 
@@ -1220,6 +947,7 @@ const app = {
         let barEtr = document.getElementById('bar-etr'); if(barEtr) { barEtr.style.width = (100 - pctFr) + '%'; barEtr.innerText = grandTotal > 0 ? `🌍 ${100 - pctFr}%` : ''; }
     },
 
+    // 🚗 RENDU DES COMPTEURS VOITURES
     renderCars() {
         const container = document.getElementById('car-container'); if(!container) return;
         container.innerHTML = ''; 
@@ -1241,12 +969,19 @@ const app = {
         this.vehicleTypes.forEach(v => {
             let score = this.vehicleCounters[v] || 0;
             let displayName = nameMap[v] || v;
-            container.innerHTML += `<div class="vehicle-card"><div class="vehicle-name">${icons[v] || "🚘"} ${displayName}</div><div class="vehicle-controls"><button class="btn-corr" onclick="window.app.updateVehicle(event, '${v}', -1)">-</button><span class="vehicle-score">${score}</span><button class="btn-add btn-add-fr" onclick="window.app.updateVehicle(event, '${v}', 1)">+</button></div></div>`;
+            container.innerHTML += `
+                <div class="vehicle-card">
+                    <div class="vehicle-name">${icons[v] || "🚘"} ${displayName}</div>
+                    <div class="vehicle-controls">
+                        <button class="btn-corr" onclick="window.app.updateCounter('cars', '${v}', null, -1, event)">-</button>
+                        <span class="vehicle-score">${score}</span>
+                        <button class="btn-add btn-add-fr" onclick="window.app.updateCounter('cars', '${v}', null, 1, event)">+</button>
+                    </div>
+                </div>`;
         });
-    },
+    }
 
-// jsapp.js (Partie 4/4)
-
+    // 📊 AFFICHAGE DES STATISTIQUES EN TEMPS RÉEL (Vitesse, rythme...)
     renderLiveStats(type) {
         let container = document.getElementById(type === 'trucks' ? 'truck-live-stats' : 'car-live-stats');
         if (!container) return;
@@ -1279,6 +1014,7 @@ const app = {
         `;
     },
 
+    // 📈 STATISTIQUES AU KILOMÈTRE
     renderKmStats() {
         let tContainer = document.getElementById('truck-km-list');
         if (tContainer) {
@@ -1300,10 +1036,7 @@ const app = {
                 });
                 
                 statsArr.sort((a,b) => b.ratio - a.ratio);
-                statsArr.forEach(st => {
-                    html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span><span class="km-stat-extra">⏱️ ${st.freq}</span></div>`;
-                });
-                
+                statsArr.forEach(st => { html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span><span class="km-stat-extra">⏱️ ${st.freq}</span></div>`; });
                 tContainer.innerHTML = html;
             } else { tContainer.innerHTML = '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Roule un peu pour voir les stats... 🚚💨</span>'; }
         }
@@ -1329,18 +1062,15 @@ const app = {
                 });
                 
                 statsArr.sort((a,b) => b.ratio - a.ratio);
-                statsArr.forEach(st => {
-                    html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span><span class="km-stat-extra">⏱️ ${st.freq}</span></div>`;
-                });
-                
+                statsArr.forEach(st => { html += `<div class="km-stat-card"><span class="km-stat-title">${st.name}</span><span class="km-stat-value">${st.ratioStr} /km</span><span class="km-stat-extra">⏱️ ${st.freq}</span></div>`; });
                 cContainer.innerHTML = html;
             } else { cContainer.innerHTML = '<span style="color:#7f8c8d; font-size: 0.9em; grid-column: 1 / -1;">Roule un peu pour voir les stats... 🚗💨</span>'; }
         }
     },
 
+    // 🔍 AFFICHER LES DÉTAILS GLOBAUX
     async showGlobalDetails(type, key) {
-        let count = 0, time = 0, dist = 0;
-        let title = "";
+        let count = 0, time = 0, dist = 0, title = "";
 
         if (type === 'trucks') {
             time = this.globalTruckTime; dist = this.globalTruckDistance;
@@ -1348,8 +1078,7 @@ const app = {
                 title = "🚛 Total toutes Marques";
                 this.brands.forEach(b => count += (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0));
             } else {
-                title = `🚛 ${key}`;
-                count = (this.globalTruckCounters[key]?.fr || 0) + (this.globalTruckCounters[key]?.etr || 0);
+                title = `🚛 ${key}`; count = (this.globalTruckCounters[key]?.fr || 0) + (this.globalTruckCounters[key]?.etr || 0);
             }
         } else {
             time = this.globalCarTime; dist = this.globalCarDistance;
@@ -1357,8 +1086,7 @@ const app = {
                 title = "🚗 Total tous Véhicules";
                 this.vehicleTypes.forEach(v => count += (this.globalCarCounters[v] || 0));
             } else {
-                title = `🚘 ${key === 'Camions' ? 'Poids Lourds' : key}`;
-                count = this.globalCarCounters[key] || 0;
+                title = `🚘 ${key === 'Camions' ? 'Poids Lourds' : key}`; count = this.globalCarCounters[key] || 0;
             }
         }
 
@@ -1372,7 +1100,7 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Temps total cumulé</span><span class="session-detail-value">${this.formatTime(time)}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Distance totale cumulée</span><span class="session-detail-value">${dist.toFixed(2)} km</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne Globale</span><span class="session-detail-value" style="color:#f39c12;">${time > 0 ? (dist / (time/3600)).toFixed(1) : '-'} km/h</span></div>
-            <div style="border-top: 2px dashed #eee; margin: 15px 0;"></div>
+            <div style="border-top: 2px dashed var(--border-color); margin: 15px 0;"></div>
             <div class="session-detail-row"><span class="session-detail-label">Quantité globale comptée</span><span class="session-detail-value" style="color:#27ae60; font-size:1.1em;">${count}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Moyenne par km</span><span class="session-detail-value" style="color:#8e44ad;">${avgKm}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Apparitions par minute</span><span class="session-detail-value">${freq}</span></div>
@@ -1383,10 +1111,8 @@ const app = {
         if (key === 'Total') {
              let preds = type === 'trucks' ? this.globalAnaTrucks.predictions : this.globalAnaCars.predictions;
              let predScore = "-";
-             if (preds && preds.total > 0) {
-                 predScore = Math.round((preds.success / preds.total) * 100) + "% (" + preds.success + "/" + preds.total + ")";
-             }
-             html += `<div style="border-top: 2px dashed #eee; margin: 15px 0;"></div><div class="session-detail-row"><span class="session-detail-label">🔮 Taux de réussite prédictions</span><span class="session-detail-value" style="color:#8e44ad; font-weight:bold;">${predScore}</span></div>`;
+             if (preds && preds.total > 0) predScore = Math.round((preds.success / preds.total) * 100) + "% (" + preds.success + "/" + preds.total + ")";
+             html += `<div style="border-top: 2px dashed var(--border-color); margin: 15px 0;"></div><div class="session-detail-row"><span class="session-detail-label">🔮 Taux de réussite prédictions</span><span class="session-detail-value" style="color:#8e44ad; font-weight:bold;">${predScore}</span></div>`;
         }
 
         document.getElementById('modal-session-title').innerText = `🌍 Stats Globales : ${title}`;
@@ -1397,14 +1123,10 @@ const app = {
         document.getElementById('modal-weekly-section').style.display = 'block';
 
         document.getElementById('session-detail-modal').style.display = 'flex';
-
         let btnPdf = document.getElementById('btn-export-pdf');
-        if(btnPdf) {
-            btnPdf.onclick = () => window.app.exportSessionPDF();
-        }
+        if(btnPdf) btnPdf.onclick = () => window.app.exportSessionPDF();
 
         let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
-
         let hoursSource = key === 'Total' ? anaData.hours : (anaData.byVeh[key]?.hours || {});
         let daysSource = key === 'Total' ? anaData.days : (anaData.byVeh[key]?.days || {});
         let altsSource = key === 'Total' ? anaData.alts : (anaData.byVeh[key]?.alts || {});
@@ -1489,6 +1211,7 @@ const app = {
         }
     },
 
+    // 📈 GESTION DU TABLEAU DE BORD (DASHBOARD)
     async applyDashboardFilter(filterValue) {
         this.currentDashboardFilter = filterValue;
         await this.renderDashboard(this.activeDashboardType || 'trucks');
@@ -1513,9 +1236,7 @@ const app = {
         let allHistories = [];
         let now = new Date();
         
-        if (liveHistory && liveHistory.length > 0) {
-            allHistories.push({ history: liveHistory });
-        }
+        if (liveHistory && liveHistory.length > 0) allHistories.push({ history: liveHistory });
         sessions.forEach(s => allHistories.push(s)); 
 
         let counters = {};
@@ -1527,13 +1248,10 @@ const app = {
         let seqs = {}; 
         let dayKeys = Object.keys(days);
         let monthKeys = Object.keys(months);
-        let gTotal = 0;
-        let gTotalDist = 0;
-        let frTotal = 0, etrTotal = 0;
+        let gTotal = 0, gTotalDist = 0, frTotal = 0, etrTotal = 0;
 
         allHistories.forEach(s => {
             if (!s.history || s.history.length === 0) return;
-            
             let firstItem = s.history.find(h => h.timestamp);
             if (!firstItem) return;
             let sDate = new Date(firstItem.timestamp);
@@ -1544,22 +1262,18 @@ const app = {
             gTotalDist += (!s.id) ? (type === 'trucks' ? this.liveTruckDistance : this.liveCarDistance) : (s.distanceKm || 0);
 
             let sHist = s.history.filter(h => !h.isEvent);
-            
             sHist.forEach((h, i) => {
                 let vehType = type === 'trucks' ? h.brand : h.type;
-                
                 counters[vehType] = (counters[vehType] || 0) + 1;
                 gTotal++;
 
                 if (type === 'trucks') {
-                    if (h.type === 'fr') frTotal++;
-                    else if (h.type === 'etr') etrTotal++;
+                    if (h.type === 'fr') frTotal++; else if (h.type === 'etr') etrTotal++;
                 }
 
                 if (h.timestamp) {
                     let d = new Date(h.timestamp);
-                    days[dayKeys[d.getDay()]]++;
-                    months[monthKeys[d.getMonth()]]++;
+                    days[dayKeys[d.getDay()]]++; months[monthKeys[d.getMonth()]]++;
                 }
 
                 let altVal = h.alt || 0;
@@ -1574,13 +1288,6 @@ const app = {
                     let pair = `${vehType} ➡️ ${nxt}`;
                     seqs[pair] = (seqs[pair] || 0) + 1;
                 }
-                
-                if (i < sHist.length - 2) {
-                    let nxt1 = type === 'trucks' ? sHist[i+1].brand : sHist[i+1].type;
-                    let nxt2 = type === 'trucks' ? sHist[i+2].brand : sHist[i+2].type;
-                    let triplet = `${vehType} ➡️ ${nxt1} ➡️ ${nxt2}`;
-                    seqs[triplet] = (seqs[triplet] || 0) + 1;
-                }
             });
         });
 
@@ -1593,28 +1300,22 @@ const app = {
         let gRatio = gTotalDist > 0 ? (gTotal / gTotalDist).toFixed(1) + " /km" : "- /km";
         let htmlList = `<div class="km-stat-card" style="border-color:${type === 'trucks' ? '#27ae60' : '#3498db'}; cursor:pointer; background:var(--bg-color);" onclick="window.app.showGlobalDetails('${type}', 'Total')"><span class="km-stat-title">${type === 'trucks' ? 'Toutes Marques' : 'Tous Véhicules'}</span><span class="km-stat-value" style="color:${type === 'trucks' ? '#27ae60' : '#3498db'}; font-size:0.9em;">🔍 Voir Absolus</span><span style="display:block; font-size:0.75em; color:#7f8c8d; margin-top:3px;">${gRatio}</span></div>`;
         
-        let labelsForChart = [];
-        let dataForChart = [];
-        
-        let itemsArr = [];
+        let labelsForChart = [], dataForChart = [], itemsArr = [];
         let typeList = type === 'trucks' ? this.brands : this.vehicleTypes;
+        
         typeList.forEach(item => {
             let count = counters[item] || 0;
-            if (count > 0) {
-                itemsArr.push({ name: item, count: count });
-            }
+            if (count > 0) itemsArr.push({ name: item, count: count });
         });
         
         itemsArr.sort((a, b) => b.count - a.count);
 
         itemsArr.forEach(obj => {
-            let item = obj.name;
-            let count = obj.count;
+            let item = obj.name; let count = obj.count;
             let ratio = gTotalDist > 0 ? (count / gTotalDist).toFixed(1) + " /km" : "";
             let displayItem = item === 'Camions' && type === 'cars' ? 'Poids Lourds' : item;
             htmlList += `<div class="km-stat-card" style="cursor:pointer; position:relative;" onclick="window.app.showGlobalDetails('${type}', '${item}')"><span class="km-stat-title">${displayItem}</span><span class="km-stat-value">${count}</span><span style="display:block; font-size:0.75em; color:#7f8c8d; margin-top:3px;">${ratio}</span></div>`;
-            labelsForChart.push(displayItem);
-            dataForChart.push(count);
+            labelsForChart.push(displayItem); dataForChart.push(count);
         });
 
         let ttEl = document.getElementById('dash-grand-total'); if(ttEl) ttEl.innerText = gTotal;
@@ -1639,46 +1340,21 @@ const app = {
         let ctxAi = document.getElementById('aiEvolutionChart');
         if (ctxAi) {
             if (this.aiEvolutionChart) this.aiEvolutionChart.destroy();
-            
             let aiSessions = sessions.filter(s => s.predictions && s.predictions.total > 0).slice(-10);
             
             if (aiSessions.length > 0) {
-                let aiLabels = [];
-                let aiData = [];
-                
+                let aiLabels = [], aiData = [];
                 aiSessions.forEach((s, idx) => {
                     aiLabels.push(`Sess. ${idx + 1}`);
-                    let successRate = Math.round((s.predictions.success / s.predictions.total) * 100);
-                    aiData.push(successRate);
+                    aiData.push(Math.round((s.predictions.success / s.predictions.total) * 100));
                 });
-
                 this.aiEvolutionChart = new Chart(ctxAi, {
                     type: 'line',
-                    data: {
-                        labels: aiLabels,
-                        datasets: [{
-                            label: 'Précision IA (%)',
-                            data: aiData,
-                            borderColor: '#8e44ad',
-                            backgroundColor: 'rgba(142, 68, 173, 0.2)',
-                            fill: true,
-                            tension: 0.4,
-                            pointBackgroundColor: '#8e44ad'
-                        }]
-                    },
-                    options: {
-                        maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            y: { beginAtZero: true, max: 100, ticks: { color: textColor, callback: function(val) { return val + '%'; } } },
-                            x: { ticks: { color: textColor } }
-                        }
-                    }
+                    data: { labels: aiLabels, datasets: [{ label: 'Précision IA (%)', data: aiData, borderColor: '#8e44ad', backgroundColor: 'rgba(142, 68, 173, 0.2)', fill: true, tension: 0.4, pointBackgroundColor: '#8e44ad' }] },
+                    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100, ticks: { color: textColor, callback: function(val) { return val + '%'; } } }, x: { ticks: { color: textColor } } } }
                 });
                 ctxAi.parentElement.style.display = 'block';
-            } else {
-                ctxAi.parentElement.style.display = 'none'; 
-            }
+            } else { ctxAi.parentElement.style.display = 'none'; }
         }
 
         let natContainer = document.getElementById('dash-nat-container');
@@ -1693,9 +1369,7 @@ const app = {
                     options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
                 });
             }
-        } else {
-            if (natContainer) natContainer.style.display = 'none';
-        }
+        } else { if (natContainer) natContainer.style.display = 'none'; }
 
         let ctxW = document.getElementById('weeklyChart');
         if(ctxW) {
@@ -1740,12 +1414,11 @@ const app = {
         let seqArr = Object.entries(seqs).sort((a,b) => b[1] - a[1]).slice(0, 5);
         let seqHtml = '';
         if(seqArr.length === 0) seqHtml = '<p style="color:#7f8c8d; font-size:0.9em;">Pas assez de données pour lier des séquences.</p>';
-        seqArr.forEach(item => {
-            seqHtml += `<div class="sequence-item"><span class="sequence-flow">${item[0]}</span><span class="sequence-count">${item[1]}x</span></div>`;
-        });
+        seqArr.forEach(item => { seqHtml += `<div class="sequence-item"><span class="sequence-flow">${item[0]}</span><span class="sequence-count">${item[1]}x</span></div>`; });
         document.getElementById('sequence-container').innerHTML = seqHtml;
     },
 
+    // 🔍 AFFICHER LES DÉTAILS D'UNE SESSION PRÉCISE
     async showSessionDetails(type, sessionId) {
         let session = await this.idb.getById(sessionId);
         if(!session) return;
@@ -1778,7 +1451,7 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Rythme</span><span class="session-detail-value">${speed} /h</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Moyenne</span><span class="session-detail-value">${avgKm} /km</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Espacement Moyen</span><span class="session-detail-value">${espTemps} / ${espDist}</span></div>
-            <div style="border-top: 2px dashed #eee; margin: 10px 0;"></div>
+            <div style="border-top: 2px dashed var(--border-color); margin: 10px 0;"></div>
             <div class="session-detail-row"><span class="session-detail-label">🔮 Réussite Prédictions</span><span class="session-detail-value" style="color:#8e44ad; font-weight:bold;">${predTxt}</span></div>
         `;
         document.getElementById('modal-session-title').innerText = type === 'trucks' ? '🚛 Détails Session Camions' : '🚗 Détails Session Véhicules';
@@ -1788,30 +1461,20 @@ const app = {
         if (titleEl) titleEl.innerText = "📈 Densité Temporelle (Session)";
         document.getElementById('modal-weekly-section').style.display = 'none';
         
-        let altSection = document.getElementById('modal-altitude-section');
-        if (altSection) altSection.style.display = 'none'; 
-        
-        let monthSection = document.getElementById('modal-monthly-section');
-        if (monthSection) monthSection.style.display = 'none';
-        
-        let roadSection = document.getElementById('modal-road-section');
-        if (roadSection) roadSection.style.display = 'none';
+        let altSection = document.getElementById('modal-altitude-section'); if (altSection) altSection.style.display = 'none'; 
+        let monthSection = document.getElementById('modal-monthly-section'); if (monthSection) monthSection.style.display = 'none';
+        let roadSection = document.getElementById('modal-road-section'); if (roadSection) roadSection.style.display = 'none';
 
         document.getElementById('session-detail-modal').style.display = 'flex';
-
         let btnPdf = document.getElementById('btn-export-pdf');
-        if(btnPdf) {
-            btnPdf.onclick = () => window.app.exportSessionPDF();
-        }
+        if(btnPdf) btnPdf.onclick = () => window.app.exportSessionPDF();
 
         let ctxD = document.getElementById('temporalDensityChart');
         if(ctxD) {
             if(this.temporalChart) this.temporalChart.destroy();
-            
             if(itemsCount > 0) {
                 let firstTime = items[0].timestamp;
                 let blocks = {};
-                
                 items.forEach(h => {
                     let minOffset = Math.floor((h.timestamp - firstTime) / 60000);
                     let blockIndex = Math.floor(minOffset / 5) * 5; 
@@ -1821,7 +1484,6 @@ const app = {
                 
                 let isDark = document.body.classList.contains('dark-mode');
                 let tColor = isDark ? '#d2dae2' : '#333';
-                
                 this.temporalChart = new Chart(ctxD, {
                     type: 'bar',
                     data: { labels: Object.keys(blocks), datasets: [{ label: 'Véhicules / 5 min', data: Object.values(blocks), backgroundColor: '#3498db', borderRadius: 4 }] },
@@ -1832,22 +1494,17 @@ const app = {
     },
 
     exportSessionPDF() {
-        if (typeof html2pdf === 'undefined') {
-            if(window.ui) window.ui.showToast("⚠️ Outil PDF non chargé.");
-            return;
-        }
+        if (typeof html2pdf === 'undefined') { if(window.ui) window.ui.showToast("⚠️ Outil PDF non chargé."); return; }
         
         let element = document.getElementById('pdf-export-content');
         let btns = element.querySelectorAll('button');
-        
         btns.forEach(b => b.style.display = 'none');
         
         let opt = {
-            margin:       10,
-            filename:     `Bilan_Compteur_${new Date().toISOString().slice(0,10)}.pdf`,
-            image:        { type: 'jpeg', quality: 0.98 },
-            html2canvas:  { scale: 2, useCORS: true },
-            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            margin: 10, filename: `Bilan_Compteur_${new Date().toISOString().slice(0,10)}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
         
         html2pdf().set(opt).from(element).save().then(() => {
@@ -1868,7 +1525,7 @@ const app = {
         event.stopPropagation();
         let session = await this.idb.getById(sessionId);
         if(!session) return;
-        let exportData = { appVersion: "Compteur Trafic v5.1", exportDate: new Date().toISOString(), sessionType: type, session: session };
+        let exportData = { appVersion: "Compteur Trafic v6.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
         const dataStr = JSON.stringify(exportData, null, 2);
         let safeDate = session.date.replace(/[\/ :]/g, '_');
         await this.triggerDownloadOrShare(dataStr, `Compteur_Session_${type}_${safeDate}.txt`);
@@ -1878,7 +1535,7 @@ const app = {
         let truckSessions = await this.idb.getAll('trucks');
         let carSessions = await this.idb.getAll('cars');
 
-        let enrichedTruckSessions = truckSessions.map(s => {
+        let enrichSession = (s) => {
             let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
             let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
             let freqMin = (count > 0 && s.durationSec > 0) ? +(count / (s.durationSec / 60)).toFixed(2) : 0;
@@ -1888,53 +1545,29 @@ const app = {
             
             let detailAuKm = {};
             if (s.distanceKm > 0 && s.summary) {
-               Object.keys(s.summary).forEach(b => {
-                  let tot = s.summary[b].fr + s.summary[b].etr;
-                  if(tot > 0) detailAuKm[b] = +(tot / s.distanceKm).toFixed(2);
+               Object.keys(s.summary).forEach(k => {
+                  let tot = typeof s.summary[k] === 'object' ? (s.summary[k].fr + s.summary[k].etr) : s.summary[k];
+                  if(tot > 0) detailAuKm[k] = +(tot / s.distanceKm).toFixed(2);
                });
             }
+            return { ...s, totalCount: count, scoreParKm: vehPerKm, apparitionsParMinute: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
+        };
 
-            return { ...s, totalCount: count, camionsParKm: vehPerKm, apparitionsParMinute: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
-        });
-
-        let enrichedCarSessions = carSessions.map(s => {
-            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
-            let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
-            let freqMin = (count > 0 && s.durationSec > 0) ? +(count / (s.durationSec / 60)).toFixed(2) : 0;
-            let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
-            let espaceTemps = count > 1 ? +(s.durationSec / count).toFixed(1) : 0;
-            let rythmeH = s.durationSec > 0 ? +(count / (s.durationSec / 3600)).toFixed(1) : 0;
-
-            let detailAuKm = {};
-            if (s.distanceKm > 0 && s.summary) {
-               Object.keys(s.summary).forEach(v => {
-                  let tot = s.summary[v];
-                  if(tot > 0) detailAuKm[v] = +(tot / s.distanceKm).toFixed(2);
-               });
-            }
-
-            return { ...s, totalCount: count, vehiculesParKm: vehPerKm, apparitionsParMinute: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
-        });
-
-        let allSessions = [...enrichedTruckSessions, ...enrichedCarSessions];
+        let allSessions = [...truckSessions.map(enrichSession), ...carSessions.map(enrichSession)];
         
         let globalSummary = { 
             profile: this.currentUser,
             mode: this.currentMode,
             totalSessions: allSessions.length, 
-            scorePredictionCamions: this.globalAnaTrucks.predictions,
-            scorePredictionVehicules: this.globalAnaCars.predictions,
             globalDonneesBrutesCamions: this.globalTruckCounters, 
             globalDonneesBrutesVehicules: this.globalCarCounters,
             analysesPermanentesCamions: this.globalAnaTrucks,
             analysesPermanentesVehicules: this.globalAnaCars
         };
 
-        let exportData = { appVersion: "Compteur Trafic v5.1", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
+        let exportData = { appVersion: "Compteur Trafic v6.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
         const dataStr = JSON.stringify(exportData, null, 2);
-        const fileName = `Compteur_Export_${this.currentUser}_${new Date().toISOString().slice(0,10)}.txt`;
-        
-        await this.triggerDownloadOrShare(dataStr, fileName);
+        await this.triggerDownloadOrShare(dataStr, `Compteur_Export_${this.currentUser}_${new Date().toISOString().slice(0,10)}.txt`);
     },
 
     importSaveFile(event) {
@@ -1947,10 +1580,11 @@ const app = {
                     await this.idb.clear('trucks'); await this.idb.clear('cars');
                     for (let s of data.sessions) { if (!s.id) s.id = Date.now().toString() + Math.random().toString(); s.user = this.currentUser; await this.idb.add(s); }
                     
-                    if (data.globalSummary?.globalDonneesBrutesCamions) this.storage.set('globalTruckCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesCamions));
-                    if (data.globalSummary?.globalDonneesBrutesVehicules) this.storage.set('globalCarCounters', JSON.stringify(data.globalSummary.globalDonneesBrutesVehicules));
-                    if (data.globalSummary?.analysesPermanentesCamions) this.storage.set('globalAnaTrucks', JSON.stringify(data.globalSummary.analysesPermanentesCamions));
-                    if (data.globalSummary?.analysesPermanentesVehicules) this.storage.set('globalAnaCars', JSON.stringify(data.globalSummary.analysesPermanentesVehicules));
+                    // NOUVEAU : Sauvegarde compatible avec le Storage Unifié (sans JSON.stringify)
+                    if (data.globalSummary?.globalDonneesBrutesCamions) this.storage.set('globalTruckCounters', data.globalSummary.globalDonneesBrutesCamions);
+                    if (data.globalSummary?.globalDonneesBrutesVehicules) this.storage.set('globalCarCounters', data.globalSummary.globalDonneesBrutesVehicules);
+                    if (data.globalSummary?.analysesPermanentesCamions) this.storage.set('globalAnaTrucks', data.globalSummary.analysesPermanentesCamions);
+                    if (data.globalSummary?.analysesPermanentesVehicules) this.storage.set('globalAnaCars', data.globalSummary.analysesPermanentesVehicules);
                     
                     alert("✅ Historique et analyses importés avec succès ! Redémarrage..."); location.reload();
                 } else if(!data.sessions) { alert("❌ Format non reconnu."); }
@@ -1958,6 +1592,91 @@ const app = {
         }; reader.readAsText(file);
     },
 
+    // 🧨 LA FAMEUSE SUPPRESSION CIBLÉE MISE À JOUR POUR LE STOCKAGE UNIFIÉ
+    async deleteSessionsByDateRange() {
+        let startInput = document.getElementById('delete-start-date').value;
+        let endInput = document.getElementById('delete-end-date').value;
+
+        let startTs = startInput ? new Date(startInput).setHours(0, 0, 0, 0) : 0; 
+        let endTs = endInput ? new Date(endInput).setHours(23, 59, 59, 999) : Date.now();
+
+        if (startInput && endInput && startTs > endTs) {
+            if(window.ui) window.ui.showToast("⚠️ La date de début doit être avant la date de fin."); return;
+        }
+
+        if (!confirm(`⚠️ Tu vas supprimer des sessions ET recalculer tous les totaux globaux pour cette période. Cette action est irréversible. Continuer ?`)) return;
+
+        let allTruckSessions = await this.idb.getAll('trucks');
+        let allCarSessions = await this.idb.getAll('cars');
+        
+        let tx = this.idb.db.transaction('sessions', 'readwrite');
+        let store = tx.objectStore('sessions');
+        let deletedCount = 0, keptTruckSessions = [], keptCarSessions = [];
+
+        allTruckSessions.forEach(s => {
+            if (parseInt(s.id) >= startTs && parseInt(s.id) <= endTs) { store.delete(s.id); deletedCount++; } 
+            else { keptTruckSessions.push(s); }
+        });
+
+        allCarSessions.forEach(s => {
+            if (parseInt(s.id) >= startTs && parseInt(s.id) <= endTs) { store.delete(s.id); deletedCount++; } 
+            else { keptCarSessions.push(s); }
+        });
+
+        if (deletedCount === 0) { if(window.ui) window.ui.showToast("🤷‍♂️ Aucune session trouvée sur cette période."); return; }
+
+        tx.oncomplete = async () => {
+            this.brands.forEach(b => this.globalTruckCounters[b] = { fr: 0, etr: 0 });
+            this.vehicleTypes.forEach(v => this.globalCarCounters[v] = 0);
+            this.globalTruckDistance = 0; this.globalTruckTime = 0;
+            this.globalCarDistance = 0; this.globalCarTime = 0;
+            this.globalAnaTrucks = this.getEmptyAnalytics();
+            this.globalAnaCars = this.getEmptyAnalytics();
+            
+            keptTruckSessions.forEach(s => {
+                this.globalTruckDistance += (s.distanceKm || 0); this.globalTruckTime += (s.durationSec || 0);
+                if (s.summary) Object.keys(s.summary).forEach(b => {
+                    if (this.globalTruckCounters[b] && s.summary[b]) {
+                        this.globalTruckCounters[b].fr += (s.summary[b].fr || 0);
+                        this.globalTruckCounters[b].etr += (s.summary[b].etr || 0);
+                    }
+                });
+                if (s.predictions) {
+                    this.globalAnaTrucks.predictions.total += (s.predictions.total || 0);
+                    this.globalAnaTrucks.predictions.success += (s.predictions.success || 0);
+                }
+            });
+
+            keptCarSessions.forEach(s => {
+                this.globalCarDistance += (s.distanceKm || 0); this.globalCarTime += (s.durationSec || 0);
+                if (s.summary) Object.keys(s.summary).forEach(v => {
+                    if (this.globalCarCounters[v] !== undefined) this.globalCarCounters[v] += (s.summary[v] || 0);
+                });
+                if (s.predictions) {
+                    this.globalAnaCars.predictions.total += (s.predictions.total || 0);
+                    this.globalAnaCars.predictions.success += (s.predictions.success || 0);
+                }
+            });
+
+            await this.buildPermanentAnalyticsFromIDB('trucks', this.globalAnaTrucks);
+            await this.buildPermanentAnalyticsFromIDB('cars', this.globalAnaCars);
+
+            this.storage.set('globalTruckCounters', this.globalTruckCounters);
+            this.storage.set('globalCarCounters', this.globalCarCounters);
+            this.storage.set('globalTruckDistance', this.globalTruckDistance);
+            this.storage.set('globalTruckTime', this.globalTruckTime);
+            this.storage.set('globalCarDistance', this.globalCarDistance);
+            this.storage.set('globalCarTime', this.globalCarTime);
+            this.storage.set('globalAnaTrucks', this.globalAnaTrucks);
+            this.storage.set('globalAnaCars', this.globalAnaCars);
+
+            this.renderDashboard('trucks');
+            this.renderAdvancedStats('trucks'); this.renderAdvancedStats('cars');
+            if(window.ui) window.ui.showToast(`🧹 ${deletedCount} session(s) et les données nettoyées !`);
+        };
+    },
+
+    // 📖 RENDU DE L'HISTORIQUE (AVANCÉ)
     async renderAdvancedStats(type) {
         let historyContainer = document.getElementById(type === 'trucks' ? 'truck-history-container' : 'car-history-container');
         let sessionsContainer = document.getElementById(type === 'trucks' ? 'truck-sessions-container' : 'car-sessions-container');
@@ -1972,7 +1691,8 @@ const app = {
                 let displayType = item.type === 'Camions' ? 'Poids Lourds' : item.type;
                 let title = item.isEvent ? item.eventType : (type === 'trucks' ? `${item.brand} (${item.type === 'fr' ? '🇫🇷' : '🌍'})` : displayType);
                 let titleStyle = item.isEvent ? 'color: #f39c12;' : '';
-                historyContainer.innerHTML += `<div class="history-item"><div class="history-item-header"><strong style="${titleStyle}">${title}</strong><span class="history-meta">⏱️ ${item.chronoTime} | 📍 ${item.lat ? parseFloat(item.lat).toFixed(4) : '?'}</span><button class="btn-del-history" onclick="window.app.${type === 'trucks' ? 'deleteTruckHistoryItem' : 'deleteCarHistoryItem'}(${realIndex})">🗑️</button></div></div>`;
+                // NOUVEAU : Appel à notre fameuse fonction unifiée deleteHistoryItem() !
+                historyContainer.innerHTML += `<div class="history-item"><div class="history-item-header"><strong style="${titleStyle}">${title}</strong><span class="history-meta">⏱️ ${item.chronoTime} | 📍 ${item.lat ? parseFloat(item.lat).toFixed(4) : '?'}</span><button class="btn-del-history" onclick="window.app.deleteHistoryItem('${type}', ${realIndex})">🗑️</button></div></div>`;
             });
         }
 
@@ -1996,12 +1716,12 @@ const app = {
             });
         }
     }
-};
+}; // FIN DE L'OBJET APP
 
 window.app = app;
 window.onload = () => { 
     app.init(); 
     if(window.ui) ui.init(); 
     if(window.gps) gps.init(); 
-    if(window.gami) window.gami.init(); // 🎁 Hook Gamification
+    if(window.gami) window.gami.init(); 
 };
