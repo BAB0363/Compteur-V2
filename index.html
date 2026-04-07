@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=22">
+    <link rel="manifest" href="manifest.json?v=23">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=22">
-    <link rel="stylesheet" href="gami.css?v=22">
+    <link rel="stylesheet" href="style.css?v=23">
+    <link rel="stylesheet" href="gami.css?v=23">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -85,7 +85,7 @@
 
         <div id="truck-stats-view" style="display: none;">
             <button class="btn-return-large no-print" onclick="window.ui.toggleTruckStats()">⬅️ Retour aux compteurs</button>
-            <div id="map-trucks" class="mini-map no-print"></div>
+            <div id="map-trucks" class=\"mini-map no-print"></div>
 
             <h3 style="margin-top:10px;" class="no-print">Historique Actuel</h3>
             <div class="history-list no-print" id="truck-history-container"></div>
@@ -333,7 +333,7 @@
 
                 <div id="modal-altitude-section" style="display: none;">
                     <h4 style="margin-top: 15px; margin-bottom: 5px; color: var(--text-color);">⛰️ Répartition par Altitude</h4>
-                    <div class="chart-wrapper" style="height: 150px;"><canvas id="altitudeModalChart"></canvas></div>
+                    <div class=\"chart-wrapper" style="height: 150px;"><canvas id="altitudeModalChart"></canvas></div>
                 </div>
                 
                 <div id="modal-road-section" style="display: none;">
@@ -348,14 +348,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsml.js?v=22"></script>
-    <script type="module" src="jsgami.js?v=22"></script>
-    <script type="module" src="jsapp.js?v=22"></script>
+    <script type="module" src="jsml.js?v=23"></script>
+    <script type="module" src="jsgami.js?v=23"></script>
+    <script type="module" src="jsapp.js?v=23"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=22')
+          navigator.serviceWorker.register('./sw.js?v=23')
             .then(registration => {
               console.log('Service Worker Compteur enregistré !', registration.scope);
             })
