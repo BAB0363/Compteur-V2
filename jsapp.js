@@ -43,7 +43,7 @@ const app = {
     temporalChart: null, weeklyChart: null, altitudeChart: null, weeklyGlobalChart: null,
     altitudeModalChart: null, 
     monthlyChart: null, roadTypeChart: null, monthlyModalChart: null, roadModalChart: null,
-    aiEvolutionChart: null, // 🧠 Nouveau graphique IA
+    aiEvolutionChart: null, 
 
     currentDashboardFilter: 'all',
     activeDashboardType: 'trucks',
@@ -270,12 +270,10 @@ const app = {
         if (window.ui) { window.ui.showToast(`🔄 Mode changé : ${newMode === 'voiture' ? '🚘 Voiture' : '🚛 Camion'}`); }
     },
 
-    // 🧠 Gégé Update : La fonction de prédiction devenue Asynchrone pour interroger l'IA !
     async updatePrediction(type) {
         let el = document.getElementById(type === 'trucks' ? 'pred-text-trucks' : 'pred-text-cars');
         if(el) el.innerText = "Analyse en cours... 🤖";
 
-        // 1️⃣ Tentative via le réseau de neurones (IA)
         if (window.ml) {
             let aiResult = await window.ml.predictNext(type);
             if (aiResult) {
@@ -303,11 +301,10 @@ const app = {
                     this.currentPredictionCar = { type: bestCandidate };
                     if(el) el.innerHTML = `<strong>${bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate}</strong> ~${confidence}% <span style="color:#8e44ad; font-size:0.8em;">(IA 🧠)</span>`;
                 }
-                return; // 🎯 L'IA a trouvé, on s'arrête ici !
+                return;
             }
         }
 
-        // 2️⃣ Fallback : L'algorithme classique (si l'IA manque de données)
         let ana = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
         let history = type === 'trucks' ? this.truckHistory : this.carHistory;
         let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
@@ -417,8 +414,6 @@ const app = {
 
     async init(isProfileSwitch = false) {
         if (!isProfileSwitch) { await this.idb.init(); await this.migrateData(); }
-
-        // 🧠 Initialisation du réseau de neurones
         if (window.ml) await window.ml.init();
 
         let userSel = document.getElementById('user-selector');
@@ -634,6 +629,9 @@ const app = {
         if (this.truckCounters[brand][type] + amount >= 0) {
             if (window.ui) window.ui.playBeep(amount > 0);
             if (amount > 0) {
+                // 🎁 Hook Gamification
+                if (window.gami) window.gami.notifyVehicleAdded(brand, type);
+                
                 if (this.currentPredictionTruck) {
                     this.globalAnaTrucks.predictions.total++;
                     this.sessionTruckPredictions.total++;
@@ -726,6 +724,9 @@ const app = {
         if (this.vehicleCounters[type] + amount >= 0) {
             if (window.ui) window.ui.playBeep(amount > 0);
             if (amount > 0) {
+                // 🎁 Hook Gamification
+                if (window.gami) window.gami.notifyVehicleAdded(type, null);
+
                 if (this.currentPredictionCar) {
                     this.globalAnaCars.predictions.total++;
                     this.sessionCarPredictions.total++;
@@ -994,7 +995,6 @@ const app = {
 
         await this.idb.add(newSession);
 
-        // 🧠 Entraînement automatique de l'IA en arrière-plan à la fin de la session !
         if (window.ml) {
             window.ml.trainModel(type).then(success => {
                 if (success) window.ml.updateUIStatus();
@@ -1231,7 +1231,7 @@ const app = {
              if (preds && preds.total > 0) {
                  predScore = Math.round((preds.success / preds.total) * 100) + "% (" + preds.success + "/" + preds.total + ")";
              }
-             html += `<div style="border-top: 2px dashed #eee; margin: 15px 0;"></div><div class="session-detail-row"><span class="session-detail-label">🔮 Taux de réussite prédictions</span><span class="session-detail-value" style="color:#8e44ad;">${predScore}</span></div>`;
+             html += `<div style="border-top: 2px dashed #eee; margin: 15px 0;"></div><div class="session-detail-row"><span class="session-detail-label">🔮 Taux de réussite prédictions</span><span class="session-detail-value" style="color:#8e44ad; font-weight:bold;">${predScore}</span></div>`;
         }
 
         document.getElementById('modal-session-title').innerText = `🌍 Stats Globales : ${title}`;
@@ -1481,12 +1481,10 @@ const app = {
             }
         }
 
-        // 🧠 NOUVEAU : Tracé du graphique d'évolution de l'IA
         let ctxAi = document.getElementById('aiEvolutionChart');
         if (ctxAi) {
             if (this.aiEvolutionChart) this.aiEvolutionChart.destroy();
             
-            // Prendre les 10 dernières sessions où l'IA a fait au moins 1 prédiction
             let aiSessions = sessions.filter(s => s.predictions && s.predictions.total > 0).slice(-10);
             
             if (aiSessions.length > 0) {
@@ -1524,7 +1522,7 @@ const app = {
                 });
                 ctxAi.parentElement.style.display = 'block';
             } else {
-                ctxAi.parentElement.style.display = 'none'; // Pas encore assez de données
+                ctxAi.parentElement.style.display = 'none'; 
             }
         }
 
@@ -1850,4 +1848,5 @@ window.onload = () => {
     app.init(); 
     if(window.ui) ui.init(); 
     if(window.gps) gps.init(); 
+    if(window.gami) window.gami.init(); // 🎁 Hook Gamification
 };

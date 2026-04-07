@@ -1,12 +1,15 @@
-const CACHE_NAME = 'compteur-cache-v18'; 
+// sw.js
+const CACHE_NAME = 'compteur-cache-v19'; 
 const urlsToCache = [
   './',
   './index.html',
   './style.css',
+  './gami.css',       // 🎁 NOUVEAU : CSS de Gamification
   './jsapp.js',
   './jsui.js',
   './jsgps.js',
-  './jsml.js', // 🧠 Le nouveau cerveau !
+  './jsml.js', 
+  './jsgami.js',      // 🎁 NOUVEAU : Logique de Gamification
   './manifest.json',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
@@ -14,14 +17,14 @@ const urlsToCache = [
   'https://cdn.jsdelivr.net/npm/chart.js',
   'https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
-  'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js' // 🧠 TensorFlow
+  'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js'
 ];
 
 self.addEventListener('install', event => {
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-        console.log('📦 Mise en cache des fichiers Compteur Trafic v18...');
+        console.log('📦 Mise en cache des fichiers Compteur Trafic v19...');
         return cache.addAll(urlsToCache);
     })
   );
@@ -31,10 +34,10 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
-        cacheNames.map(cache => {
-          if (cache !== CACHE_NAME) {
-            console.log('🧹 Ancien cache supprimé !');
-            return caches.delete(cache);
+        cacheNames.map(cacheName => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('🧹 Suppression de l\'ancien cache:', cacheName);
+            return caches.delete(cacheName);
           }
         })
       );
@@ -44,6 +47,8 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    caches.match(event.request).then(response => {
+      return response || fetch(event.request);
+    })
   );
 });
