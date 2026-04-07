@@ -14,8 +14,9 @@ export const gami = {
 
     init() {
         this.loadState();
-        this.checkSeasonAndQuests();
         this.createUI();
+        this.checkSeasonAndQuests();
+        this.updateUI();
     },
 
     loadState() {
