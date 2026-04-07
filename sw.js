@@ -1,15 +1,14 @@
-// sw.js
-const CACHE_NAME = 'compteur-cache-v21'; 
+const CACHE_NAME = 'compteur-cache-v22'; 
 const urlsToCache = [
   './',
   './index.html',
   './style.css',
-  './gami.css',       // 🎁 NOUVEAU : CSS de Gamification
+  './gami.css',
   './jsapp.js',
   './jsui.js',
   './jsgps.js',
-  './jsml.js', 
-  './jsgami.js',      // 🎁 NOUVEAU : Logique de Gamification
+  './jsml.js',
+  './jsgami.js',
   './manifest.json',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
@@ -24,7 +23,7 @@ self.addEventListener('install', event => {
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-        console.log('📦 Mise en cache des fichiers Compteur Trafic v19...');
+        console.log('📦 Mise en cache des fichiers Compteur Trafic v22...');
         return cache.addAll(urlsToCache);
     })
   );
@@ -34,10 +33,10 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('🧹 Suppression de l\'ancien cache:', cacheName);
-            return caches.delete(cacheName);
+        cacheNames.map(cache => {
+          if (cache !== CACHE_NAME) {
+            console.log('🧹 Ancien cache supprimé !');
+            return caches.delete(cache);
           }
         })
       );

@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=19">
+    <link rel="manifest" href="manifest.json?v=22">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=19">
-    <link rel="stylesheet" href="gami.css?v=19">
+    <link rel="stylesheet" href="style.css?v=22">
+    <link rel="stylesheet" href="gami.css?v=22">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -330,14 +330,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsml.js?v=19"></script>
-    <script type="module" src="jsgami.js?v=19"></script> 
-    <script type="module" src="jsapp.js?v=21"></script>
+    <script type="module" src="jsml.js?v=22"></script>
+    <script type="module" src="jsgami.js?v=22"></script>
+    <script type="module" src="jsapp.js?v=22"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=19')
+          navigator.serviceWorker.register('./sw.js?v=22')
             .then(registration => {
               console.log('Service Worker Compteur enregistré !', registration.scope);
             })
