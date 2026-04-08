@@ -17,6 +17,16 @@ export const ml = {
     truckBrands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
     carTypes: ["Voitures", "Utilitaires", "Motos", "Camions", "Camping-cars", "Bus/Car", "Engins agricoles", "Vélos"],
 
+    // NOUVEAU : Classes combinées pour les camions (Marque + Nationalité)
+    getTruckClasses() {
+        let classes = [];
+        this.truckBrands.forEach(b => { 
+            classes.push(b + "_fr"); 
+            classes.push(b + "_etr"); 
+        });
+        return classes;
+    },
+
     async init() {
         if (typeof tf === 'undefined') {
             console.warn("TensorFlow.js n'est pas chargé.");
@@ -50,7 +60,7 @@ export const ml = {
         }
     },
 
-    // NOUVEAU : Générateur de conseils personnalisés (Insights) pour le Dashboard
+    // Générateur de conseils personnalisés (Insights) pour le Dashboard
     generateInsights(type, anaData) {
         if (!anaData || !anaData.hours) return "Besoin de plus de données pour te donner un conseil... ⏳";
         
@@ -87,9 +97,55 @@ export const ml = {
         return insight;
     },
 
-    // NOUVEAU : Détecteur d'anomalies en temps réel
+    // NOUVEAU : Génération du HTML pour le Bulletin de Notes
+    generateReportCard(type, anaData) {
+        if (!anaData || !anaData.predictionsByClass || Object.keys(anaData.predictionsByClass).length === 0) {
+            return `<div style="grid-column: 1 / -1; text-align:center; color:#7f8c8d;">Pas encore assez de prédictions vérifiées pour établir un bulletin. Continue à compter ! 📝</div>`;
+        }
+
+        let stats = [];
+        for (let [className, data] of Object.entries(anaData.predictionsByClass)) {
+            if (data.total >= 5) { // On filtre pour n'afficher que les stats significatives
+                stats.push({ 
+                    name: className, 
+                    accuracy: Math.round((data.success / data.total) * 100), 
+                    total: data.total 
+                });
+            }
+        }
+
+        if (stats.length === 0) {
+            return `<div style="grid-column: 1 / -1; text-align:center; color:#7f8c8d;">J'analyse tes validations, le bulletin arrive bientôt ! (Minimum 5 essais requis par catégorie) ⏳</div>`;
+        }
+
+        stats.sort((a, b) => b.accuracy - a.accuracy);
+        let best = stats[0];
+        let worst = stats[stats.length - 1];
+
+        // Formatage sympa du nom pour l'affichage
+        let formatName = (n) => {
+            if (n === 'Camions') return 'Poids Lourds';
+            return n.replace('_fr', ' 🇫🇷').replace('_etr', ' 🌍');
+        };
+
+        let html = `
+            <div class="report-card-item" style="border-color: #27ae60; background: rgba(39, 174, 96, 0.1);">
+                <span class="report-card-label">🏆 Meilleure Précision</span>
+                <span class="report-card-value text-success">${formatName(best.name)}</span>
+                <span style="display:block; font-size:0.85em; color:#27ae60; margin-top:4px;">${best.accuracy}% (${best.total} essais)</span>
+            </div>
+            <div class="report-card-item" style="border-color: #e74c3c; background: rgba(231, 76, 60, 0.1);">
+                <span class="report-card-label">📉 Point Faible</span>
+                <span class="report-card-value text-danger">${formatName(worst.name)}</span>
+                <span style="display:block; font-size:0.85em; color:#e74c3c; margin-top:4px;">${worst.accuracy}% (${worst.total} essais)</span>
+            </div>
+        `;
+        return html;
+    },
+
+    // Détecteur d'anomalies en temps réel
     checkAnomaly(type, vehKey, speedKmh, recentHistory) {
-        let isHighway = speedKmh >= 90; // Vitesse d'autoroute
+        let isHighway = speedKmh >= 90; 
         
         // 1. Incohérence Vitesse / Type de Véhicule
         if (type === 'cars' && isHighway) {
@@ -101,7 +157,7 @@ export const ml = {
             }
         }
 
-        // 2. Combo Ultra Rare (3x le même véhicule à la suite, sauf voitures classiques)
+        // 2. Combo Ultra Rare
         if (recentHistory && recentHistory.length >= 3) {
             let v1 = type === 'trucks' ? recentHistory[recentHistory.length - 3].brand : recentHistory[recentHistory.length - 3].type;
             let v2 = type === 'trucks' ? recentHistory[recentHistory.length - 2].brand : recentHistory[recentHistory.length - 2].type;
@@ -127,27 +183,41 @@ export const ml = {
         let uiProgress = document.getElementById('ai-training-progress');
         if (uiProgress) uiProgress.style.display = 'block';
 
-        if(window.ui) window.ui.showToast("🧠 Début de l'entraînement de l'IA...");
+        if(window.ui) window.ui.showToast("🧠 Début de l'entraînement de l'IA (Nouvelle architecture)...");
 
-        let tSuccess = await this.trainModel('trucks');
-        let cSuccess = await this.trainModel('cars');
+        await this.trainModel('trucks');
+        await this.trainModel('cars');
 
         this.isTraining = false;
         if (uiProgress) uiProgress.style.display = 'none';
         this.updateUIStatus();
 
-        if(window.ui) window.ui.showToast("✨ Entraînement terminé !");
+        if(window.ui) window.ui.showToast("✨ Entraînement terminé avec succès !");
     },
 
-    extractFeatures(h) {
+    // NOUVEAU : Extraction de 8 features (avec jour exact et mémoire)
+    extractFeatures(h, recentHistory, labelsList, type) {
         let d = new Date(h.timestamp);
         let hour = d.getHours() / 24.0; 
-        let isWeekend = (d.getDay() === 0 || d.getDay() === 6) ? 1 : 0;
+        let dayOfWeek = d.getDay() / 6.0; // 0 = Dimanche, 6 = Samedi (Normalisé entre 0 et 1)
         let speed = Math.min((h.speed || 0) / 130.0, 1.0); 
         let alt = Math.min((h.alt || 0) / 2000.0, 1.0); 
         let road = (this.roadMap[h.road || "Inconnu"] || 0) / 3.0; 
 
-        return [hour, isWeekend, speed, alt, road];
+        // Fonction pour récupérer l'index normalisé d'un véhicule précédent
+        let getPrevIndex = (offset) => {
+            if (!recentHistory || recentHistory.length < offset) return 0; // 0 si aucun véhicule précédent
+            let prevItem = recentHistory[recentHistory.length - offset];
+            let labelText = type === 'trucks' ? (prevItem.brand + '_' + prevItem.type) : prevItem.type;
+            let idx = labelsList.indexOf(labelText);
+            return idx !== -1 ? (idx + 1) / (labelsList.length + 1) : 0;
+        };
+
+        let prev1 = getPrevIndex(1); // Le véhicule juste avant (N-1)
+        let prev2 = getPrevIndex(2); // (N-2)
+        let prev3 = getPrevIndex(3); // (N-3)
+
+        return [hour, dayOfWeek, speed, alt, road, prev1, prev2, prev3];
     },
 
     async trainModel(type) {
@@ -162,19 +232,22 @@ export const ml = {
 
         if (allItems.length < 50) return false;
 
-        let labelsList = type === 'trucks' ? this.truckBrands : this.carTypes;
+        let labelsList = type === 'trucks' ? this.getTruckClasses() : this.carTypes;
         let numClasses = labelsList.length;
 
         let features = [];
         let labels = [];
 
+        // On boucle sur l'historique pour préparer les données
         for (let i = 0; i < allItems.length; i++) {
             let h = allItems[i];
-            let labelText = type === 'trucks' ? h.brand : h.type;
+            let labelText = type === 'trucks' ? (h.brand + '_' + h.type) : h.type;
             let labelIndex = labelsList.indexOf(labelText);
             
             if (labelIndex !== -1 && h.timestamp) {
-                features.push(this.extractFeatures(h));
+                // On recrée un historique fictif pour l'instant T (mémoire à court terme)
+                let pastHistory = allItems.slice(Math.max(0, i - 3), i);
+                features.push(this.extractFeatures(h, pastHistory, labelsList, type));
                 labels.push(labelIndex);
             }
         }
@@ -185,12 +258,14 @@ export const ml = {
         const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), numClasses);
 
         const model = tf.sequential();
-        model.add(tf.layers.dense({ units: 16, activation: 'relu', inputShape: [5] }));
-        model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
+        // NOUVEAU : La couche d'entrée passe à 8 neurones (inputShape: [8])
+        model.add(tf.layers.dense({ units: 24, activation: 'relu', inputShape: [8] }));
+        model.add(tf.layers.dense({ units: 24, activation: 'relu' }));
         model.add(tf.layers.dense({ units: numClasses, activation: 'softmax' }));
 
         model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
 
+        // Entraînement !
         await model.fit(xs, ys, {
             epochs: 50,
             shuffle: true
@@ -207,14 +282,18 @@ export const ml = {
         return true;
     },
 
+    // NOUVEAU : Prédiction du Top 3
     async predictNext(type) {
         let model = type === 'trucks' ? this.modelTrucks : this.modelCars;
         if (!model) return null;
 
-        let labelsList = type === 'trucks' ? this.truckBrands : this.carTypes;
+        let labelsList = type === 'trucks' ? this.getTruckClasses() : this.carTypes;
 
         let currentSpeedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
         let currentRoad = window.app.getRoadType(currentSpeedKmh, window.app.currentMode);
+        
+        let liveHistory = type === 'trucks' ? window.app.truckHistory : window.app.carHistory;
+        let recentHist = liveHistory.filter(h => !h.isEvent).slice(-3);
         
         let mockEvent = {
             timestamp: Date.now(),
@@ -223,7 +302,7 @@ export const ml = {
             road: currentRoad
         };
 
-        let currentFeatures = this.extractFeatures(mockEvent);
+        let currentFeatures = this.extractFeatures(mockEvent, recentHist, labelsList, type);
         const inputTensor = tf.tensor2d([currentFeatures]);
 
         const prediction = model.predict(inputTensor);
@@ -232,20 +311,19 @@ export const ml = {
         inputTensor.dispose();
         prediction.dispose();
 
-        let maxScore = -1;
-        let bestIndex = -1;
-        
+        let results = [];
         for (let i = 0; i < scores.length; i++) {
-            if (scores[i] > maxScore) {
-                maxScore = scores[i];
-                bestIndex = i;
-            }
+            results.push({ 
+                candidate: labelsList[i], 
+                confidence: Math.round(scores[i] * 100) 
+            });
         }
+        
+        // On trie pour avoir le score le plus élevé en premier
+        results.sort((a, b) => b.confidence - a.confidence);
 
-        let bestCandidate = labelsList[bestIndex];
-        let confidence = Math.round(maxScore * 100);
-
-        return { candidate: bestCandidate, confidence: confidence };
+        // On renvoie les 3 meilleurs !
+        return { top3: results.slice(0, 3) };
     }
 };
 

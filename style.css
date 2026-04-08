@@ -9,9 +9,19 @@
     --btn-text: #2c3e50;
     --border-color: #eee;
     --shadow: rgba(0,0,0,0.1);
+    --purple-text: #8e44ad; /* Violet standard */
 }
 
-body.dark-mode { --bg-color: #1e272e; --text-color: #d2dae2; --card-bg: #2f3640; --btn-bg: #485460; --btn-text: #d2dae2; --border-color: #576574; --shadow: rgba(0,0,0,0.5); }
+body.dark-mode { 
+    --bg-color: #1e272e; 
+    --text-color: #d2dae2; 
+    --card-bg: #2f3640; 
+    --btn-bg: #485460; 
+    --btn-text: #d2dae2; 
+    --border-color: #576574; 
+    --shadow: rgba(0,0,0,0.5); 
+    --purple-text: #d7bde2; /* Violet clair pour meilleure lisibilité */
+}
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -24,7 +34,7 @@ body {
    Utilitaires Globaux (Marges, Couleurs, etc.)
    ========================================== */
 .text-success { color: #27ae60 !important; }
-.text-purple { color: #8e44ad !important; }
+.text-purple { color: var(--purple-text) !important; }
 .text-orange { color: #e67e22 !important; }
 .text-danger { color: #e74c3c !important; }
 .text-blue { color: #3498db !important; }
@@ -38,9 +48,9 @@ body {
 
 .border-orange { border-left: 4px solid #e67e22; }
 .border-blue { border-left: 4px solid #34495e; }
-.border-purple { border: 1px solid #8e44ad; }
+.border-purple { border: 1px solid var(--purple-text); }
 .border-red { border: 1px solid #e74c3c; }
-.border-top-purple { border-top: 3px solid #8e44ad; }
+.border-top-purple { border-top: 3px solid var(--purple-text); }
 
 .text-small { font-size: 0.65em; }
 
@@ -95,12 +105,12 @@ body {
 .btn-chrono { background-color: #27ae60; color: white; border: none; padding: 5px 8px; border-radius: 4px; font-size: 0.85em; cursor: pointer; font-weight: bold; }
 .btn-chrono.running { background-color: #f39c12; }
 .btn-chrono-reset { background-color: #e74c3c; color: white; border: none; padding: 5px 8px; border-radius: 4px; font-size: 0.85em; cursor: pointer; font-weight: bold; }
-.btn-stats-toggle { background-color: #8e44ad; color: white; padding: 6px 12px; border-radius: 6px; border: none; font-size: 0.9em; transition: background-color 0.2s; cursor: pointer;}
+.btn-stats-toggle { background-color: var(--purple-text); color: white; padding: 6px 12px; border-radius: 6px; border: none; font-size: 0.9em; transition: background-color 0.2s; cursor: pointer;}
 .btn-stats-toggle.active { background-color: #e67e22; }
 
 .totals-row { text-align: center; font-size: 1.1em; margin-bottom: 8px; font-weight: bold; }
 .proportion-bar { display: flex; height: 22px; border-radius: 11px; overflow: hidden; background: #7f8c8d; font-size: 0.7em; color: white; line-height: 22px; font-weight: bold; text-align: center; }
-.prediction-box { text-align: center; font-size: 0.75em; margin-top: 8px; color: #7f8c8d; font-weight: bold; }
+.prediction-box { text-align: center; font-size: 0.8em; margin-top: 8px; padding: 8px; border-radius: 6px; background: var(--bg-color); border: 1px solid var(--border-color); }
 
 #bar-fr, #bar-etr, #bar-voitures, #bar-camions, #bar-utilitaires, #bar-engins, #bar-bus, #bar-camping, #bar-motos, #bar-velos { transition: width 0.3s; overflow: hidden; width: 0%; }
 #bar-fr, #bar-voitures { background-color: #3498db; }
@@ -157,12 +167,11 @@ button:active { transform: scale(0.95); }
 .mini-map { height: 250px; width: 100%; border-radius: 8px; margin-bottom: 15px; background-color: #ccc; z-index: 1;}
 
 /* ==========================================
-   Toasts, Modals & Anomalies IA (NOUVEAU)
+   Toasts, Modals & Anomalies IA
    ========================================== */
 #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; width: 90%; max-width: 400px; align-items: center;}
 .toast { background-color: #f1c40f; color: #2c3e50; padding: 10px 20px; border-radius: 25px; font-size: 0.9em; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.3); animation: slideDown 0.3s ease-out forwards, fadeOut 0.5s ease-in 3.5s forwards; opacity: 0; pointer-events: none; text-align: center;}
 
-/* Nouveaux styles pour les alertes IA */
 .toast.anomaly { background-color: #e74c3c; color: white; border: 2px solid #c0392b; box-shadow: 0 0 15px rgba(231, 76, 60, 0.6); }
 .toast.rare-combo { background: linear-gradient(90deg, #f1c40f, #e67e22); color: white; border: 1px solid #f39c12; box-shadow: 0 0 15px rgba(241, 196, 15, 0.6); text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
 
@@ -182,7 +191,7 @@ button:active { transform: scale(0.95); }
 .chart-small { height: 150px; }
 
 /* ==========================================
-   Grilles, Graphiques & Insights IA (NOUVEAU)
+   Grilles, Graphiques & Insights IA
    ========================================== */
 .km-stats-container { background: var(--card-bg); padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 1px 3px var(--shadow); }
 .km-stats-container h4 { margin-top: 0; margin-bottom: 10px; color: var(--text-color); border-bottom: 2px solid var(--border-color); padding-bottom: 5px; }
@@ -192,10 +201,9 @@ button:active { transform: scale(0.95); }
 .km-stat-value { font-size: 1.1em; font-weight: bold; color: #2980b9; }
 .km-stat-extra { font-size: 0.75em; color: #95a5a6; display: block; margin-top: 3px; }
 
-/* Nouveau style pour l'encart Insights IA */
 .ai-insight-box {
     background: linear-gradient(135deg, rgba(142, 68, 173, 0.1), rgba(41, 128, 185, 0.1));
-    border-left: 4px solid #8e44ad;
+    border-left: 4px solid var(--purple-text);
     padding: 15px;
     border-radius: 8px;
     margin-bottom: 15px;
@@ -205,7 +213,7 @@ button:active { transform: scale(0.95); }
 }
 .ai-insight-title {
     font-weight: bold;
-    color: #8e44ad;
+    color: var(--purple-text);
     margin-bottom: 8px;
     display: flex;
     align-items: center;
@@ -236,7 +244,7 @@ button:active { transform: scale(0.95); }
 
 .dash-total-display { font-size: 1.2em; font-weight: bold; margin-bottom: 10px; text-align: center; }
 .ai-status-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9em; }
-.ai-progress { display: none; text-align: center; font-size: 0.8em; color: #8e44ad; margin-top: 10px; font-weight: bold; }
+.ai-progress { display: none; text-align: center; font-size: 0.8em; color: var(--purple-text); margin-top: 10px; font-weight: bold; }
 .date-filter-row { display: flex; gap: 5px; margin-bottom: 10px; }
 .danger-buttons-col { display: flex; flex-direction: column; gap: 10px; }
 
@@ -252,4 +260,70 @@ button:active { transform: scale(0.95); }
     }
     .chart-wrapper { page-break-inside: avoid; }
     .km-stat-card { border-color: #ccc !important; }
+}
+
+/* ==========================================
+   IA : Jauge, Podium & Bulletin (NOUVEAU)
+   ========================================== */
+.pred-main-result { 
+    font-size: 1.1em; 
+    font-weight: bold; 
+    margin-bottom: 8px; 
+    color: var(--text-color);
+}
+.pred-gauge-bg { 
+    background: var(--border-color); 
+    height: 8px; 
+    border-radius: 4px; 
+    width: 100%; 
+    overflow: hidden; 
+    margin-bottom: 8px; 
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+}
+.pred-gauge-fill { 
+    height: 100%; 
+    width: 0%; 
+    transition: width 0.5s ease-out, background-color 0.5s ease-out; 
+}
+.pred-podium { 
+    display: flex; 
+    justify-content: space-between; 
+    font-size: 0.8em; 
+    color: #7f8c8d; 
+    border-top: 1px dashed var(--border-color); 
+    padding-top: 8px; 
+}
+.pred-podium span { 
+    text-align: center; 
+    flex: 1; 
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.pred-podium-score { font-weight: bold; color: var(--text-color); }
+
+.report-card-container { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 10px; 
+    margin-top: 15px;
+}
+.report-card-item { 
+    background: var(--bg-color); 
+    padding: 10px; 
+    border-radius: 6px; 
+    border: 1px solid var(--border-color); 
+    font-size: 0.85em; 
+    text-align: center;
+}
+.report-card-label { 
+    display: block; 
+    color: #7f8c8d; 
+    margin-bottom: 5px; 
+    font-weight: bold;
+}
+.report-card-value { 
+    font-size: 1.1em; 
+    font-weight: bold; 
+    color: var(--text-color); 
 }

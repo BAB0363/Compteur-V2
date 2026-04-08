@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=29">
+    <link rel="manifest" href="manifest.json?v=30">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=29">
-    <link rel="stylesheet" href="gami.css?v=29">
+    <link rel="stylesheet" href="style.css?v=30">
+    <link rel="stylesheet" href="gami.css?v=30">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -97,7 +97,9 @@
                 <div id="bar-etr"></div>
             </div>
             <div id="prediction-box-trucks" class="prediction-box">
-                🔮 Prédiction IA : <span id="pred-text-trucks" class="text-purple">Analyse en cours...</span>
+                <div id="pred-main-trucks" class="pred-main-result">🔮 Prédiction IA : <span class="text-purple">Analyse en cours...</span></div>
+                <div class="pred-gauge-bg"><div id="pred-gauge-trucks" class="pred-gauge-fill"></div></div>
+                <div id="pred-podium-trucks" class="pred-podium"></div>
             </div>
         </div>
         
@@ -154,7 +156,9 @@
                 <div id="bar-velos"></div>
             </div>
             <div id="prediction-box-cars" class="prediction-box">
-                🔮 Prédiction IA : <span id="pred-text-cars" class="text-purple">Analyse en cours...</span>
+                <div id="pred-main-cars" class="pred-main-result">🔮 Prédiction IA : <span class="text-purple">Analyse en cours...</span></div>
+                <div class="pred-gauge-bg"><div id="pred-gauge-cars" class="pred-gauge-fill"></div></div>
+                <div id="pred-podium-cars" class="pred-podium"></div>
             </div>
         </div>
         
@@ -191,6 +195,12 @@
         <div id="ai-insight-container" class="ai-insight-box no-print" style="display: none;">
             <div class="ai-insight-title">🧠 Conseils de Gégé</div>
             <div id="ai-insight-text">Analyse de tes données en cours...</div>
+        </div>
+
+        <div class="km-stats-container border-purple" id="ai-report-card-container" style="display: none;">
+            <h4 class="text-purple">📝 Le Bulletin de Notes de Gégé</h4>
+            <div class="report-card-container" id="ai-report-card-content">
+                </div>
         </div>
 
         <div class="main-tabs mb-15">
@@ -379,14 +389,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsml.js?v=29"></script>
-    <script type="module" src="jsgami.js?v=29"></script>
-    <script type="module" src="jsapp.js?v=29"></script>
+    <script type="module" src="jsml.js?v=30"></script>
+    <script type="module" src="jsgami.js?v=30"></script>
+    <script type="module" src="jsapp.js?v=30"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=29')
+          navigator.serviceWorker.register('./sw.js?v=30')
             .then(registration => {
               console.log('Service Worker Compteur enregistré !', registration.scope);
             })

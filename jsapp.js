@@ -22,7 +22,6 @@ const app = {
         "Vélos": 20
     },
 
-    // ⚖️ Fonction de formatage (passe en tonnes si > 1000 kg)
     formatWeight(kg) {
         if (!kg) return "0 kg";
         return kg >= 1000 ? (kg / 1000).toFixed(1) + " t" : kg + " kg";
@@ -155,7 +154,9 @@ const app = {
             months: { "Jan":0, "Fév":0, "Mar":0, "Avr":0, "Mai":0, "Juin":0, "Juil":0, "Aoû":0, "Sep":0, "Oct":0, "Nov":0, "Déc":0 },
             roads: { "Inconnu": 0, "Ville (0-50 km/h)": 0, "Route (50-100 km/h)": 0, "Autoroute (>100 km/h)": 0, "Ville (0-40 km/h)": 0, "Route (40-80 km/h)": 0, "Autoroute (>80 km/h)": 0 },
             alts: { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 },
-            byVeh: {}, seqs: {}, seqs3: {}, lastVehicles: [], predictions: { total: 0, success: 0 }
+            byVeh: {}, seqs: {}, seqs3: {}, lastVehicles: [], 
+            predictions: { total: 0, success: 0 },
+            predictionsByClass: {} // NOUVEAU : Suivi des notes par classe !
         };
     },
 
@@ -169,6 +170,7 @@ const app = {
         if (!targetAna.lastVehicles) targetAna.lastVehicles = [];
         if (!targetAna.months) targetAna.months = this.getEmptyAnalytics().months;
         if (!targetAna.roads) targetAna.roads = this.getEmptyAnalytics().roads;
+        if (!targetAna.predictionsByClass) targetAna.predictionsByClass = {};
 
         sessions.forEach(s => {
             if (s.history) {
@@ -349,6 +351,7 @@ const app = {
             await this.buildPermanentAnalyticsFromIDB('trucks', this.globalAnaTrucks);
         }
         if (!this.globalAnaTrucks.predictions) this.globalAnaTrucks.predictions = { total: 0, success: 0 };
+        if (!this.globalAnaTrucks.predictionsByClass) this.globalAnaTrucks.predictionsByClass = {};
         if (!this.globalAnaTrucks.byVeh) this.globalAnaTrucks.byVeh = {};
         if (!this.globalAnaTrucks.seqs3) this.globalAnaTrucks.seqs3 = {};
         if (!this.globalAnaTrucks.lastVehicles) this.globalAnaTrucks.lastVehicles = [];
@@ -360,6 +363,7 @@ const app = {
             await this.buildPermanentAnalyticsFromIDB('cars', this.globalAnaCars);
         }
         if (!this.globalAnaCars.predictions) this.globalAnaCars.predictions = { total: 0, success: 0 };
+        if (!this.globalAnaCars.predictionsByClass) this.globalAnaCars.predictionsByClass = {};
         if (!this.globalAnaCars.byVeh) this.globalAnaCars.byVeh = {};
         if (!this.globalAnaCars.seqs3) this.globalAnaCars.seqs3 = {};
         if (!this.globalAnaCars.lastVehicles) this.globalAnaCars.lastVehicles = [];
@@ -560,13 +564,23 @@ const app = {
             if (amount > 0) {
                 if (window.gami) window.gami.notifyVehicleAdded(key1, key2);
 
-                if (currPred) {
+                // NOUVEAU : Suivi précis des notes pour le Bulletin Gégé
+                if (currPred && currPred.class) {
                     ana.predictions.total++;
                     sessionPreds.total++;
-                    let isExact = isTruck ? (currPred.brand === key1 && currPred.nat === key2) : (currPred.type === key1);
+                    
+                    let actualClass = isTruck ? `${key1}_${key2}` : key1;
+                    
+                    if (!ana.predictionsByClass) ana.predictionsByClass = {};
+                    if (!ana.predictionsByClass[currPred.class]) ana.predictionsByClass[currPred.class] = { total: 0, success: 0 };
+                    
+                    ana.predictionsByClass[currPred.class].total++;
+
+                    let isExact = (currPred.class === actualClass);
                     if (isExact) {
                         ana.predictions.success++;
                         sessionPreds.success++;
+                        ana.predictionsByClass[currPred.class].success++;
                         if(window.ui) window.ui.showToast("🔮 Prédiction exacte !");
                     }
                 }
@@ -591,7 +605,6 @@ const app = {
                 else { histItem.type = key1; }
                 history.push(histItem);
 
-                // NOUVEAU : Vérification d'anomalies ou combos par l'IA
                 if (window.ml) {
                     let recentHist = history.filter(h => !h.isEvent);
                     let anomaly = window.ml.checkAnomaly(mode, key1, speedKmh, recentHist);
@@ -1276,7 +1289,6 @@ const app = {
             tTitle.style.color = type === 'trucks' ? "#e67e22" : "#3498db"; 
         }
 
-        // ⚖️ NOUVEAU : Calcul du poids total pour le tableau de bord
         let dashTotalWeight = 0;
         if (type === 'trucks') {
             dashTotalWeight = gTotal * 18000;
@@ -1288,14 +1300,23 @@ const app = {
         let dwEl = document.getElementById('dash-weight'); 
         if(dwEl) dwEl.innerText = this.formatWeight(dashTotalWeight);
 
-        // NOUVEAU : Injection des Conseils de Gégé (Insights IA)
+        let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
+
+        // Injection des Conseils de Gégé (Insights IA)
         let aiInsightContainer = document.getElementById('ai-insight-container');
         let aiInsightText = document.getElementById('ai-insight-text');
         if (aiInsightContainer && aiInsightText && window.ml) {
-            let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
             let insightMsg = window.ml.generateInsights(type, anaData);
             aiInsightText.innerHTML = insightMsg;
             aiInsightContainer.style.display = 'block';
+        }
+
+        // NOUVEAU : Injection du Bulletin de Notes de l'IA
+        let reportContainer = document.getElementById('ai-report-card-container');
+        let reportContent = document.getElementById('ai-report-card-content');
+        if (reportContainer && reportContent && window.ml) {
+            reportContent.innerHTML = window.ml.generateReportCard(type, anaData);
+            reportContainer.style.display = 'block';
         }
 
         let gRatio = gTotalDist > 0 ? (gTotal / gTotalDist).toFixed(1) + " /km" : "- /km";
@@ -1540,7 +1561,6 @@ const app = {
         let session = await this.idb.getById(sessionId);
         if(!session) return;
         
-        // Ajout de la masse pour cet export précis
         let count = session.history ? session.history.filter(h => !h.isEvent).length : 0;
         let sessionWeight = 0;
         if (type === 'trucks') {
@@ -1571,7 +1591,7 @@ const app = {
             let rythmeH = s.durationSec > 0 ? +(count / (s.durationSec / 3600)).toFixed(1) : 0;
             
             let detailAuKm = {};
-            let sessionWeight = 0; // Ajout de la masse
+            let sessionWeight = 0;
             
             if (s.sessionType === 'trucks') {
                 sessionWeight = count * 18000;
@@ -1750,46 +1770,68 @@ const app = {
         }
     },
 
+    // Fonction d'aide pour formatter le nom du candidat sur l'UI
+    formatCandidateName(c, type) {
+        if (type === 'trucks') {
+            return c.replace('_fr', ' 🇫🇷').replace('_etr', ' 🌍');
+        } else {
+            return c === 'Camions' ? 'Poids Lourds' : c;
+        }
+    },
+
+    // NOUVEAU : Mise à jour UI avec Jauge et Podium
+    renderPredictionUI(type, top3, method) {
+        let elMain = document.getElementById(type === 'trucks' ? 'pred-main-trucks' : 'pred-main-cars');
+        let elGauge = document.getElementById(type === 'trucks' ? 'pred-gauge-trucks' : 'pred-gauge-cars');
+        let elPodium = document.getElementById(type === 'trucks' ? 'pred-podium-trucks' : 'pred-podium-cars');
+
+        if (!elMain || !elGauge || !elPodium || !top3 || top3.length === 0) return;
+
+        let best = top3[0];
+        let displayName = this.formatCandidateName(best.candidate, type);
+        
+        elMain.innerHTML = `<strong>${displayName}</strong> ~${best.confidence}% <span style="color:#7f8c8d; font-size:0.8em;">(${method})</span>`;
+
+        elGauge.style.width = best.confidence + '%';
+        if (best.confidence < 40) elGauge.style.backgroundColor = '#e74c3c'; // Rouge
+        else if (best.confidence < 70) elGauge.style.backgroundColor = '#f39c12'; // Jaune/Orange
+        else elGauge.style.backgroundColor = '#27ae60'; // Vert
+
+        let podiumHtml = '';
+        for (let i = 1; i < 3; i++) {
+            if (top3[i]) {
+                podiumHtml += `<span>#${i+1} ${this.formatCandidateName(top3[i].candidate, type)}<br><span class="pred-podium-score">${top3[i].confidence}%</span></span>`;
+            } else {
+                podiumHtml += `<span>-</span>`;
+            }
+        }
+        elPodium.innerHTML = podiumHtml;
+
+        // Mise à jour de l'état interne pour vérifier la réussite plus tard
+        if (type === 'trucks') {
+            this.currentPredictionTruck = { class: best.candidate };
+        } else {
+            this.currentPredictionCar = { class: best.candidate };
+        }
+    },
+
     async updatePrediction(type) {
-        let el = document.getElementById(type === 'trucks' ? 'pred-text-trucks' : 'pred-text-cars');
-        if(el) el.innerText = "Analyse en cours... 🤖";
+        let elMain = document.getElementById(type === 'trucks' ? 'pred-main-trucks' : 'pred-main-cars');
+        if(elMain) elMain.innerHTML = "Analyse en cours... 🤖";
 
         if (window.ml) {
             let aiResult = await window.ml.predictNext(type);
-            if (aiResult) {
-                let bestCandidate = aiResult.candidate;
-                let confidence = aiResult.confidence;
-
-                if (type === 'trucks') {
-                    let d = new Date();
-                    let fr = this.globalTruckCounters[bestCandidate]?.fr || 0;
-                    let etr = this.globalTruckCounters[bestCandidate]?.etr || 0;
-                    let chanceEtranger = (etr / (fr + etr || 1));
-                    
-                    let currentSpeedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
-                    let isHighway = (this.currentMode === 'voiture' && currentSpeedKmh > 100) || (this.currentMode === 'camion' && currentSpeedKmh > 80);
-                    if (isHighway) chanceEtranger += 0.2; 
-                    
-                    let currentHour = d.getHours();
-                    if (currentHour < 5 || currentHour > 22) chanceEtranger += 0.15;
-                    if (d.getDay() === 0 || d.getDay() === 6) chanceEtranger += 0.15;
-                    
-                    let nat = Math.random() < chanceEtranger ? 'etr' : 'fr';
-
-                    this.currentPredictionTruck = { brand: bestCandidate, nat: nat };
-                    if(el) el.innerHTML = `<strong>${bestCandidate}</strong> (${nat === 'fr' ? '🇫🇷' : '🌍'}) ~${confidence}% <span style="color:#8e44ad; font-size:0.8em;">(IA 🧠)</span>`;
-                } else {
-                    this.currentPredictionCar = { type: bestCandidate };
-                    if(el) el.innerHTML = `<strong>${bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate}</strong> ~${confidence}% <span style="color:#8e44ad; font-size:0.8em;">(IA 🧠)</span>`;
-                }
+            if (aiResult && aiResult.top3) {
+                this.renderPredictionUI(type, aiResult.top3, 'IA 🧠');
                 return;
             }
         }
 
+        // --- Algorithme de secours (Classique) si pas d'IA ---
         let ana = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
         let history = type === 'trucks' ? this.truckHistory : this.carHistory;
         let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
-        let candidates = type === 'trucks' ? this.brands : this.vehicleTypes;
+        let candidates = type === 'trucks' ? window.ml.getTruckClasses() : this.vehicleTypes;
 
         let d = new Date();
         let currentHourKey = `${d.getHours()}h`;
@@ -1806,14 +1848,20 @@ const app = {
         let isDenseTraffic = sec > 0 && (history.length / (sec / 3600)) > 500; 
 
         let recentItems = history.filter(h => !h.isEvent).slice(-2);
-        let lastV1 = recentItems.length > 1 ? (type === 'trucks' ? recentItems[0].brand : recentItems[0].type) : null; 
-        let lastV2 = recentItems.length > 0 ? (type === 'trucks' ? recentItems[recentItems.length-1].brand : recentItems[recentItems.length-1].type) : null; 
+        let lastV1 = recentItems.length > 1 ? (type === 'trucks' ? `${recentItems[0].brand}_${recentItems[0].type}` : recentItems[0].type) : null; 
+        let lastV2 = recentItems.length > 0 ? (type === 'trucks' ? `${recentItems[recentItems.length-1].brand}_${recentItems[recentItems.length-1].type}` : recentItems[recentItems.length-1].type) : null; 
 
         let scores = {};
         let totalGlobalCount = 0;
         
         candidates.forEach(c => {
-            let count = type === 'trucks' ? ((globalCounters[c]?.fr || 0) + (globalCounters[c]?.etr || 0)) : (globalCounters[c] || 0);
+            let count = 0;
+            if (type === 'trucks') {
+                let parts = c.split('_');
+                count = globalCounters[parts[0]] ? (globalCounters[parts[0]][parts[1]] || 0) : 0;
+            } else {
+                count = globalCounters[c] || 0;
+            }
             scores[c] = count; 
             totalGlobalCount += count;
         });
@@ -1825,23 +1873,33 @@ const app = {
         }
 
         candidates.forEach(c => {
+            let baseVehKey = type === 'trucks' ? c.split('_')[0] : c;
+
             if (lastV1 && lastV2 && ana.seqs3) {
-                let triplet = `${lastV1} ➡️ ${lastV2} ➡️ ${c}`;
+                let triplet = `${lastV1} ➡️ ${lastV2} ➡️ ${baseVehKey}`;
                 if (ana.seqs3[triplet]) scores[c] += 25; 
             }
             if (lastV2 && ana.seqs) {
-                let pair = `${lastV2} ➡️ ${c}`;
+                let pair = `${lastV2} ➡️ ${baseVehKey}`;
                 if (ana.seqs[pair]) scores[c] += 10; 
             }
 
-            if (ana.byVeh && ana.byVeh[c]) {
-                let pHeure = (ana.hours[currentHourKey] > 0) ? ((ana.byVeh[c].hours[currentHourKey] || 0) / ana.hours[currentHourKey]) * 100 : 0;
-                let pJour = (ana.days[currentDayKey] > 0) ? ((ana.byVeh[c].days[currentDayKey] || 0) / ana.days[currentDayKey]) * 100 : 0;
-                let pAlt = (ana.alts[altKey] > 0) ? ((ana.byVeh[c].alts[altKey] || 0) / ana.alts[altKey]) * 100 : 0;
-                let pMois = (ana.months[currentMonthKey] > 0) ? ((ana.byVeh[c].months[currentMonthKey] || 0) / ana.months[currentMonthKey]) * 100 : 0;
-                let pRoute = (ana.roads[currentRoad] > 0) ? ((ana.byVeh[c].roads[currentRoad] || 0) / ana.roads[currentRoad]) * 100 : 0;
+            if (ana.byVeh && ana.byVeh[baseVehKey]) {
+                let pHeure = (ana.hours[currentHourKey] > 0) ? ((ana.byVeh[baseVehKey].hours[currentHourKey] || 0) / ana.hours[currentHourKey]) * 100 : 0;
+                let pJour = (ana.days[currentDayKey] > 0) ? ((ana.byVeh[baseVehKey].days[currentDayKey] || 0) / ana.days[currentDayKey]) * 100 : 0;
+                let pAlt = (ana.alts[altKey] > 0) ? ((ana.byVeh[baseVehKey].alts[altKey] || 0) / ana.alts[altKey]) * 100 : 0;
+                let pMois = (ana.months[currentMonthKey] > 0) ? ((ana.byVeh[baseVehKey].months[currentMonthKey] || 0) / ana.months[currentMonthKey]) * 100 : 0;
+                let pRoute = (ana.roads[currentRoad] > 0) ? ((ana.byVeh[baseVehKey].roads[currentRoad] || 0) / ana.roads[currentRoad]) * 100 : 0;
 
                 scores[c] += (pHeure * 0.1) + (pJour * 0.1) + (pAlt * 0.1) + (pMois * 0.15) + (pRoute * 0.25);
+            }
+            
+            // Logique spécifiques pour la nuit / week-end pour les camions étrangers
+            if (type === 'trucks' && c.includes('_etr')) {
+                if (isHighway) scores[c] += 15;
+                let currentHour = d.getHours();
+                if (currentHour < 5 || currentHour > 22) scores[c] += 15;
+                if (d.getDay() === 0 || d.getDay() === 6) scores[c] += 15;
             }
         });
 
@@ -1854,36 +1912,22 @@ const app = {
             if (isDenseTraffic) { scores['Voitures'] += 30; }
         }
 
-        let bestCandidate = null;
-        let maxScore = -1;
+        let results = [];
         candidates.forEach(c => {
             let finalScore = scores[c] + (Math.random() * (scores[c] * 0.1));
-            if (finalScore > maxScore && scores[c] >= 0) {
-                maxScore = finalScore;
-                bestCandidate = c;
-            }
+            results.push({ candidate: c, rawScore: finalScore });
         });
 
-        if (!bestCandidate) bestCandidate = candidates[Math.floor(Math.random() * candidates.length)];
-        let totalScoreSum = Object.values(scores).reduce((a, b) => a + b, 0);
-        let confidence = totalScoreSum > 0 ? Math.min(99, Math.round((maxScore / totalScoreSum) * 100)) : 50;
+        results.sort((a, b) => b.rawScore - a.rawScore);
+        
+        let totalScoreSum = results.reduce((sum, r) => sum + Math.max(0, r.rawScore), 0);
+        
+        let top3 = results.slice(0, 3).map(r => {
+            let conf = totalScoreSum > 0 ? Math.min(99, Math.round((Math.max(0, r.rawScore) / totalScoreSum) * 100)) : 33;
+            return { candidate: r.candidate, confidence: conf };
+        });
 
-        if (type === 'trucks') {
-            let fr = this.globalTruckCounters[bestCandidate]?.fr || 0;
-            let etr = this.globalTruckCounters[bestCandidate]?.etr || 0;
-            let chanceEtranger = (etr / (fr + etr || 1));
-            if (isHighway) chanceEtranger += 0.2; 
-            let currentHour = d.getHours();
-            if (currentHour < 5 || currentHour > 22) chanceEtranger += 0.15;
-            if (d.getDay() === 0 || d.getDay() === 6) chanceEtranger += 0.15;
-            let nat = Math.random() < chanceEtranger ? 'etr' : 'fr';
-
-            this.currentPredictionTruck = { brand: bestCandidate, nat: nat };
-            if(el) el.innerHTML = `<strong>${bestCandidate}</strong> (${nat === 'fr' ? '🇫🇷' : '🌍'}) ~${confidence}% <span style="color:#7f8c8d; font-size:0.8em;">(Classique 📊)</span>`;
-        } else {
-            this.currentPredictionCar = { type: bestCandidate };
-            if(el) el.innerHTML = `<strong>${bestCandidate === 'Camions' ? 'Poids Lourds' : bestCandidate}</strong> ~${confidence}% <span style="color:#7f8c8d; font-size:0.8em;">(Classique 📊)</span>`;
-        }
+        this.renderPredictionUI(type, top3, 'Classique 📊');
     }
 };
 
