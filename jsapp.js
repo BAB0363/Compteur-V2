@@ -31,6 +31,19 @@ const app = {
         }
     },
 
+    getRoadType(speedKmh, mode) {
+        if (speedKmh === 0) return "Inconnu";
+        if (mode === 'voiture') {
+            if (speedKmh <= 50) return "Ville (0-50 km/h)";
+            if (speedKmh <= 100) return "Route (50-100 km/h)";
+            return "Autoroute (>100 km/h)";
+        } else {
+            if (speedKmh <= 40) return "Ville (0-40 km/h)";
+            if (speedKmh <= 80) return "Route (40-80 km/h)";
+            return "Autoroute (>80 km/h)";
+        }
+    },
+
     brands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
     vehicleTypes: ["Voitures", "Utilitaires", "Motos", "Camions", "Camping-cars", "Bus/Car", "Engins agricoles", "Vélos"],
     
@@ -123,7 +136,7 @@ const app = {
             hours: hours,
             days: { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 },
             months: { "Jan":0, "Fév":0, "Mar":0, "Avr":0, "Mai":0, "Juin":0, "Juil":0, "Aoû":0, "Sep":0, "Oct":0, "Nov":0, "Déc":0 },
-            roads: { "Ville (<50km/h)": 0, "Route (50-80km/h)": 0, "Autoroute (>80km/h)": 0, "Inconnu": 0 },
+            roads: { "Inconnu": 0, "Ville (0-50 km/h)": 0, "Route (50-100 km/h)": 0, "Autoroute (>100 km/h)": 0, "Ville (0-40 km/h)": 0, "Route (40-80 km/h)": 0, "Autoroute (>80 km/h)": 0 },
             alts: { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 },
             byVeh: {}, seqs: {}, seqs3: {}, lastVehicles: [], predictions: { total: 0, success: 0 }
         };
@@ -546,7 +559,7 @@ const app = {
 
                 let nowTs = Date.now();
                 let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
-                let roadType = speedKmh === 0 ? "Inconnu" : (speedKmh < 50 ? "Ville (<50km/h)" : (speedKmh <= 80 ? "Route (50-80km/h)" : "Autoroute (>80km/h)"));
+                let roadType = this.getRoadType(speedKmh, this.currentMode);
                 
                 let histItem = { 
                     lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, 
@@ -568,7 +581,8 @@ const app = {
                 let altVal = histItem.alt || 0;
                 let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
 
-                ana.hours[hourKey]++; ana.days[dayKey]++; ana.months[monthKey]++; ana.alts[altKey]++; ana.roads[roadType]++;
+                ana.hours[hourKey]++; ana.days[dayKey]++; ana.months[monthKey]++; ana.alts[altKey]++; 
+                ana.roads[roadType] = (ana.roads[roadType] || 0) + 1;
 
                 if (!ana.byVeh[key1]) ana.byVeh[key1] = { hours: {}, days: {}, alts: {}, months: {}, roads: {} };
                 if (!ana.byVeh[key1].months) ana.byVeh[key1].months = {};
@@ -1157,7 +1171,8 @@ const app = {
         let alts = { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 };
         let days = { "Dim":0, "Lun":0, "Mar":0, "Mer":0, "Jeu":0, "Ven":0, "Sam":0 };
         let months = { "Jan":0, "Fév":0, "Mar":0, "Avr":0, "Mai":0, "Juin":0, "Juil":0, "Aoû":0, "Sep":0, "Oct":0, "Nov":0, "Déc":0 }; 
-        let roads = { "Ville (<50km/h)": 0, "Route (50-80km/h)": 0, "Autoroute (>80km/h)": 0, "Inconnu": 0 }; 
+        
+        let roads = { "Inconnu": 0, "Ville (0-50 km/h)": 0, "Route (50-100 km/h)": 0, "Autoroute (>100 km/h)": 0, "Ville (0-40 km/h)": 0, "Route (40-80 km/h)": 0, "Autoroute (>80 km/h)": 0 }; 
 
         let seqs = {}; 
         let dayKeys = Object.keys(days);
@@ -1195,7 +1210,7 @@ const app = {
                 alts[altKey]++;
 
                 let roadKey = h.road || "Inconnu";
-                roads[roadKey]++;
+                roads[roadKey] = (roads[roadKey] || 0) + 1;
 
                 if (i < sHist.length - 1) {
                     let nxt = type === 'trucks' ? sHist[i+1].brand : sHist[i+1].type;
@@ -1318,9 +1333,14 @@ const app = {
         let ctxR = document.getElementById('roadTypeChart');
         if(ctxR) {
             if(this.roadTypeChart) this.roadTypeChart.destroy();
+            
+            // Nettoyage des zéros pour ne pas afficher de légende inutile
+            let activeRoads = {};
+            Object.keys(roads).forEach(k => { if(roads[k] > 0) activeRoads[k] = roads[k]; });
+
             this.roadTypeChart = new Chart(ctxR, {
                 type: 'doughnut',
-                data: { labels: Object.keys(roads), datasets: [{ data: Object.values(roads), backgroundColor: ['#3498db', '#f1c40f', '#e74c3c', '#95a5a6'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
+                data: { labels: Object.keys(activeRoads), datasets: [{ data: Object.values(activeRoads), backgroundColor: ['#3498db', '#f1c40f', '#e74c3c', '#95a5a6', '#8e44ad', '#27ae60', '#e67e22'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
                 options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
             });
         }
@@ -1643,7 +1663,8 @@ const app = {
                     let chanceEtranger = (etr / (fr + etr || 1));
                     
                     let currentSpeedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
-                    if (currentSpeedKmh > 80) chanceEtranger += 0.2; 
+                    let isHighway = (this.currentMode === 'voiture' && currentSpeedKmh > 100) || (this.currentMode === 'camion' && currentSpeedKmh > 80);
+                    if (isHighway) chanceEtranger += 0.2; 
                     
                     let currentHour = d.getHours();
                     if (currentHour < 5 || currentHour > 22) chanceEtranger += 0.15;
@@ -1674,8 +1695,8 @@ const app = {
         let altKey = currentAlt < 200 ? "< 200m" : currentAlt < 500 ? "200-500m" : currentAlt < 1000 ? "500-1000m" : "> 1000m";
 
         let currentSpeedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
-        let isHighway = currentSpeedKmh > 80; 
-        let currentRoad = currentSpeedKmh === 0 ? "Inconnu" : (currentSpeedKmh < 50 ? "Ville (<50km/h)" : (currentSpeedKmh <= 80 ? "Route (50-80km/h)" : "Autoroute (>80km/h)"));
+        let isHighway = (this.currentMode === 'voiture' && currentSpeedKmh > 100) || (this.currentMode === 'camion' && currentSpeedKmh > 80); 
+        let currentRoad = this.getRoadType(currentSpeedKmh, this.currentMode);
         
         let sec = type === 'trucks' ? this.truckSeconds : this.carSeconds;
         let isDenseTraffic = sec > 0 && (history.length / (sec / 3600)) > 500; 
@@ -1764,7 +1785,6 @@ const app = {
 
 window.app = app;
 
-// Nouvelle méthode de démarrage pour esquiver le piège du module
 const startApp = () => {
     app.init(); 
     if(window.ui) window.ui.init(); 
@@ -1772,10 +1792,8 @@ const startApp = () => {
     if(window.gami) window.gami.init(); 
 };
 
-// Vérifie si la page est déjà prête pour tout charger correctement
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', startApp);
 } else {
     startApp();
 }
-

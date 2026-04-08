@@ -5,7 +5,15 @@ export const ml = {
     isTraining: false,
 
     // Dictionnaires pour convertir les textes en nombres pour l'IA
-    roadMap: { "Inconnu": 0, "Ville (<50km/h)": 1, "Route (50-80km/h)": 2, "Autoroute (>80km/h)": 3 },
+    roadMap: { 
+        "Inconnu": 0, 
+        "Ville (0-50 km/h)": 1, 
+        "Ville (0-40 km/h)": 1, 
+        "Route (50-100 km/h)": 2, 
+        "Route (40-80 km/h)": 2, 
+        "Autoroute (>100 km/h)": 3,
+        "Autoroute (>80 km/h)": 3
+    },
     truckBrands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
     carTypes: ["Voitures", "Utilitaires", "Motos", "Camions", "Camping-cars", "Bus/Car", "Engins agricoles", "Vélos"],
 
@@ -158,7 +166,7 @@ export const ml = {
 
         // On génère un "faux" historique basé sur l'instant présent pour questionner l'IA
         let currentSpeedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
-        let currentRoad = currentSpeedKmh === 0 ? "Inconnu" : (currentSpeedKmh < 50 ? "Ville (<50km/h)" : (currentSpeedKmh <= 80 ? "Route (50-80km/h)" : "Autoroute (>80km/h)"));
+        let currentRoad = window.app.getRoadType(currentSpeedKmh, window.app.currentMode);
         
         let mockEvent = {
             timestamp: Date.now(),
