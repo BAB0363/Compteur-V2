@@ -157,10 +157,15 @@ button:active { transform: scale(0.95); }
 .mini-map { height: 250px; width: 100%; border-radius: 8px; margin-bottom: 15px; background-color: #ccc; z-index: 1;}
 
 /* ==========================================
-   Toasts & Modals
+   Toasts, Modals & Anomalies IA (NOUVEAU)
    ========================================== */
-#toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none;}
-.toast { background-color: #f1c40f; color: #2c3e50; padding: 8px 15px; border-radius: 20px; font-size: 0.85em; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2); animation: slideDown 0.3s ease-out forwards, fadeOut 0.5s ease-in 2.5s forwards; opacity: 0; pointer-events: none;}
+#toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; width: 90%; max-width: 400px; align-items: center;}
+.toast { background-color: #f1c40f; color: #2c3e50; padding: 10px 20px; border-radius: 25px; font-size: 0.9em; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.3); animation: slideDown 0.3s ease-out forwards, fadeOut 0.5s ease-in 3.5s forwards; opacity: 0; pointer-events: none; text-align: center;}
+
+/* Nouveaux styles pour les alertes IA */
+.toast.anomaly { background-color: #e74c3c; color: white; border: 2px solid #c0392b; box-shadow: 0 0 15px rgba(231, 76, 60, 0.6); }
+.toast.rare-combo { background: linear-gradient(90deg, #f1c40f, #e67e22); color: white; border: 1px solid #f39c12; box-shadow: 0 0 15px rgba(241, 196, 15, 0.6); text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
+
 @keyframes slideDown { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes fadeOut { to { opacity: 0; visibility: hidden; } }
 
@@ -177,7 +182,7 @@ button:active { transform: scale(0.95); }
 .chart-small { height: 150px; }
 
 /* ==========================================
-   Grilles & Graphiques
+   Grilles, Graphiques & Insights IA (NOUVEAU)
    ========================================== */
 .km-stats-container { background: var(--card-bg); padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 1px 3px var(--shadow); }
 .km-stats-container h4 { margin-top: 0; margin-bottom: 10px; color: var(--text-color); border-bottom: 2px solid var(--border-color); padding-bottom: 5px; }
@@ -186,6 +191,27 @@ button:active { transform: scale(0.95); }
 .km-stat-title { font-size: 0.85em; color: #7f8c8d; font-weight: bold; display: block; margin-bottom: 5px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .km-stat-value { font-size: 1.1em; font-weight: bold; color: #2980b9; }
 .km-stat-extra { font-size: 0.75em; color: #95a5a6; display: block; margin-top: 3px; }
+
+/* Nouveau style pour l'encart Insights IA */
+.ai-insight-box {
+    background: linear-gradient(135deg, rgba(142, 68, 173, 0.1), rgba(41, 128, 185, 0.1));
+    border-left: 4px solid #8e44ad;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-size: 0.9em;
+    line-height: 1.4;
+    color: var(--text-color);
+}
+.ai-insight-title {
+    font-weight: bold;
+    color: #8e44ad;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 1.1em;
+}
 
 .session-detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border-color); }
 .session-detail-row:last-child { border-bottom: none; }

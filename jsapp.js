@@ -10,7 +10,7 @@ const app = {
     currentMode: localStorage.getItem('currentMode') || 'voiture',
     usersList: JSON.parse(localStorage.getItem('usersList')) || ['Sylvain'],
 
-    // ⚖️ NOUVEAU : Dictionnaire des poids
+    // ⚖️ Dictionnaire des poids
     vehicleWeights: {
         "Voitures": 1350,
         "Utilitaires": 2150,
@@ -22,13 +22,12 @@ const app = {
         "Vélos": 20
     },
 
-    // ⚖️ NOUVEAU : Fonction de formatage (passe en tonnes si > 1000 kg)
+    // ⚖️ Fonction de formatage (passe en tonnes si > 1000 kg)
     formatWeight(kg) {
         if (!kg) return "0 kg";
         return kg >= 1000 ? (kg / 1000).toFixed(1) + " t" : kg + " kg";
     },
 
-    // NOUVEAU SYSTÈME DE STOCKAGE UNIFIÉ
     storage: {
         state: {},
         init() {
@@ -592,6 +591,17 @@ const app = {
                 else { histItem.type = key1; }
                 history.push(histItem);
 
+                // NOUVEAU : Vérification d'anomalies ou combos par l'IA
+                if (window.ml) {
+                    let recentHist = history.filter(h => !h.isEvent);
+                    let anomaly = window.ml.checkAnomaly(mode, key1, speedKmh, recentHist);
+                    if (anomaly && window.ui) {
+                        window.ui.showToast(anomaly.msg, anomaly.type);
+                        if (anomaly.type === 'anomaly') window.ui.triggerHapticFeedback('error');
+                        else window.ui.triggerHapticFeedback('success');
+                    }
+                }
+
                 let d = new Date(nowTs);
                 let hourKey = `${d.getHours()}h`;
                 let dayKey = Object.keys(ana.days)[d.getDay()];
@@ -893,7 +903,6 @@ const app = {
         let gtEl = document.getElementById('grand-total'); if(gtEl) gtEl.innerText = grandTotal; 
         let lnEl = document.getElementById('leader-name'); if(lnEl) lnEl.innerText = maxScore > 0 ? `${leader} (${maxScore})` : "Aucune";
         
-        // ⚖️ NOUVEAU : Calcul et affichage du poids total (tous les camions valent 18000 kg)
         let truckWeightEl = document.getElementById('truck-weight');
         if(truckWeightEl) truckWeightEl.innerText = this.formatWeight(grandTotal * 18000);
         
@@ -906,16 +915,16 @@ const app = {
         const container = document.getElementById('car-container'); if(!container) return;
         container.innerHTML = ''; 
         let grandTotal = 0; 
-        let totalWeightKg = 0; // ⚖️ NOUVEAU
+        let totalWeightKg = 0; 
 
         this.vehicleTypes.forEach(v => {
             let count = (this.vehicleCounters[v] || 0);
             grandTotal += count;
-            totalWeightKg += count * (this.vehicleWeights[v] || 0); // ⚖️ NOUVEAU
+            totalWeightKg += count * (this.vehicleWeights[v] || 0); 
         }); 
 
         let cgt = document.getElementById('car-grand-total'); if(cgt) cgt.innerText = grandTotal;
-        let cwEl = document.getElementById('car-weight'); if(cwEl) cwEl.innerText = this.formatWeight(totalWeightKg); // ⚖️ NOUVEAU
+        let cwEl = document.getElementById('car-weight'); if(cwEl) cwEl.innerText = this.formatWeight(totalWeightKg); 
 
         const slugMap = { "Voitures": "voitures", "Utilitaires": "utilitaires", "Camions": "camions", "Engins agricoles": "engins", "Bus/Car": "bus", "Camping-cars": "camping", "Motos": "motos", "Vélos": "velos" };
         const nameMap = { "Camions": "Poids Lourds" }; 
@@ -1029,7 +1038,7 @@ const app = {
     },
 
     async showGlobalDetails(type, key) {
-        let count = 0, time = 0, dist = 0, title = "", weight = 0; // ⚖️ NOUVEAU: Ajout de weight
+        let count = 0, time = 0, dist = 0, title = "", weight = 0;
 
         if (type === 'trucks') {
             time = this.globalTruckTime; dist = this.globalTruckDistance;
@@ -1039,10 +1048,10 @@ const app = {
                     let c = (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0);
                     count += c;
                 });
-                weight = count * 18000; // ⚖️ NOUVEAU
+                weight = count * 18000;
             } else {
                 title = `🚛 ${key}`; count = (this.globalTruckCounters[key]?.fr || 0) + (this.globalTruckCounters[key]?.etr || 0);
-                weight = count * 18000; // ⚖️ NOUVEAU
+                weight = count * 18000;
             }
         } else {
             time = this.globalCarTime; dist = this.globalCarDistance;
@@ -1051,11 +1060,11 @@ const app = {
                 this.vehicleTypes.forEach(v => {
                     let c = (this.globalCarCounters[v] || 0);
                     count += c;
-                    weight += c * (this.vehicleWeights[v] || 0); // ⚖️ NOUVEAU
+                    weight += c * (this.vehicleWeights[v] || 0);
                 });
             } else {
                 title = `🚘 ${key === 'Camions' ? 'Poids Lourds' : key}`; count = this.globalCarCounters[key] || 0;
-                weight = count * (this.vehicleWeights[key === 'Poids Lourds' ? 'Camions' : key] || 0); // ⚖️ NOUVEAU
+                weight = count * (this.vehicleWeights[key === 'Poids Lourds' ? 'Camions' : key] || 0);
             }
         }
 
@@ -1279,6 +1288,16 @@ const app = {
         let dwEl = document.getElementById('dash-weight'); 
         if(dwEl) dwEl.innerText = this.formatWeight(dashTotalWeight);
 
+        // NOUVEAU : Injection des Conseils de Gégé (Insights IA)
+        let aiInsightContainer = document.getElementById('ai-insight-container');
+        let aiInsightText = document.getElementById('ai-insight-text');
+        if (aiInsightContainer && aiInsightText && window.ml) {
+            let anaData = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
+            let insightMsg = window.ml.generateInsights(type, anaData);
+            aiInsightText.innerHTML = insightMsg;
+            aiInsightContainer.style.display = 'block';
+        }
+
         let gRatio = gTotalDist > 0 ? (gTotal / gTotalDist).toFixed(1) + " /km" : "- /km";
         let htmlList = `<div class="km-stat-card" style="border-color:${type === 'trucks' ? '#27ae60' : '#3498db'}; cursor:pointer; background:var(--bg-color);" onclick="window.app.showGlobalDetails('${type}', 'Total')"><span class="km-stat-title">${type === 'trucks' ? 'Toutes Marques' : 'Tous Véhicules'}</span><span class="km-stat-value" style="color:${type === 'trucks' ? '#27ae60' : '#3498db'}; font-size:0.9em;">🔍 Voir Absolus</span><span style="display:block; font-size:0.75em; color:#7f8c8d; margin-top:3px;">${gRatio}</span></div>`;
         
@@ -1387,7 +1406,6 @@ const app = {
         if(ctxR) {
             if(this.roadTypeChart) this.roadTypeChart.destroy();
             
-            // Nettoyage des zéros pour ne pas afficher de légende inutile
             let activeRoads = {};
             Object.keys(roads).forEach(k => { if(roads[k] > 0) activeRoads[k] = roads[k]; });
 
@@ -1412,7 +1430,6 @@ const app = {
         let items = session.history ? session.history.filter(h => !h.isEvent) : [];
         let itemsCount = items.length;
         
-        // ⚖️ NOUVEAU : Calcul du poids de la session
         let sessionWeight = 0;
         if (type === 'trucks') {
             sessionWeight = itemsCount * 18000;
@@ -1522,6 +1539,19 @@ const app = {
         event.stopPropagation();
         let session = await this.idb.getById(sessionId);
         if(!session) return;
+        
+        // Ajout de la masse pour cet export précis
+        let count = session.history ? session.history.filter(h => !h.isEvent).length : 0;
+        let sessionWeight = 0;
+        if (type === 'trucks') {
+            sessionWeight = count * 18000;
+        } else if (session.summary) {
+            Object.keys(session.summary).forEach(v => {
+                sessionWeight += (session.summary[v] || 0) * (this.vehicleWeights[v] || 0);
+            });
+        }
+        session.masseTotaleKg = sessionWeight;
+
         let exportData = { appVersion: "Compteur Trafic v6.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
         const dataStr = JSON.stringify(exportData, null, 2);
         let safeDate = session.date.replace(/[\/ :]/g, '_');
@@ -1541,13 +1571,23 @@ const app = {
             let rythmeH = s.durationSec > 0 ? +(count / (s.durationSec / 3600)).toFixed(1) : 0;
             
             let detailAuKm = {};
+            let sessionWeight = 0; // Ajout de la masse
+            
+            if (s.sessionType === 'trucks') {
+                sessionWeight = count * 18000;
+            } else if (s.summary) {
+                Object.keys(s.summary).forEach(v => {
+                    sessionWeight += (s.summary[v] || 0) * (this.vehicleWeights[v] || 0);
+                });
+            }
+
             if (s.distanceKm > 0 && s.summary) {
                Object.keys(s.summary).forEach(k => {
                   let tot = typeof s.summary[k] === 'object' ? (s.summary[k].fr + s.summary[k].etr) : s.summary[k];
                   if(tot > 0) detailAuKm[k] = +(tot / s.distanceKm).toFixed(2);
                });
             }
-            return { ...s, totalCount: count, scoreParKm: vehPerKm, apparitionsParMinute: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
+            return { ...s, totalCount: count, masseTotaleKg: sessionWeight, scoreParKm: vehPerKm, apparitionsParMinute: freqMin, rythmeParHeure: rythmeH, vitesseMoyenneKmh: avgSpeed, espacementMoyenSec: espaceTemps, detailsAuKm: detailAuKm };
         };
 
         let allSessions = [...truckSessions.map(enrichSession), ...carSessions.map(enrichSession)];

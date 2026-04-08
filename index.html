@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=28">
+    <link rel="manifest" href="manifest.json?v=29">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=28">
-    <link rel="stylesheet" href="gami.css?v=28">
+    <link rel="stylesheet" href="style.css?v=29">
+    <link rel="stylesheet" href="gami.css?v=29">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -186,6 +186,11 @@
         <div class="header-dashboard border-orange">
             <h3 class="header-title">📈 Tableau de Bord</h3>
             <p class="header-desc">Données globales et analyses de performance IA.</p>
+        </div>
+
+        <div id="ai-insight-container" class="ai-insight-box no-print" style="display: none;">
+            <div class="ai-insight-title">🧠 Conseils de Gégé</div>
+            <div id="ai-insight-text">Analyse de tes données en cours...</div>
         </div>
 
         <div class="main-tabs mb-15">
@@ -374,14 +379,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsml.js?v=28"></script>
-    <script type="module" src="jsgami.js?v=28"></script>
-    <script type="module" src="jsapp.js?v=28"></script>
+    <script type="module" src="jsml.js?v=29"></script>
+    <script type="module" src="jsgami.js?v=29"></script>
+    <script type="module" src="jsapp.js?v=29"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=28')
+          navigator.serviceWorker.register('./sw.js?v=29')
             .then(registration => {
               console.log('Service Worker Compteur enregistré !', registration.scope);
             })

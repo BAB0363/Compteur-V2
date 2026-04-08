@@ -88,13 +88,18 @@ export const ui = {
         this.applyTheme();
     },
 
-    showToast(msg) {
+    // NOUVEAU : showToast gère maintenant les types d'alertes IA
+    showToast(msg, type = 'default') {
         const container = document.getElementById('toast-container');
         if (!container) return;
         const toast = document.createElement('div');
-        toast.className = 'toast'; toast.innerText = msg;
+        toast.className = 'toast'; 
+        if (type === 'anomaly') toast.classList.add('anomaly');
+        if (type === 'rare-combo') toast.classList.add('rare-combo');
+        
+        toast.innerHTML = msg; // innerHTML pour supporter le gras/emojis
         container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3000);
+        setTimeout(() => toast.remove(), 4000);
     },
 
     showClickParticle(e, text, color = '#27ae60') {
