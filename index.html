@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=27">
+    <link rel="manifest" href="manifest.json?v=28">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=27">
-    <link rel="stylesheet" href="gami.css?v=27">
+    <link rel="stylesheet" href="style.css?v=28">
+    <link rel="stylesheet" href="gami.css?v=28">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -90,7 +90,7 @@
             </div>
             
             <div class="totals-row">
-                Total : <span id="grand-total" class="text-success">0</span> | 🏆 <span id="leader-name">Aucune</span>
+                Total : <span id="grand-total" class="text-success">0</span> | ⚖️ <span id="truck-weight" class="text-purple">0 kg</span> | 🏆 <span id="leader-name">Aucune</span>
             </div>
             <div class="proportion-bar">
                 <div id="bar-fr"></div>
@@ -141,7 +141,7 @@
             </div>
 
             <div class="totals-row">
-                Total : <span id="car-grand-total" class="text-success">0</span>
+                Total : <span id="car-grand-total" class="text-success">0</span> | ⚖️ <span id="car-weight" class="text-purple">0 kg</span>
             </div>
             <div class="proportion-bar text-small">
                 <div id="bar-voitures"></div>
@@ -204,7 +204,7 @@
 
         <div class="km-stats-container">
             <h4 id="dash-title-total" class="text-orange">🚛 Cumul Total</h4>
-            <div class="dash-total-display">Total : <span id="dash-grand-total" class="text-success">0</span></div>
+            <div class="dash-total-display">Total : <span id="dash-grand-total" class="text-success">0</span> | ⚖️ <span id="dash-weight" class="text-orange">0 kg</span></div>
             <div class="chart-wrapper"><canvas id="dashboardMainChart"></canvas></div>
             <div id="dashboard-main-list" class="km-stats-grid"></div>
         </div>
@@ -374,14 +374,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsml.js?v=27"></script>
-    <script type="module" src="jsgami.js?v=27"></script>
-    <script type="module" src="jsapp.js?v=27"></script>
+    <script type="module" src="jsml.js?v=28"></script>
+    <script type="module" src="jsgami.js?v=28"></script>
+    <script type="module" src="jsapp.js?v=28"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=27')
+          navigator.serviceWorker.register('./sw.js?v=28')
             .then(registration => {
               console.log('Service Worker Compteur enregistré !', registration.scope);
             })

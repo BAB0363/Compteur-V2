@@ -10,6 +10,24 @@ const app = {
     currentMode: localStorage.getItem('currentMode') || 'voiture',
     usersList: JSON.parse(localStorage.getItem('usersList')) || ['Sylvain'],
 
+    // ⚖️ NOUVEAU : Dictionnaire des poids
+    vehicleWeights: {
+        "Voitures": 1350,
+        "Utilitaires": 2150,
+        "Motos": 210,
+        "Camions": 18000,
+        "Camping-cars": 3150,
+        "Bus/Car": 14000,
+        "Engins agricoles": 6000,
+        "Vélos": 20
+    },
+
+    // ⚖️ NOUVEAU : Fonction de formatage (passe en tonnes si > 1000 kg)
+    formatWeight(kg) {
+        if (!kg) return "0 kg";
+        return kg >= 1000 ? (kg / 1000).toFixed(1) + " t" : kg + " kg";
+    },
+
     // NOUVEAU SYSTÈME DE STOCKAGE UNIFIÉ
     storage: {
         state: {},
@@ -875,6 +893,10 @@ const app = {
         let gtEl = document.getElementById('grand-total'); if(gtEl) gtEl.innerText = grandTotal; 
         let lnEl = document.getElementById('leader-name'); if(lnEl) lnEl.innerText = maxScore > 0 ? `${leader} (${maxScore})` : "Aucune";
         
+        // ⚖️ NOUVEAU : Calcul et affichage du poids total (tous les camions valent 18000 kg)
+        let truckWeightEl = document.getElementById('truck-weight');
+        if(truckWeightEl) truckWeightEl.innerText = this.formatWeight(grandTotal * 18000);
+        
         let pctFr = grandTotal === 0 ? 50 : Math.round((totalFr / grandTotal) * 100);
         let barFr = document.getElementById('bar-fr'); if(barFr) { barFr.style.width = pctFr + '%'; barFr.innerText = grandTotal > 0 ? `🇫🇷 ${pctFr}%` : ''; }
         let barEtr = document.getElementById('bar-etr'); if(barEtr) { barEtr.style.width = (100 - pctFr) + '%'; barEtr.innerText = grandTotal > 0 ? `🌍 ${100 - pctFr}%` : ''; }
@@ -884,8 +906,16 @@ const app = {
         const container = document.getElementById('car-container'); if(!container) return;
         container.innerHTML = ''; 
         let grandTotal = 0; 
-        this.vehicleTypes.forEach(v => grandTotal += (this.vehicleCounters[v] || 0)); 
+        let totalWeightKg = 0; // ⚖️ NOUVEAU
+
+        this.vehicleTypes.forEach(v => {
+            let count = (this.vehicleCounters[v] || 0);
+            grandTotal += count;
+            totalWeightKg += count * (this.vehicleWeights[v] || 0); // ⚖️ NOUVEAU
+        }); 
+
         let cgt = document.getElementById('car-grand-total'); if(cgt) cgt.innerText = grandTotal;
+        let cwEl = document.getElementById('car-weight'); if(cwEl) cwEl.innerText = this.formatWeight(totalWeightKg); // ⚖️ NOUVEAU
 
         const slugMap = { "Voitures": "voitures", "Utilitaires": "utilitaires", "Camions": "camions", "Engins agricoles": "engins", "Bus/Car": "bus", "Camping-cars": "camping", "Motos": "motos", "Vélos": "velos" };
         const nameMap = { "Camions": "Poids Lourds" }; 
@@ -999,23 +1029,33 @@ const app = {
     },
 
     async showGlobalDetails(type, key) {
-        let count = 0, time = 0, dist = 0, title = "";
+        let count = 0, time = 0, dist = 0, title = "", weight = 0; // ⚖️ NOUVEAU: Ajout de weight
 
         if (type === 'trucks') {
             time = this.globalTruckTime; dist = this.globalTruckDistance;
             if (key === 'Total') {
                 title = "🚛 Total toutes Marques";
-                this.brands.forEach(b => count += (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0));
+                this.brands.forEach(b => {
+                    let c = (this.globalTruckCounters[b]?.fr || 0) + (this.globalTruckCounters[b]?.etr || 0);
+                    count += c;
+                });
+                weight = count * 18000; // ⚖️ NOUVEAU
             } else {
                 title = `🚛 ${key}`; count = (this.globalTruckCounters[key]?.fr || 0) + (this.globalTruckCounters[key]?.etr || 0);
+                weight = count * 18000; // ⚖️ NOUVEAU
             }
         } else {
             time = this.globalCarTime; dist = this.globalCarDistance;
             if (key === 'Total') {
                 title = "🚗 Total tous Véhicules";
-                this.vehicleTypes.forEach(v => count += (this.globalCarCounters[v] || 0));
+                this.vehicleTypes.forEach(v => {
+                    let c = (this.globalCarCounters[v] || 0);
+                    count += c;
+                    weight += c * (this.vehicleWeights[v] || 0); // ⚖️ NOUVEAU
+                });
             } else {
                 title = `🚘 ${key === 'Camions' ? 'Poids Lourds' : key}`; count = this.globalCarCounters[key] || 0;
+                weight = count * (this.vehicleWeights[key === 'Poids Lourds' ? 'Camions' : key] || 0); // ⚖️ NOUVEAU
             }
         }
 
@@ -1031,6 +1071,7 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne Globale</span><span class="session-detail-value" style="color:#f39c12;">${time > 0 ? (dist / (time/3600)).toFixed(1) : '-'} km/h</span></div>
             <div style="border-top: 2px dashed var(--border-color); margin: 15px 0;"></div>
             <div class="session-detail-row"><span class="session-detail-label">Quantité globale comptée</span><span class="session-detail-value" style="color:#27ae60; font-size:1.1em;">${count}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Masse Totale Estimée</span><span class="session-detail-value" style="color:#e67e22; font-weight:bold;">⚖️ ${this.formatWeight(weight)}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Moyenne par km</span><span class="session-detail-value" style="color:#8e44ad;">${avgKm}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Apparitions par minute</span><span class="session-detail-value">${freq}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Rythme par heure</span><span class="session-detail-value">${speed}</span></div>
@@ -1226,6 +1267,18 @@ const app = {
             tTitle.style.color = type === 'trucks' ? "#e67e22" : "#3498db"; 
         }
 
+        // ⚖️ NOUVEAU : Calcul du poids total pour le tableau de bord
+        let dashTotalWeight = 0;
+        if (type === 'trucks') {
+            dashTotalWeight = gTotal * 18000;
+        } else {
+            Object.keys(counters).forEach(k => {
+                dashTotalWeight += (counters[k] || 0) * (this.vehicleWeights[k] || 0);
+            });
+        }
+        let dwEl = document.getElementById('dash-weight'); 
+        if(dwEl) dwEl.innerText = this.formatWeight(dashTotalWeight);
+
         let gRatio = gTotalDist > 0 ? (gTotal / gTotalDist).toFixed(1) + " /km" : "- /km";
         let htmlList = `<div class="km-stat-card" style="border-color:${type === 'trucks' ? '#27ae60' : '#3498db'}; cursor:pointer; background:var(--bg-color);" onclick="window.app.showGlobalDetails('${type}', 'Total')"><span class="km-stat-title">${type === 'trucks' ? 'Toutes Marques' : 'Tous Véhicules'}</span><span class="km-stat-value" style="color:${type === 'trucks' ? '#27ae60' : '#3498db'}; font-size:0.9em;">🔍 Voir Absolus</span><span style="display:block; font-size:0.75em; color:#7f8c8d; margin-top:3px;">${gRatio}</span></div>`;
         
@@ -1359,6 +1412,16 @@ const app = {
         let items = session.history ? session.history.filter(h => !h.isEvent) : [];
         let itemsCount = items.length;
         
+        // ⚖️ NOUVEAU : Calcul du poids de la session
+        let sessionWeight = 0;
+        if (type === 'trucks') {
+            sessionWeight = itemsCount * 18000;
+        } else if (session.summary) {
+            Object.keys(session.summary).forEach(v => {
+                sessionWeight += (session.summary[v] || 0) * (this.vehicleWeights[v] || 0);
+            });
+        }
+        
         let freq = itemsCount > 0 && session.durationSec > 0 ? (itemsCount / (session.durationSec / 60)).toFixed(1) : '-';
         let speed = session.durationSec > 0 ? (itemsCount / (session.durationSec / 3600)).toFixed(1) : '-';
         let dist = session.distanceKm || 0;
@@ -1380,6 +1443,7 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Distance</span><span class="session-detail-value">${dist} km</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Vitesse Moyenne</span><span class="session-detail-value" style="color:#8e44ad;">${avgSpeedKmh} km/h</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Véhicules comptés</span><span class="session-detail-value">${itemsCount}</span></div>
+            <div class="session-detail-row"><span class="session-detail-label">Masse Estimée</span><span class="session-detail-value" style="color:#e67e22; font-weight:bold;">⚖️ ${this.formatWeight(sessionWeight)}</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Apparitions par minute</span><span class="session-detail-value">${freq} /min</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Rythme</span><span class="session-detail-value">${speed} /h</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Moyenne</span><span class="session-detail-value">${avgKm} /km</span></div>
