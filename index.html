@@ -49,8 +49,13 @@
     <div id="lottie-container" class="lottie-fx"></div>
 
     <div class="top-bar-controls no-print">
-        <div id="current-profile-display" class="profile-badge">
-            👤 <span id="display-user">Sylvain</span> <span class="badge-separator">|</span> <span id="display-mode">🚗 Voiture</span>
+        <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+            <div id="current-profile-display" class="profile-badge">
+                👤 <span id="display-user">Sylvain</span> <span class="badge-separator">|</span> <span id="display-mode">🚗 Voiture</span>
+            </div>
+            <div id="bank-badge" class="profile-badge bank-positive" style="display: none;">
+                🏦 <span id="display-bank">0 €</span>
+            </div>
         </div>
         <div class="top-bar-btns">
             <button id="btn-open-gami" class="btn-gami-header" onclick="window.gami.updateUI(); document.getElementById('gami-overlay').style.display = 'flex';">🎁 Passe</button>
@@ -129,6 +134,8 @@
     </div>
 
     <div id="section-cars" style="display: none;">
+        <div id="huissier-banner" class="no-print" style="display:none; background: linear-gradient(90deg, #c0392b, #8e44ad); color: white; text-align: center; padding: 8px; font-size: 0.85em; font-weight: bold; margin-bottom: 10px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">⚖️ MAÎTRE ASPHALTE EST LÀ : Saisie de 80% sur vos gains !</div>
+        
         <div class="header-dashboard">
             <div class="top-row no-print">
                 <div class="chrono-container">

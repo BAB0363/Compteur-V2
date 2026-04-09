@@ -22,6 +22,20 @@ const app = {
         "Vélos": 20
     },
 
+    // 💸 Dictionnaire des valeurs financières (Mode Voiture uniquement)
+    bankValues: {
+        "Voitures": 1,
+        "Vélos": 1,
+        "Utilitaires": 5,
+        "Motos": 5,
+        "Camions": 20, 
+        "Camping-cars": 50,
+        "Bus/Car": 50,
+        "Engins agricoles": 200
+    },
+
+    bankBalance: 0,
+
     formatWeight(kg) {
         if (!kg) return "0 kg";
         return kg >= 1000 ? (kg / 1000).toFixed(1) + " t" : kg + " kg";
@@ -46,6 +60,74 @@ const app = {
             localStorage.removeItem(key);
         }
     },
+
+    // ==========================================
+    // 🏦 SYSTÈME FINANCIER (La Bourse de l'Asphalte)
+    // ==========================================
+    initBank() {
+        let savedBank = localStorage.getItem('bankState_' + this.currentUser);
+        this.bankBalance = savedBank ? parseFloat(savedBank) : 0;
+        this.updateBankUI();
+    },
+
+    saveBank() {
+        localStorage.setItem('bankState_' + this.currentUser, this.bankBalance);
+        this.updateBankUI();
+        this.checkBankruptcy();
+    },
+
+    updateBankUI() {
+        let badge = document.getElementById('bank-badge');
+        let display = document.getElementById('display-bank');
+        let banner = document.getElementById('huissier-banner');
+        if (!badge || !display) return;
+
+        // L'économie ne tourne que sur le mode Voiture
+        if (this.currentMode === 'voiture') {
+            badge.style.display = 'flex';
+            display.innerText = Math.round(this.bankBalance) + ' €';
+            
+            if (this.bankBalance < 0) {
+                badge.classList.remove('bank-positive');
+                badge.classList.add('bank-negative');
+                if (banner) banner.style.display = 'block';
+            } else {
+                badge.classList.remove('bank-negative');
+                badge.classList.add('bank-positive');
+                if (banner) banner.style.display = 'none';
+            }
+        } else {
+            badge.style.display = 'none';
+            if (banner) banner.style.display = 'none';
+        }
+    },
+
+    checkBankruptcy() {
+        if (this.bankBalance <= -10000) {
+            if(window.ui) window.ui.showToast("☠️ LIQUIDATION JUDICIAIRE ! La faillite est prononcée.", "anomaly");
+            this.bankBalance = 0;
+            this.saveBank();
+            
+            // Remise à zéro du niveau Gami
+            if (window.gami) {
+                window.gami.state.level = 1;
+                window.gami.state.xp = 0;
+                window.gami.saveState();
+            }
+        }
+    },
+
+    showMoneyParticle(e, amount) {
+        if (!e || !e.clientX) return;
+        const p = document.createElement('div');
+        p.className = 'money-particle ' + (amount >= 0 ? 'money-positive' : 'money-negative');
+        p.innerText = amount >= 0 ? `+${amount} €` : `${amount} €`;
+        p.style.left = e.clientX + 'px';
+        p.style.top = e.clientY + 'px';
+        document.body.appendChild(p);
+        setTimeout(() => p.remove(), 1000);
+    },
+    // ==========================================
 
     getRoadType(speedKmh, mode) {
         if (speedKmh === 0) return "Inconnu";
@@ -156,7 +238,7 @@ const app = {
             alts: { "< 200m": 0, "200-500m": 0, "500-1000m": 0, "> 1000m": 0 },
             byVeh: {}, seqs: {}, seqs3: {}, lastVehicles: [], 
             predictions: { total: 0, success: 0 },
-            predictionsByClass: {} // NOUVEAU : Suivi des notes par classe !
+            predictionsByClass: {} 
         };
     },
 
@@ -264,6 +346,7 @@ const app = {
         let elMode = document.getElementById('display-mode');
         if(elUser) elUser.innerText = this.currentUser;
         if(elMode) elMode.innerText = this.currentMode === 'voiture' ? '🚗 Voiture' : '🚛 Camion';
+        this.updateBankUI();
     },
 
     createUser() {
@@ -287,6 +370,7 @@ const app = {
         }
         if(confirm(`⚠️ Supprimer définitivement le profil de ${this.currentUser} et TOUTES ses données locales ?`)) {
             this.storage.clearAll();
+            localStorage.removeItem('bankState_' + this.currentUser);
             this.usersList = this.usersList.filter(u => u !== this.currentUser);
             localStorage.setItem('usersList', JSON.stringify(this.usersList));
             this.changeUser(this.usersList[0]);
@@ -318,6 +402,7 @@ const app = {
         if (window.ml) await window.ml.init();
 
         this.storage.init();
+        this.initBank();
 
         let userSel = document.getElementById('user-selector');
         if(userSel) {
@@ -511,6 +596,23 @@ const app = {
                         this.storage.set('globalCarTime', this.globalCarTime);
                         this.lastGlobalCarTick += add * 1000;
                     }
+
+                    // 💸 MÉCANIQUES FINANCIÈRES LIÉES AU TEMPS (Uniquement en mode Voiture)
+                    if (this.currentMode === 'voiture') {
+                        // Taxe de péage (50€ toutes les 5 minutes)
+                        if (elapsed > 0 && elapsed % 300 === 0) {
+                            this.bankBalance -= 50;
+                            if(window.ui) window.ui.showToast("💸 Taxe de péage : - 50 €", "anomaly");
+                            this.saveBank();
+                        }
+                        // Agios (5% de la dette toutes les minutes)
+                        if (elapsed > 0 && elapsed % 60 === 0 && this.bankBalance < 0) {
+                            let agios = Math.abs(this.bankBalance) * 0.05;
+                            this.bankBalance -= agios;
+                            if(window.ui) window.ui.showToast(`📉 Agios (5%) : - ${Math.round(agios)} €`, "anomaly");
+                            this.saveBank();
+                        }
+                    }
                 }
                 this.updateChronoDisp(type); 
                 this.renderLiveStats(type);
@@ -564,7 +666,7 @@ const app = {
             if (amount > 0) {
                 if (window.gami) window.gami.notifyVehicleAdded(key1, key2);
 
-                // NOUVEAU : Suivi précis des notes pour le Bulletin Gégé
+                let isExact = false;
                 if (currPred && currPred.class) {
                     ana.predictions.total++;
                     sessionPreds.total++;
@@ -576,13 +678,44 @@ const app = {
                     
                     ana.predictionsByClass[currPred.class].total++;
 
-                    let isExact = (currPred.class === actualClass);
+                    isExact = (currPred.class === actualClass);
                     if (isExact) {
                         ana.predictions.success++;
                         sessionPreds.success++;
                         ana.predictionsByClass[currPred.class].success++;
                         if(window.ui) window.ui.showToast("🔮 Prédiction exacte !");
                     }
+                }
+
+                // 💸 GESTION FINANCIÈRE (Uniquement en mode Voiture et si on ajoute)
+                if (!isTruck && this.currentMode === 'voiture') {
+                    let baseVal = this.bankValues[key1] || 1;
+                    
+                    // Krach Boursier : Vérification des 4 derniers ajouts
+                    let consecutive = 0;
+                    let justHistory = history.filter(h => !h.isEvent);
+                    for (let i = justHistory.length - 1; i >= Math.max(0, justHistory.length - 4); i--) {
+                        if (justHistory[i].type === key1) consecutive++;
+                        else break;
+                    }
+
+                    if (consecutive >= 4) {
+                        // Le 5ème identique passe en négatif (Frais de stockage)
+                        baseVal = -Math.abs(baseVal * 2);
+                        if(window.ui) window.ui.showToast(`📉 Krach Boursier ! Le marché sature pour ${key1} !`, "anomaly");
+                    } else if (isExact) {
+                        // Bonus IA Clairvoyance
+                        baseVal *= 3;
+                    }
+
+                    // Saisie de l'Huissier
+                    if (this.bankBalance < 0 && baseVal > 0) {
+                        baseVal = Math.round(baseVal * 0.2); // 80% saisi
+                    }
+
+                    this.bankBalance += baseVal;
+                    this.saveBank();
+                    this.showMoneyParticle(e, baseVal);
                 }
 
                 if (isTruck) { counters[key1][key2] += amount; globalCounters[key1][key2] += amount; }
@@ -610,7 +743,15 @@ const app = {
                     let anomaly = window.ml.checkAnomaly(mode, key1, speedKmh, recentHist);
                     if (anomaly && window.ui) {
                         window.ui.showToast(anomaly.msg, anomaly.type);
-                        if (anomaly.type === 'anomaly') window.ui.triggerHapticFeedback('error');
+                        if (anomaly.type === 'anomaly') {
+                            window.ui.triggerHapticFeedback('error');
+                            // Amende IA en cas de grosse anomalie
+                            if (!isTruck && this.currentMode === 'voiture') {
+                                this.bankBalance -= 100;
+                                this.saveBank();
+                                this.showMoneyParticle(e, -100);
+                            }
+                        }
                         else window.ui.triggerHapticFeedback('success');
                     }
                 }
@@ -674,6 +815,14 @@ const app = {
                 this.updatePrediction(mode);
 
             } else if (amount < 0) {
+                // Pénalité d'annulation !
+                if (!isTruck && this.currentMode === 'voiture') {
+                    let currentVal = this.bankBalance;
+                    this.bankBalance -= Math.max(5, Math.abs(currentVal * 0.1)); // 10% de pénalité ou 5€ min
+                    this.saveBank();
+                    if(window.ui) window.ui.showToast("📉 Frais d'annulation appliqués !", "anomaly");
+                }
+
                 for (let i = history.length - 1; i >= 0; i--) {
                     if (!history[i].isEvent) {
                         let match = isTruck ? (history[i].brand === key1 && history[i].type === key2) : (history[i].type === key1);
@@ -869,6 +1018,7 @@ const app = {
 
             this.storage.clearAll();
             localStorage.removeItem(`gami_state_${this.currentUser}`);
+            localStorage.removeItem(`bankState_${this.currentUser}`); // Reset de la banque !
 
             try {
                 if (typeof tf !== 'undefined') {
@@ -1311,7 +1461,6 @@ const app = {
             aiInsightContainer.style.display = 'block';
         }
 
-        // NOUVEAU : Injection du Bulletin de Notes de l'IA
         let reportContainer = document.getElementById('ai-report-card-container');
         let reportContent = document.getElementById('ai-report-card-content');
         if (reportContainer && reportContent && window.ml) {
@@ -1615,6 +1764,7 @@ const app = {
         let globalSummary = { 
             profile: this.currentUser,
             mode: this.currentMode,
+            bankBalance: this.bankBalance,
             totalSessions: allSessions.length, 
             globalDonneesBrutesCamions: this.globalTruckCounters, 
             globalDonneesBrutesVehicules: this.globalCarCounters,
@@ -1641,6 +1791,10 @@ const app = {
                     if (data.globalSummary?.globalDonneesBrutesVehicules) this.storage.set('globalCarCounters', data.globalSummary.globalDonneesBrutesVehicules);
                     if (data.globalSummary?.analysesPermanentesCamions) this.storage.set('globalAnaTrucks', data.globalSummary.analysesPermanentesCamions);
                     if (data.globalSummary?.analysesPermanentesVehicules) this.storage.set('globalAnaCars', data.globalSummary.analysesPermanentesVehicules);
+                    if (data.globalSummary?.bankBalance) {
+                        this.bankBalance = parseFloat(data.globalSummary.bankBalance);
+                        this.saveBank();
+                    }
                     
                     alert("✅ Historique et analyses importés avec succès ! Redémarrage..."); location.reload();
                 } else if(!data.sessions) { alert("❌ Format non reconnu."); }
@@ -1770,7 +1924,6 @@ const app = {
         }
     },
 
-    // Fonction d'aide pour formatter le nom du candidat sur l'UI
     formatCandidateName(c, type) {
         if (type === 'trucks') {
             return c.replace('_fr', ' 🇫🇷').replace('_etr', ' 🌍');
@@ -1779,7 +1932,6 @@ const app = {
         }
     },
 
-    // NOUVEAU : Mise à jour UI avec Jauge et Podium
     renderPredictionUI(type, top3, method) {
         let elMain = document.getElementById(type === 'trucks' ? 'pred-main-trucks' : 'pred-main-cars');
         let elGauge = document.getElementById(type === 'trucks' ? 'pred-gauge-trucks' : 'pred-gauge-cars');
@@ -1793,9 +1945,9 @@ const app = {
         elMain.innerHTML = `<strong>${displayName}</strong> ~${best.confidence}% <span style="color:#7f8c8d; font-size:0.8em;">(${method})</span>`;
 
         elGauge.style.width = best.confidence + '%';
-        if (best.confidence < 40) elGauge.style.backgroundColor = '#e74c3c'; // Rouge
-        else if (best.confidence < 70) elGauge.style.backgroundColor = '#f39c12'; // Jaune/Orange
-        else elGauge.style.backgroundColor = '#27ae60'; // Vert
+        if (best.confidence < 40) elGauge.style.backgroundColor = '#e74c3c'; 
+        else if (best.confidence < 70) elGauge.style.backgroundColor = '#f39c12'; 
+        else elGauge.style.backgroundColor = '#27ae60'; 
 
         let podiumHtml = '';
         for (let i = 1; i < 3; i++) {
@@ -1807,7 +1959,6 @@ const app = {
         }
         elPodium.innerHTML = podiumHtml;
 
-        // Mise à jour de l'état interne pour vérifier la réussite plus tard
         if (type === 'trucks') {
             this.currentPredictionTruck = { class: best.candidate };
         } else {
@@ -1827,7 +1978,6 @@ const app = {
             }
         }
 
-        // --- Algorithme de secours (Classique) si pas d'IA ---
         let ana = type === 'trucks' ? this.globalAnaTrucks : this.globalAnaCars;
         let history = type === 'trucks' ? this.truckHistory : this.carHistory;
         let globalCounters = type === 'trucks' ? this.globalTruckCounters : this.globalCarCounters;
@@ -1894,7 +2044,6 @@ const app = {
                 scores[c] += (pHeure * 0.1) + (pJour * 0.1) + (pAlt * 0.1) + (pMois * 0.15) + (pRoute * 0.25);
             }
             
-            // Logique spécifiques pour la nuit / week-end pour les camions étrangers
             if (type === 'trucks' && c.includes('_etr')) {
                 if (isHighway) scores[c] += 15;
                 let currentHour = d.getHours();
