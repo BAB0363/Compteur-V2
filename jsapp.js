@@ -22,7 +22,7 @@ const app = {
         "Vélos": 20
     },
 
-    // 💸 Dictionnaire des valeurs financières (Mode Voiture uniquement)
+    // 💸 Dictionnaire des valeurs financières (Compteur Véhicules uniquement)
     bankValues: {
         "Voitures": 1,
         "Vélos": 1,
@@ -82,22 +82,17 @@ const app = {
         let banner = document.getElementById('huissier-banner');
         if (!badge || !display) return;
 
-        // L'économie ne tourne que sur le mode Voiture
-        if (this.currentMode === 'voiture') {
-            badge.style.display = 'flex';
-            display.innerText = Math.round(this.bankBalance) + ' €';
-            
-            if (this.bankBalance < 0) {
-                badge.classList.remove('bank-positive');
-                badge.classList.add('bank-negative');
-                if (banner) banner.style.display = 'block';
-            } else {
-                badge.classList.remove('bank-negative');
-                badge.classList.add('bank-positive');
-                if (banner) banner.style.display = 'none';
-            }
+        // La banque s'affiche toujours maintenant !
+        badge.style.display = 'flex';
+        display.innerText = Math.round(this.bankBalance) + ' €';
+        
+        if (this.bankBalance < 0) {
+            badge.classList.remove('bank-positive');
+            badge.classList.add('bank-negative');
+            if (banner) banner.style.display = 'block';
         } else {
-            badge.style.display = 'none';
+            badge.classList.remove('bank-negative');
+            badge.classList.add('bank-positive');
             if (banner) banner.style.display = 'none';
         }
     },
@@ -597,21 +592,19 @@ const app = {
                         this.lastGlobalCarTick += add * 1000;
                     }
 
-                    // 💸 MÉCANIQUES FINANCIÈRES LIÉES AU TEMPS (Uniquement en mode Voiture)
-                    if (this.currentMode === 'voiture') {
-                        // Taxe de péage (50€ toutes les 5 minutes)
-                        if (elapsed > 0 && elapsed % 300 === 0) {
-                            this.bankBalance -= 50;
-                            if(window.ui) window.ui.showToast("💸 Taxe de péage : - 50 €", "anomaly");
-                            this.saveBank();
-                        }
-                        // Agios (5% de la dette toutes les minutes)
-                        if (elapsed > 0 && elapsed % 60 === 0 && this.bankBalance < 0) {
-                            let agios = Math.abs(this.bankBalance) * 0.05;
-                            this.bankBalance -= agios;
-                            if(window.ui) window.ui.showToast(`📉 Agios (5%) : - ${Math.round(agios)} €`, "anomaly");
-                            this.saveBank();
-                        }
+                    // 💸 MÉCANIQUES FINANCIÈRES LIÉES AU TEMPS (Uniquement sur le compteur Véhicules)
+                    // Taxe de péage (50€ toutes les 5 minutes)
+                    if (elapsed > 0 && elapsed % 300 === 0) {
+                        this.bankBalance -= 50;
+                        if(window.ui) window.ui.showToast("💸 Taxe de péage : - 50 €", "anomaly");
+                        this.saveBank();
+                    }
+                    // Agios (5% de la dette toutes les minutes)
+                    if (elapsed > 0 && elapsed % 60 === 0 && this.bankBalance < 0) {
+                        let agios = Math.abs(this.bankBalance) * 0.05;
+                        this.bankBalance -= agios;
+                        if(window.ui) window.ui.showToast(`📉 Agios (5%) : - ${Math.round(agios)} €`, "anomaly");
+                        this.saveBank();
                     }
                 }
                 this.updateChronoDisp(type); 
@@ -687,8 +680,8 @@ const app = {
                     }
                 }
 
-                // 💸 GESTION FINANCIÈRE (Uniquement en mode Voiture et si on ajoute)
-                if (!isTruck && this.currentMode === 'voiture') {
+                // 💸 GESTION FINANCIÈRE (Uniquement sur le compteur Véhicules et si on ajoute)
+                if (!isTruck) {
                     let baseVal = this.bankValues[key1] || 1;
                     
                     // Krach Boursier : Vérification des 4 derniers ajouts
@@ -746,7 +739,7 @@ const app = {
                         if (anomaly.type === 'anomaly') {
                             window.ui.triggerHapticFeedback('error');
                             // Amende IA en cas de grosse anomalie
-                            if (!isTruck && this.currentMode === 'voiture') {
+                            if (!isTruck) {
                                 this.bankBalance -= 100;
                                 this.saveBank();
                                 this.showMoneyParticle(e, -100);
@@ -816,7 +809,7 @@ const app = {
 
             } else if (amount < 0) {
                 // Pénalité d'annulation !
-                if (!isTruck && this.currentMode === 'voiture') {
+                if (!isTruck) {
                     let currentVal = this.bankBalance;
                     this.bankBalance -= Math.max(5, Math.abs(currentVal * 0.1)); // 10% de pénalité ou 5€ min
                     this.saveBank();
@@ -1461,6 +1454,7 @@ const app = {
             aiInsightContainer.style.display = 'block';
         }
 
+        // NOUVEAU : Injection du Bulletin de Notes de l'IA
         let reportContainer = document.getElementById('ai-report-card-container');
         let reportContent = document.getElementById('ai-report-card-content');
         if (reportContainer && reportContent && window.ml) {
