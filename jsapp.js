@@ -1,4 +1,3 @@
-// jsapp.js (PARTIE 1/3)
 import { ui } from './jsui.js';
 import { gps } from './jsgps.js';
 import { ml } from './jsml.js';
@@ -288,22 +287,16 @@ const app = {
 
         // 🌳 TALENT : Éco-Conduite
         if (euros < 0 && window.gami && window.gami.state.unlockedTalents.ecoConduite) {
-            euros = Math.round(euros * 0.85);
+            euros = Math.round(euros * 0.85); // Réduction de 15% de l'amende
             if(window.ui) window.ui.showToast(`🌳 Talent Éco-Conduite : Taxe carbone réduite !`);
         }
 
         if (euros > 0) {
             this.addBankTransaction(euros, "Revente Crédits Carbone 🌿");
-            if(window.ui) {
-                window.ui.showToast(`🌿 Trafic Écolo ! Crédits revendus : +${euros} €`);
-                window.ui.playGamiSound('cash');
-            }
+            if(window.ui) { window.ui.showToast(`🌿 Trafic Écolo ! Crédits revendus : +${euros} €`); window.ui.playGamiSound('cash'); }
         } else if (euros < 0) {
             this.addBankTransaction(euros, "Taxe Carbone Globale 💨");
-            if(window.ui) {
-                window.ui.showToast(`💨 Trafic Polluant ! Taxe Carbone : ${euros} €`, "anomaly");
-                window.ui.playGamiSound('siren');
-            }
+            if(window.ui) { window.ui.showToast(`💨 Trafic Polluant ! Taxe Carbone : ${euros} €`, "anomaly"); window.ui.playGamiSound('siren'); }
         }
         
         return euros;
@@ -321,7 +314,7 @@ const app = {
         
         // 💼 TALENT : Négociateur
         if (window.gami && window.gami.state.unlockedTalents.negociateur) {
-            advance = Math.round(advance * 1.20); 
+            advance = Math.round(advance * 1.20); // +20% d'avance
         }
 
         this.pendingSponsor = { type: t, target: target, advance: advance, penalty: advance * 2 };
@@ -441,10 +434,9 @@ const app = {
             return "Autoroute (>80 km/h)";
         }
     },
-// === FIN DE LA PARTIE 1 ===
 
- ==========================================
-    // jsapp.js (PARTIE 2/3)
+==========================================
+    // jsapp.js (PARTIE 2 / 4)
     // ==========================================
 
     brands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
@@ -962,9 +954,283 @@ const app = {
         }
     },
 
+==========================================
+    // jsapp.js (PARTIE 3 / 4)
     // ==========================================
-    // jsapp.js (PARTIE 3/3)
-    // ==========================================
+
+    updateCounter(mode, key1, key2, amount, e) {
+        let isTruck = mode === 'trucks';
+        if (isTruck && !this.isTruckRunning) { alert("Lance le chrono Camions d'abord ! ⏱️"); return; }
+        if (!isTruck && !this.isCarRunning) { alert("Lance le chrono Véhicules d'abord ! ⏱️"); return; }
+
+        let counters = isTruck ? this.truckCounters : this.vehicleCounters;
+        let globalCounters = isTruck ? this.globalTruckCounters : this.globalCarCounters;
+        let history = isTruck ? this.truckHistory : this.carHistory;
+        let ana = isTruck ? this.globalAnaTrucks : this.globalAnaCars;
+        let sessionPreds = isTruck ? this.sessionTruckPredictions : this.sessionCarPredictions;
+        let currPred = isTruck ? this.currentPredictionTruck : this.currentPredictionCar;
+
+        if (isTruck) {
+            if (!counters[key1]) counters[key1] = { fr: 0, etr: 0 };
+            if (!globalCounters[key1]) globalCounters[key1] = { fr: 0, etr: 0 };
+        } else {
+            if (typeof counters[key1] === 'undefined') counters[key1] = 0;
+            if (typeof globalCounters[key1] === 'undefined') globalCounters[key1] = 0;
+        }
+
+        let currentCount = isTruck ? counters[key1][key2] : counters[key1];
+
+        if (currentCount + amount >= 0) {
+            if (window.ui) window.ui.playBeep(amount > 0);
+            
+            if (amount > 0) {
+                if (window.gami) window.gami.notifyVehicleAdded(key1, key2);
+
+                let isExact = false;
+                if (currPred && currPred.class) {
+                    ana.predictions.total++; sessionPreds.total++;
+                    let actualClass = isTruck ? `${key1}_${key2}` : key1;
+                    
+                    if (!ana.predictionsByClass) ana.predictionsByClass = {};
+                    if (!ana.predictionsByClass[currPred.class]) ana.predictionsByClass[currPred.class] = { total: 0, success: 0 };
+                    
+                    ana.predictionsByClass[currPred.class].total++;
+
+                    isExact = (currPred.class === actualClass);
+                    if (isExact) {
+                        ana.predictions.success++; sessionPreds.success++;
+                        ana.predictionsByClass[currPred.class].success++;
+                        if(window.ui) window.ui.showToast("🔮 Prédiction exacte !");
+                    }
+                }
+
+                // ⚖️ NOUVEAU : Génération Poids et CO2 Dynamique
+                let specs = this.vehicleSpecs[key1] || { wMin: 1500, wMax: 1500, cMin: 120, cMax: 120 };
+                if (isTruck) specs = this.vehicleSpecs["Camions"]; 
+                
+                let randWeight = Math.floor(Math.random() * (specs.wMax - specs.wMin + 1)) + specs.wMin;
+                let co2Ratio = specs.wMax === specs.wMin ? 0 : (randWeight - specs.wMin) / (specs.wMax - specs.wMin);
+                let randCo2 = Math.round(specs.cMin + co2Ratio * (specs.cMax - specs.cMin));
+
+                if (!isTruck) {
+                    let baseVal = this.bankValues[key1] || 1;
+                    let nowTs = Date.now();
+
+                    this.sessionPaveWeight = (this.sessionPaveWeight || 0) + randWeight;
+                    if (this.sessionPaveWeight >= 80000) { 
+                        this.addBankTransaction(-50, "Taxe d'Usure des Routes (T.U.R) 🚧");
+                        if(window.ui) { window.ui.showToast("🚧 La route fissure ! Taxe d'Usure : -50 €", "anomaly"); window.ui.playGamiSound('crash'); }
+                        this.sessionPaveWeight = 0; 
+                    }
+
+                    if (randWeight < 500) {
+                        this.consecutiveLightVehicles = (this.consecutiveLightVehicles || 0) + 1;
+                        if (this.consecutiveLightVehicles >= 4) {
+                            this.addBankTransaction(30, "Prime Poids Plume 🪶");
+                            if(window.ui) { window.ui.showToast("🪶 Prime Poids Plume ! Trafic ultra-léger : +30 €"); window.ui.playGamiSound('cash'); }
+                            this.consecutiveLightVehicles = 0;
+                        }
+                    } else { this.consecutiveLightVehicles = 0; }
+                    
+                    if (this.lastCountTime > 0) {
+                        let diffSec = (nowTs - this.lastCountTime) / 1000;
+                        if (diffSec >= 5 && diffSec <= 30) {
+                            this.regularityChain++;
+                            if (this.regularityChain >= 10) {
+                                this.addBankTransaction(100, "Prime de Régularité (Flux parfait)");
+                                if(window.ui) { window.ui.showToast("🌊 Bonus de Flux ! Régularité parfaite : +100 €"); window.ui.playGamiSound('cash'); }
+                                this.regularityChain = 0; 
+                            }
+                        } else { this.regularityChain = 0; }
+                    }
+                    this.lastCountTime = nowTs;
+
+                    // 💥 NOUVEAU SYSTÈME DE KRACH BOURSIER (Tolérant & Dynamique)
+                    let consecutive = 0;
+                    let justHistory = history.filter(h => !h.isEvent);
+                    let lastTs = nowTs;
+
+                    // Timer de 45 secondes pour réinitialiser la série
+                    for (let i = justHistory.length - 1; i >= 0; i--) {
+                        let h = justHistory[i];
+                        if (lastTs - h.timestamp > 45000) break; 
+                        
+                        if (h.type === key1) {
+                            consecutive++;
+                            lastTs = h.timestamp;
+                        } else { break; }
+                    }
+
+                    // Adaptation pour l'Autoroute
+                    let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
+                    let isHighway = speedKmh > 80;
+                    let threshold = isHighway ? 10 : 4; 
+
+                    // 👁️ TALENT : Oeil de Lynx (+10% si prédiction correcte)
+                    if (isExact) {
+                        baseVal *= 3;
+                        if (window.gami && window.gami.state.unlockedTalents && window.gami.state.unlockedTalents.oeilDeLynx) {
+                            baseVal = Math.round(baseVal * 1.10);
+                            if(window.ui) window.ui.showToast(`👁️ Talent Œil de Lynx : Bonus de prédiction boosté !`);
+                        }
+                    }
+
+                    // Paliers du Krach
+                    if (consecutive >= threshold + 2) { 
+                        baseVal = -Math.max(1, Math.round(Math.abs(baseVal) * 0.2)); 
+                        if(window.ui) { window.ui.showToast(`🚧 Frais de congestion ! Trop de ${key1} !`, "anomaly"); window.ui.playGamiSound('crash'); }
+                    } else if (consecutive === threshold + 1) { 
+                        baseVal = 0;
+                        if(window.ui) { window.ui.showToast(`⚠️ Marché saturé pour ${key1} (Gain 0€)`, "anomaly"); window.ui.playGamiSound('crash'); }
+                    } else if (consecutive === threshold) { 
+                        baseVal = Math.round(baseVal * 0.5);
+                        if(window.ui) { window.ui.showToast(`📉 Alerte : Le marché baisse pour ${key1} !`); }
+                    }
+
+                    if (this.bankBalance < 0 && baseVal > 0) {
+                        baseVal = Math.round(baseVal * 0.2); 
+                    }
+
+                    this.addBankTransaction(baseVal, `Comptage ${key1}`);
+                    this.showMoneyParticle(e, baseVal);
+                    if (baseVal > 0 && window.ui && consecutive < threshold) window.ui.playGamiSound('cash');
+
+                    if (this.activeSponsor && key1 === this.activeSponsor.type) {
+                        this.activeSponsor.current += 1;
+                        this.updateSponsorUI();
+                        if (this.activeSponsor.current === this.activeSponsor.target) {
+                            if (window.ui) { window.ui.showToast(`🎯 Contrat Rempli ! Encaisser tes gains !`, "rare-combo"); window.ui.playGamiSound('siren'); }
+                        }
+                    }
+                }
+
+                if (isTruck) { counters[key1][key2] += amount; globalCounters[key1][key2] += amount; }
+                else { counters[key1] += amount; globalCounters[key1] += amount; }
+
+                let nowTs = Date.now();
+                let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
+                let roadType = this.getRoadType(speedKmh, this.currentMode);
+                
+                let histItem = { 
+                    lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, 
+                    lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, 
+                    alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, 
+                    speed: speedKmh, road: roadType, 
+                    chronoTime: this.formatTime(isTruck ? this.truckSeconds : this.carSeconds), 
+                    timestamp: nowTs,
+                    distAtSighting: isTruck ? this.liveTruckDistance : this.liveCarDistance,
+                    weight: randWeight, // Enregistrement du poids dynamique
+                    co2: randCo2        // Enregistrement du CO2 dynamique
+                };
+                
+                if (isTruck) { histItem.brand = key1; histItem.type = key2; }
+                else { histItem.type = key1; }
+                history.push(histItem);
+
+                if (window.ml) {
+                    let recentHist = history.filter(h => !h.isEvent);
+                    let anomaly = window.ml.checkAnomaly(mode, key1, speedKmh, recentHist);
+                    if (anomaly && window.ui) {
+                        window.ui.showToast(anomaly.msg, anomaly.type);
+                        if (anomaly.type === 'anomaly') {
+                            window.ui.triggerHapticFeedback('error');
+                            if (!isTruck) {
+                                this.addBankTransaction(-100, "Amende IA (Anomalie de comptage)");
+                                this.showMoneyParticle(e, -100);
+                                window.ui.playGamiSound('siren');
+                            }
+                        }
+                        else window.ui.triggerHapticFeedback('success');
+                    }
+                }
+
+                let d = new Date(nowTs);
+                let hourKey = `${d.getHours()}h`;
+                let dayKey = Object.keys(ana.days)[d.getDay()];
+                let monthKey = Object.keys(ana.months)[d.getMonth()];
+                let altVal = histItem.alt || 0;
+                let altKey = altVal < 200 ? "< 200m" : altVal < 500 ? "200-500m" : altVal < 1000 ? "500-1000m" : "> 1000m";
+
+                ana.hours[hourKey]++; ana.days[dayKey]++; ana.months[monthKey]++; ana.alts[altKey]++; 
+                ana.roads[roadType] = (ana.roads[roadType] || 0) + 1;
+
+                if (!ana.byVeh[key1]) ana.byVeh[key1] = { hours: {}, days: {}, alts: {}, months: {}, roads: {} };
+                if (!ana.byVeh[key1].months) ana.byVeh[key1].months = {};
+                if (!ana.byVeh[key1].roads) ana.byVeh[key1].roads = {};
+
+                ana.byVeh[key1].hours[hourKey] = (ana.byVeh[key1].hours[hourKey] || 0) + 1;
+                ana.byVeh[key1].days[dayKey] = (ana.byVeh[key1].days[dayKey] || 0) + 1;
+                ana.byVeh[key1].months[monthKey] = (ana.byVeh[key1].months[monthKey] || 0) + 1;
+                ana.byVeh[key1].alts[altKey] = (ana.byVeh[key1].alts[altKey] || 0) + 1;
+                ana.byVeh[key1].roads[roadType] = (ana.byVeh[key1].roads[roadType] || 0) + 1;
+
+                if (!ana.lastVehicles) ana.lastVehicles = [];
+                if (!ana.seqs3) ana.seqs3 = {};
+
+                if (ana.lastVehicles.length >= 1) {
+                    let vDernier = ana.lastVehicles[ana.lastVehicles.length - 1];
+                    let pair = `${vDernier} ➡️ ${key1}`;
+                    ana.seqs[pair] = (ana.seqs[pair] || 0) + 1;
+                }
+                if (ana.lastVehicles.length >= 2) {
+                    let vAvantDernier = ana.lastVehicles[0];
+                    let vDernier = ana.lastVehicles[1];
+                    let triplet = `${vAvantDernier} ➡️ ${vDernier} ➡️ ${key1}`;
+                    ana.seqs3[triplet] = (ana.seqs3[triplet] || 0) + 1;
+                }
+
+                ana.lastVehicles.push(key1);
+                if (ana.lastVehicles.length > 2) ana.lastVehicles.shift();
+
+                this.storage.set(isTruck ? 'globalAnaTrucks' : 'globalAnaCars', ana);
+                this.storage.set(isTruck ? 'truckCounters' : 'vehicleCounters', counters);
+                this.storage.set(isTruck ? 'globalTruckCounters' : 'globalCarCounters', globalCounters);
+                this.storage.set(isTruck ? 'truckHistory' : 'carHistory', history);
+
+                if(window.ui && e) { 
+                    let hapticType = isTruck ? 'truck' : 'car';
+                    if (!isTruck) {
+                        if(key1 === 'Motos' || key1 === 'Vélos') hapticType = 'moto';
+                        if(key1 === 'Engins agricoles' || key1 === 'Camions' || key1 === 'Bus/Car') hapticType = 'tractor';
+                    }
+                    window.ui.triggerHapticFeedback(hapticType); 
+                    window.ui.showClickParticle(e, `+1`, isTruck ? '#27ae60' : '#e74c3c'); 
+                }
+
+                if (isTruck) {
+                    this.truckTotal += amount;
+                    this.globalTruckTotal += amount;
+                    this.renderTrucks();
+                } else {
+                    this.carTotal += amount;
+                    this.globalCarTotal += amount;
+                    this.renderCars();
+                }
+                
+                this.renderKmStats(); 
+                this.renderLiveStats(mode);
+                this.updatePrediction(mode);
+                if (!isTruck) this.updateCarbonGauge();
+
+            } else if (amount < 0) {
+                // 🔙 GESTION DES ANNULATIONS
+                let lastIndex = history.map(h => !h.isEvent && (isTruck ? (h.brand === key1 && h.type === key2) : (h.type === key1))).lastIndexOf(true);
+                
+                if (lastIndex !== -1) {
+                    if (!isTruck) {
+                        let penalty = Math.max(5, Math.abs(this.bankBalance * 0.1)); 
+                        this.addBankTransaction(-penalty, "Frais d'annulation");
+                        if(window.ui) {
+                            window.ui.showToast("📉 Frais d'annulation appliqués !", "anomaly");
+                            window.ui.playGamiSound('crash');
+                        }
+                    }
+                    this.deleteHistoryItem(mode, lastIndex); 
+                    return;
+                }
+            }
+        }
+    },
 
     deleteHistoryItem(mode, index) {
         let isTruck = mode === 'trucks';
@@ -1200,6 +1466,10 @@ const app = {
             setTimeout(() => { location.reload(); }, 1500);
         }
     },
+
+    // ==========================================
+    // jsapp.js (PARTIE 4 / 4)
+    // ==========================================
 
     renderTrucks() {
         const container = document.getElementById('truck-container'); if(!container) return;
@@ -1904,7 +2174,6 @@ const app = {
         if(!session) return;
         
         let items = session.history ? session.history.filter(h => !h.isEvent) : [];
-        let count = items.length;
         
         let sessionWeight = items.reduce((sum, item) => {
             let fallback = 1350;
