@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=31">
+    <link rel="manifest" href="manifest.json?v=32">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=31">
-    <link rel="stylesheet" href="gami.css?v=31">
+    <link rel="stylesheet" href="style.css?v=32">
+    <link rel="stylesheet" href="gami.css?v=32">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -139,6 +139,12 @@
         <div id="sponsor-banner" class="sponsor-card no-print">
             <div id="sponsor-title">🤝 Aucun contrat en cours</div>
             <div id="sponsor-desc" style="font-size: 0.85em; font-weight: normal; margin-top: 5px;">Lance le chrono pour voir les offres de sponsoring !</div>
+            
+            <div id="sponsor-offer-actions" style="display: none; gap: 10px; margin-top: 10px; justify-content: center;">
+                <button class="btn-sponsor" style="background: #e74c3c; flex: 1; padding: 8px; font-size: 1em;" onclick="window.app.refuseSponsorOffer()">Refuser</button>
+                <button class="btn-sponsor" style="background: #27ae60; flex: 1; padding: 8px; font-size: 1em;" onclick="window.app.signSponsorContract()">Signer !</button>
+            </div>
+
             <div id="sponsor-progress" style="display: none; margin-top: 10px; font-size: 1.1em; color: #2ecc71; font-weight: bold;"></div>
             <button id="btn-validate-sponsor" class="btn-sponsor" style="display: none; background: #27ae60; width: 100%; margin-top: 10px;" onclick="window.app.validateSponsorContract()">💰 Valider et Encaisser !</button>
         </div>
@@ -362,19 +368,6 @@
         </div>
     </div>
 
-    <div id="sponsor-offer-modal" class="modal-overlay" style="display:none; z-index: 10005;">
-        <div class="modal-content" style="text-align: center; border: 2px solid #f1c40f; background: var(--card-bg);">
-            <div class="modal-header-row" style="border-bottom: none; justify-content: center;">
-                <h3 class="modal-title" style="color:#f1c40f; font-size: 1.5em; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">🤝 Offre de Sponsoring !</h3>
-            </div>
-            <div id="sponsor-modal-desc" style="margin: 15px 0; font-size: 1.1em; color: var(--text-color); line-height: 1.4;"></div>
-            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
-                <button class="btn-sponsor" style="background: #e74c3c; flex: 1; padding: 12px; font-size: 1.1em;" onclick="document.getElementById('sponsor-offer-modal').style.display='none'; window.app.refuseSponsorOffer();">Refuser</button>
-                <button class="btn-sponsor" style="background: #27ae60; flex: 1; padding: 12px; font-size: 1.1em;" onclick="window.app.signSponsorContract()">Signer !</button>
-            </div>
-        </div>
-    </div>
-
     <div id="session-detail-modal" class="modal-overlay" style="display:none;">
         <div id="pdf-export-content" class="modal-content">
             
@@ -443,14 +436,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsml.js?v=31"></script>
-    <script type="module" src="jsgami.js?v=31"></script>
-    <script type="module" src="jsapp.js?v=31"></script>
+    <script type="module" src="jsml.js?v=32"></script>
+    <script type="module" src="jsgami.js?v=32"></script>
+    <script type="module" src="jsapp.js?v=32"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=31')
+          navigator.serviceWorker.register('./sw.js?v=32')
             .then(registration => {
               console.log('Service Worker Compteur enregistré !', registration.scope);
             })

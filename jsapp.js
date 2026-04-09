@@ -22,6 +22,18 @@ const app = {
         "Vélos": 20
     },
 
+    // 💨 Dictionnaire Carbone (Emissions CO2 en g/km)
+    carbonEmissions: {
+        "Vélos": 0,
+        "Motos": 100,
+        "Voitures": 120,
+        "Utilitaires": 200,
+        "Camping-cars": 250,
+        "Bus/Car": 800,
+        "Camions": 900,
+        "Engins agricoles": 1200
+    },
+
     // 💸 Dictionnaire des valeurs financières (Compteur Véhicules)
     bankValues: {
         "Voitures": 1,
@@ -45,9 +57,13 @@ const app = {
     // Variables pour Sponsor et Régularité
     pendingSponsor: null,
     activeSponsor: null,
-    sponsorCooldownUntil: 0, // Temps avant la prochaine offre possible
+    sponsorCooldownUntil: 0, 
     lastCountTime: 0,
     regularityChain: 0,
+
+    // Nouvelles variables pour Poids & Usure
+    sessionPaveWeight: 0,
+    consecutiveLightVehicles: 0,
     // ==========================================
 
     formatWeight(kg) {
@@ -195,7 +211,7 @@ const app = {
                 window.ui.showToast("☠️ LIQUIDATION JUDICIAIRE ! La faillite est prononcée.", "anomaly");
                 window.ui.playGamiSound('siren');
             }
-            this.addBankTransaction(Math.abs(this.bankBalance), "Saisie Totale (Faillite)"); // Remise à zéro propre
+            this.addBankTransaction(Math.abs(this.bankBalance), "Saisie Totale (Faillite)"); 
             
             if (window.gami) {
                 window.gami.state.level = 1;
@@ -217,39 +233,90 @@ const app = {
     },
 
     // ==========================================
+    // 🌿 BILAN CARBONE AU KILOMÈTRE (FIN DE SESSION)
+    // ==========================================
+    checkCarbonFootprint() {
+        let items = this.carHistory.filter(h => !h.isEvent);
+        let count = items.length;
+        if (count === 0) return;
+
+        // On prend 1 km minimum pour éviter de multiplier par zéro si on est à l'arrêt
+        let dist = this.liveCarDistance < 1 ? 1 : this.liveCarDistance;
+        
+        let totalRealCo2 = 0;
+        items.forEach(item => {
+            totalRealCo2 += (this.carbonEmissions[item.type] || 120);
+        });
+        
+        totalRealCo2 *= dist; // En grammes totaux sur le trajet
+
+        // Quota autorisé (150 g/km en moyenne par véhicule croisé)
+        let quota = count * 150 * dist; 
+        
+        let diff = quota - totalRealCo2; // Positif si on a fait mieux (moins de CO2)
+        let euros = Math.round(diff / 100); // 1€ tous les 100g économisés ou pollués
+
+        if (euros > 0) {
+            this.addBankTransaction(euros, "Revente Crédits Carbone 🌿");
+            if(window.ui) {
+                window.ui.showToast(`🌿 Trafic Écolo ! Crédits revendus : +${euros} €`);
+                window.ui.playGamiSound('cash');
+            }
+        } else if (euros < 0) {
+            this.addBankTransaction(euros, "Taxe Carbone Globale 💨");
+            if(window.ui) {
+                window.ui.showToast(`💨 Trafic Polluant ! Taxe Carbone : ${euros} €`, "anomaly");
+                window.ui.playGamiSound('siren');
+            }
+        }
+    },
+
+    // ==========================================
     // 🤝 GESTION DU CONTRAT SPONSOR
     // ==========================================
     generateSponsorOffer() {
         if (this.activeSponsor || !this.isCarRunning) return;
-        if (Date.now() < this.sponsorCooldownUntil) return; // En période de recherche (cooldown)
-        if (Math.random() > 0.15) return; // Chance d'avoir une offre chaque minute (15%)
+        if (Date.now() < this.sponsorCooldownUntil) return; 
+        if (Math.random() > 0.15) return; 
 
         let types = ["Utilitaires", "Camions", "Camping-cars", "Bus/Car"];
         let t = types[Math.floor(Math.random() * types.length)];
-        let target = Math.floor(Math.random() * 8) + 3; // Entre 3 et 10 véhicules
-        let advance = target * (this.bankValues[t] || 5) * 3; // Bonne avance pour appâter
+        let target = Math.floor(Math.random() * 8) + 3; 
+        let advance = target * (this.bankValues[t] || 5) * 3; 
         
         this.pendingSponsor = { type: t, target: target, advance: advance, penalty: advance * 2 };
         
-        // Affichage de la modale d'offre
-        let modalDesc = document.getElementById('sponsor-modal-desc');
+        let modalDesc = document.getElementById('sponsor-desc');
         if (modalDesc) {
-            modalDesc.innerHTML = `L'entreprise te propose une avance immédiate de <strong style="color:#27ae60;">+${advance}€</strong> pour compter <strong>${target} ${t === 'Camions' ? 'Poids Lourds' : t}</strong> avant la fin de ton trajet.<br><br><span style="color:#e74c3c; font-size:0.9em;">⚠️ Pénalité en cas d'échec : -${advance*2}€ !</span>`;
+            modalDesc.innerHTML = `L'entreprise te propose <strong style="color:#27ae60;">+${advance}€</strong> pour <strong>${target} ${t === 'Camions' ? 'Poids Lourds' : t}</strong>.<br><span style="color:#e74c3c; font-size:0.85em;">Pénalité échec : -${advance*2}€ !</span>`;
         }
-        document.getElementById('sponsor-offer-modal').style.display = 'flex';
         
-        if(window.ui) window.ui.playGamiSound('siren');
+        let actions = document.getElementById('sponsor-offer-actions');
+        if (actions) actions.style.display = 'flex';
+        
+        if(window.ui) {
+            window.ui.showToast(`💼 Offre de Sponsor reçue ! Regarde ton encart.`);
+            window.ui.playGamiSound('siren');
+        }
     },
 
     refuseSponsorOffer() {
         this.pendingSponsor = null;
-        this.sponsorCooldownUntil = Date.now() + (2 * 60 * 1000); // Repart en recherche pour 2 minutes
-        if(window.ui) window.ui.showToast(`💼 Offre refusée. Recherche d'un nouveau sponsor en cours...`);
+        this.sponsorCooldownUntil = Date.now() + (2 * 60 * 1000); 
+        
+        let actions = document.getElementById('sponsor-offer-actions');
+        if (actions) actions.style.display = 'none';
+        
+        document.getElementById('sponsor-desc').innerText = `Recherche d'un nouveau sponsor en cours...`;
+        
+        if(window.ui) window.ui.showToast(`💼 Offre refusée.`);
     },
 
     signSponsorContract() {
         if (!this.pendingSponsor) return;
-        document.getElementById('sponsor-offer-modal').style.display = 'none';
+
+        let actions = document.getElementById('sponsor-offer-actions');
+        if (actions) actions.style.display = 'none';
 
         this.activeSponsor = { ...this.pendingSponsor, current: 0 };
         this.pendingSponsor = null;
@@ -275,7 +342,7 @@ const app = {
         if (this.activeSponsor.current >= this.activeSponsor.target) {
             el.innerText = "✅ Objectif atteint !";
             el.style.color = "#2ecc71";
-            if(btnValidate) btnValidate.style.display = 'block'; // Fait apparaître le bouton pour valider
+            if(btnValidate) btnValidate.style.display = 'block'; 
         } else {
             el.style.color = "#fff";
             if(btnValidate) btnValidate.style.display = 'none';
@@ -285,7 +352,6 @@ const app = {
     validateSponsorContract() {
         if (!this.activeSponsor || this.activeSponsor.current < this.activeSponsor.target) return;
         
-        // Calcul du bonus (entre 5% et 25% de plus que l'avance)
         let bonusMultiplier = 1.05 + (Math.random() * 0.20); 
         let finalReward = Math.round(this.activeSponsor.advance * bonusMultiplier);
         
@@ -297,7 +363,7 @@ const app = {
         }
         
         this.activeSponsor = null;
-        this.sponsorCooldownUntil = Date.now() + (3 * 60 * 1000); // Relance la recherche dans 3 minutes
+        this.sponsorCooldownUntil = Date.now() + (3 * 60 * 1000); 
         this.resetSponsorUI();
     },
 
@@ -310,7 +376,6 @@ const app = {
                     window.ui.playGamiSound('crash');
                 }
             } else {
-                // Si l'utilisateur arrête la session alors que le contrat est rempli mais non validé
                 this.validateSponsorContract(); 
             }
             this.activeSponsor = null;
@@ -327,12 +392,14 @@ const app = {
         let elProg = document.getElementById('sponsor-progress');
         let elBanner = document.getElementById('sponsor-banner');
         let btnValidate = document.getElementById('btn-validate-sponsor');
+        let actions = document.getElementById('sponsor-offer-actions');
         
         if(elTitle) elTitle.innerText = `🤝 Aucun contrat en cours`;
         if(elDesc) elDesc.innerText = `Lance le chrono pour voir les offres de sponsoring !`;
         if(elProg) elProg.style.display = 'none';
         if(elBanner) elBanner.classList.remove('sponsor-active');
         if(btnValidate) btnValidate.style.display = 'none';
+        if(actions) actions.style.display = 'none';
     },
     // ==========================================
 
@@ -918,10 +985,37 @@ const app = {
                     }
                 }
 
-                // 💸 GESTION FINANCIÈRE (Compteur Véhicules)
+                // 💸 GESTION FINANCIÈRE ET POIDS (Compteur Véhicules)
                 if (!isTruck) {
                     let baseVal = this.bankValues[key1] || 1;
+                    let vehWeight = this.vehicleWeights[key1] || 0;
                     let nowTs = Date.now();
+
+                    // GESTION USURE ROUTES (T.U.R.) 🚧
+                    this.sessionPaveWeight = (this.sessionPaveWeight || 0) + vehWeight;
+                    if (this.sessionPaveWeight >= 80000) { // Dès qu'on dépasse 80 tonnes cumulées
+                        this.addBankTransaction(-50, "Taxe d'Usure des Routes (T.U.R) 🚧");
+                        if(window.ui) {
+                            window.ui.showToast("🚧 La route fissure ! Taxe d'Usure (T.U.R) : -50 €", "anomaly");
+                            window.ui.playGamiSound('crash');
+                        }
+                        this.sessionPaveWeight = 0; // On reset pour la prochaine dégradation
+                    }
+
+                    // PRIME POIDS PLUME 🪶
+                    if (vehWeight < 500) {
+                        this.consecutiveLightVehicles = (this.consecutiveLightVehicles || 0) + 1;
+                        if (this.consecutiveLightVehicles >= 4) { // 4 véhicules légers de suite
+                            this.addBankTransaction(30, "Prime Poids Plume 🪶");
+                            if(window.ui) {
+                                window.ui.showToast("🪶 Prime Poids Plume ! Trafic ultra-léger : +30 €");
+                                window.ui.playGamiSound('cash');
+                            }
+                            this.consecutiveLightVehicles = 0;
+                        }
+                    } else {
+                        this.consecutiveLightVehicles = 0; // Cassé par un véhicule lourd
+                    }
                     
                     // Prime de Régularité (Prop 17)
                     if (this.lastCountTime > 0) {
@@ -1005,7 +1099,6 @@ const app = {
                         window.ui.showToast(anomaly.msg, anomaly.type);
                         if (anomaly.type === 'anomaly') {
                             window.ui.triggerHapticFeedback('error');
-                            // Amende IA en cas de grosse anomalie
                             if (!isTruck) {
                                 this.addBankTransaction(-100, "Amende IA (Anomalie de comptage)");
                                 this.showMoneyParticle(e, -100);
@@ -1075,9 +1168,8 @@ const app = {
                 this.updatePrediction(mode);
 
             } else if (amount < 0) {
-                // Pénalité d'annulation !
                 if (!isTruck) {
-                    let penalty = Math.max(5, Math.abs(this.bankBalance * 0.1)); // 10% de pénalité ou 5€ min
+                    let penalty = Math.max(5, Math.abs(this.bankBalance * 0.1)); 
                     this.addBankTransaction(-penalty, "Frais d'annulation");
                     if(window.ui) {
                         window.ui.showToast("📉 Frais d'annulation appliqués !", "anomaly");
@@ -1116,7 +1208,6 @@ const app = {
                 if (counters[vehKey] > 0) counters[vehKey]--;
                 if (globalCounters[vehKey] > 0) globalCounters[vehKey]--;
                 
-                // Si on supprime, on enlève un au sponsor si concerné
                 if (this.activeSponsor && vehKey === this.activeSponsor.type && this.activeSponsor.current > 0) {
                     this.activeSponsor.current--;
                     this.updateSponsorUI();
@@ -1199,8 +1290,12 @@ const app = {
             this.lastCountTime = 0;
             this.activeSponsor = null;
             this.pendingSponsor = null;
-            this.sponsorCooldownUntil = 0; // Remise à zéro du cooldown sponsor
-            this.sessionFinance = { gains: 0, losses: 0 }; // Remise à zéro des finances de la session
+            this.sponsorCooldownUntil = 0; 
+            this.sessionFinance = { gains: 0, losses: 0 }; 
+            
+            this.sessionPaveWeight = 0;
+            this.consecutiveLightVehicles = 0;
+            
             this.resetSponsorUI();
         }
         
@@ -1230,7 +1325,10 @@ const app = {
         }
         
         if (confirm("⏹️ Trajet terminé ! Veux-tu enregistrer cette session ?")) { 
-            if (!isTruck) this.checkSponsorOnStop(); // Vérification du sponsor avant clôture !
+            if (!isTruck) {
+                this.checkSponsorOnStop(); 
+                this.checkCarbonFootprint(); // Bilan Carbone final calculé ici !
+            }
             
             if(window.ui) window.ui.showToast("⏳ Géocodage des adresses en cours...");
             await this.saveSession(type); 
@@ -1274,7 +1372,7 @@ const app = {
             history: history, 
             summary: JSON.parse(JSON.stringify(isTruck ? this.truckCounters : this.vehicleCounters)),
             predictions: isTruck ? { ...this.sessionTruckPredictions } : { ...this.sessionCarPredictions },
-            sessionFinance: isTruck ? null : { ...this.sessionFinance } // Sauvegarde de la finance
+            sessionFinance: isTruck ? null : { ...this.sessionFinance } 
         };
 
         await this.idb.add(newSession);
@@ -2018,7 +2116,7 @@ const app = {
         }
         session.masseTotaleKg = sessionWeight;
 
-        let exportData = { appVersion: "Compteur Trafic v6.0", exportDate: new Date().toISOString(), sessionType: type, session: session };
+        let exportData = { appVersion: "Compteur Trafic v6.1", exportDate: new Date().toISOString(), sessionType: type, session: session };
         const dataStr = JSON.stringify(exportData, null, 2);
         let safeDate = session.date.replace(/[\/ :]/g, '_');
         await this.triggerDownloadOrShare(dataStr, `Compteur_Session_${type}_${safeDate}.txt`);
@@ -2069,7 +2167,7 @@ const app = {
             analysesPermanentesVehicules: this.globalAnaCars
         };
 
-        let exportData = { appVersion: "Compteur Trafic v6.0", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
+        let exportData = { appVersion: "Compteur Trafic v6.1", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
         const dataStr = JSON.stringify(exportData, null, 2);
         await this.triggerDownloadOrShare(dataStr, `Compteur_Export_${this.currentUser}_${new Date().toISOString().slice(0,10)}.txt`);
     },
