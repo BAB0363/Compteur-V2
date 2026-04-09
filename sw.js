@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = 'compteur-cache-v33'; 
+const CACHE_NAME = 'compteur-cache-v34'; 
 const urlsToCache = [
   './',
   './index.html',
@@ -24,7 +24,7 @@ self.addEventListener('install', event => {
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-        console.log('📦 Mise en cache des fichiers Compteur Trafic v33...');
+        console.log('📦 Mise en cache des fichiers Compteur Trafic v34...');
         return cache.addAll(urlsToCache);
     })
   );
@@ -51,16 +51,12 @@ self.addEventListener('fetch', event => {
     caches.match(event.request).then(response => {
       return response || fetch(event.request).then(fetchResponse => {
         return caches.open(CACHE_NAME).then(cache => {
-          if (event.request.method === 'GET' && !event.request.url.includes('google-analytics')) {
-             cache.put(event.request, fetchResponse.clone());
+          if (event.request.method === 'GET' && !event.request.url.includes('chrome-extension')) {
+            cache.put(event.request, fetchResponse.clone());
           }
           return fetchResponse;
         });
       });
-    }).catch(() => {
-      if (event.request.mode === 'navigate') {
-        return caches.match('./index.html');
-      }
     })
   );
 });
