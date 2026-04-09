@@ -1,4 +1,4 @@
-// jsapp.js
+// jsapp.js (Partie 1)
 import { ui } from './jsui.js';
 import { gps } from './jsgps.js';
 import { ml } from './jsml.js';
@@ -52,7 +52,7 @@ const app = {
     bankBalance: 0,
     bankHistory: [],
     bankStats: { gains: 0, losses: 0 },
-    sessionFinance: { gains: 0, losses: 0 }, 
+    sessionFinance: { gains: 0, losses: 0, carbon: 0 }, 
     
     // Variables pour Sponsor et Régularité
     pendingSponsor: null,
@@ -69,6 +69,14 @@ const app = {
     formatWeight(kg) {
         if (!kg) return "0 kg";
         return kg >= 1000 ? (kg / 1000).toFixed(1) + " t" : kg + " kg";
+    },
+
+    // 🌿 Convertisseur Intelligent pour le Carbone
+    formatCarbon(g) {
+        if (!g) return "0 g";
+        if (g >= 1000000) return (g / 1000000).toFixed(2) + " t";
+        if (g >= 1000) return (g / 1000).toFixed(1) + " kg";
+        return Math.round(g) + " g";
     },
 
     storage: {
@@ -120,7 +128,7 @@ const app = {
             this.bankBalance = 0;
             this.bankHistory = [];
             this.bankStats = { gains: 0, losses: 0 };
-            this.sessionFinance = { gains: 0, losses: 0 };
+            this.sessionFinance = { gains: 0, losses: 0, carbon: 0 };
             
             localStorage.removeItem('bankState_' + this.currentUser);
             localStorage.removeItem('bankHistory_' + this.currentUser);
@@ -135,8 +143,7 @@ const app = {
     addBankTransaction(amount, reason) {
         if (amount === 0) return;
         this.bankBalance += amount;
-        
-        if (amount > 0) {
+           if (amount > 0) {
             this.bankStats.gains += amount;
             if (this.isCarRunning) this.sessionFinance.gains += amount;
         } else {
@@ -231,7 +238,7 @@ const app = {
     },
 
     // ==========================================
-    // 🌿 BILAN CARBONE EN TEMPS RÉEL (JAUGE)
+    // 🌿 BILAN CARBONE EN TEMPS RÉEL (Méthode Point d'Impact)
     // ==========================================
     updateCarbonGauge() {
         if (!this.isCarRunning) return;
@@ -249,17 +256,15 @@ const app = {
         
         if (container) container.style.display = 'block';
 
-        // 1 km minimum pour éviter l'erreur mathématique à l'arrêt
-        let dist = this.liveCarDistance < 1 ? 1 : this.liveCarDistance;
         let totalRealCo2 = 0;
+        let quota = 0;
         
         items.forEach(item => {
-            totalRealCo2 += (this.carbonEmissions[item.type] || 120);
+            // Méthode du Point d'Impact : on ne calcule que sur la distance depuis l'apparition
+            let distVehicule = Math.max(0.1, this.liveCarDistance - (item.distAtSighting || 0));
+            totalRealCo2 += (this.carbonEmissions[item.type] || 120) * distVehicule;
+            quota += 150 * distVehicule; 
         });
-        totalRealCo2 *= dist; 
-        
-        // Quota autorisé (150 g/km en moyenne par véhicule)
-        let quota = count * 150 * dist; 
         
         let pct = quota > 0 ? (totalRealCo2 / quota) * 100 : 0;
         let visualPct = pct > 100 ? 100 : pct; 
@@ -279,7 +284,8 @@ const app = {
         }
         
         if (text) {
-            text.innerText = `${Math.round(totalRealCo2)} g / ${Math.round(quota)} g autorisés`;
+            // Affichage avec formatage automatique
+            text.innerText = `${this.formatCarbon(totalRealCo2)} / ${this.formatCarbon(quota)} autorisés`;
             text.style.color = totalRealCo2 > quota ? '#e74c3c' : '#7f8c8d';
         }
     },
@@ -290,15 +296,17 @@ const app = {
     checkCarbonFootprint() {
         let items = this.carHistory.filter(h => !h.isEvent);
         let count = items.length;
-        if (count === 0) return;
+        if (count === 0) return 0;
 
-        let dist = this.liveCarDistance < 1 ? 1 : this.liveCarDistance;
         let totalRealCo2 = 0;
-        items.forEach(item => { totalRealCo2 += (this.carbonEmissions[item.type] || 120); });
-        totalRealCo2 *= dist; 
+        let quota = 0;
 
-        let quota = count * 150 * dist; 
-        
+        items.forEach(item => {
+            let distVehicule = Math.max(0.1, this.liveCarDistance - (item.distAtSighting || 0));
+            totalRealCo2 += (this.carbonEmissions[item.type] || 120) * distVehicule;
+            quota += 150 * distVehicule;
+        });
+
         let diff = quota - totalRealCo2; 
         let euros = Math.round(diff / 100); 
 
@@ -315,6 +323,9 @@ const app = {
                 window.ui.playGamiSound('siren');
             }
         }
+        
+        // On retourne la valeur pour l'inclure dans le bilan financier
+        return euros;
     },
 
     // ==========================================
@@ -447,6 +458,9 @@ const app = {
         if(btnValidate) btnValidate.style.display = 'none';
         if(actions) actions.style.display = 'none';
     },
+
+    // ==========================================
+    // SUITE DE jsapp.js (Partie 2)
     // ==========================================
 
     getRoadType(speedKmh, mode) {
@@ -1098,9 +1112,19 @@ const app = {
                     this.showMoneyParticle(e, baseVal);
                     if (baseVal > 0 && window.ui && consecutive < 4) window.ui.playGamiSound('cash');
 
+                    // ==========================================
+                    // NOTIFICATION SPONSOR QUAND L'OBJECTIF EST ATTEINT
+                    // ==========================================
                     if (this.activeSponsor && key1 === this.activeSponsor.type) {
                         this.activeSponsor.current += 1;
                         this.updateSponsorUI();
+                        
+                        if (this.activeSponsor.current === this.activeSponsor.target) {
+                            if (window.ui) {
+                                window.ui.showToast(`🎯 Contrat Rempli ! N'oublie pas d'encaisser tes gains !`, "rare-combo");
+                                window.ui.playGamiSound('siren');
+                            }
+                        }
                     }
                 }
 
@@ -1111,13 +1135,17 @@ const app = {
                 let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
                 let roadType = this.getRoadType(speedKmh, this.currentMode);
                 
+                // ==========================================
+                // AJOUT DE distAtSighting (PROPOSITION 1)
+                // ==========================================
                 let histItem = { 
                     lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, 
                     lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, 
                     alt: window.gps && window.gps.currentPos ? window.gps.currentPos.alt : null, 
                     speed: speedKmh, road: roadType, 
                     chronoTime: this.formatTime(isTruck ? this.truckSeconds : this.carSeconds), 
-                    timestamp: nowTs 
+                    timestamp: nowTs,
+                    distAtSighting: isTruck ? this.liveTruckDistance : this.liveCarDistance
                 };
                 
                 if (isTruck) { histItem.brand = key1; histItem.type = key2; }
@@ -1219,6 +1247,10 @@ const app = {
             }
         }
     },
+
+    // ==========================================
+    // SUITE DE jsapp.js (Partie 3 - FIN)
+    // ==========================================
 
     deleteHistoryItem(mode, index) {
         let isTruck = mode === 'trucks';
@@ -1325,7 +1357,7 @@ const app = {
             this.activeSponsor = null;
             this.pendingSponsor = null;
             this.sponsorCooldownUntil = 0; 
-            this.sessionFinance = { gains: 0, losses: 0 }; 
+            this.sessionFinance = { gains: 0, losses: 0, carbon: 0 }; 
             
             this.sessionPaveWeight = 0;
             this.consecutiveLightVehicles = 0;
@@ -1366,7 +1398,8 @@ const app = {
         if (confirm("⏹️ Trajet terminé ! Veux-tu enregistrer cette session ?")) { 
             if (!isTruck) {
                 this.checkSponsorOnStop(); 
-                this.checkCarbonFootprint(); 
+                // On enregistre les euros générés (ou perdus) par le Carbone
+                this.sessionFinance.carbon = this.checkCarbonFootprint(); 
             }
             
             if(window.ui) window.ui.showToast("⏳ Géocodage des adresses en cours...");
@@ -2046,17 +2079,26 @@ const app = {
             predTxt = Math.round((session.predictions.success / session.predictions.total) * 100) + "% (" + session.predictions.success + "/" + session.predictions.total + ")";
         }
 
-        // Ajout du bilan financier
+        // ==========================================
+        // AJOUT DU BILAN FINANCIER CARBONE
+        // ==========================================
         let financeHtml = '';
         if (session.sessionFinance && type === 'cars') {
             let balance = session.sessionFinance.gains - session.sessionFinance.losses;
             let color = balance >= 0 ? '#27ae60' : '#e74c3c';
             let sign = balance > 0 ? '+' : '';
+
+            let carbonEuros = session.sessionFinance.carbon || 0;
+            let carbonColor = carbonEuros >= 0 ? '#27ae60' : '#e74c3c';
+            let carbonSign = carbonEuros > 0 ? '+' : '';
+            let carbonHtml = carbonEuros !== 0 ? `<div class="session-detail-row"><span class="session-detail-label" style="font-size:0.8em;">⚖️ Bilan Carbone</span><span class="session-detail-value" style="color:${carbonColor}; font-size:0.8em;">${carbonSign}${carbonEuros} €</span></div>` : '';
+
             financeHtml = `
                 <div style="border-top: 2px dashed var(--border-color); margin: 10px 0;"></div>
                 <div class="session-detail-row"><span class="session-detail-label">Bilan Financier Session</span><span class="session-detail-value" style="color:${color}; font-weight:bold;">${sign}${balance} €</span></div>
                 <div class="session-detail-row"><span class="session-detail-label" style="font-size:0.8em;">Gains totaux</span><span class="session-detail-value" style="color:#27ae60; font-size:0.8em;">+${session.sessionFinance.gains} €</span></div>
                 <div class="session-detail-row"><span class="session-detail-label" style="font-size:0.8em;">Pertes / Frais</span><span class="session-detail-value" style="color:#e74c3c; font-size:0.8em;">-${session.sessionFinance.losses} €</span></div>
+                ${carbonHtml}
             `;
         }
 
@@ -2533,3 +2575,4 @@ if (document.readyState === 'loading') {
 } else {
     startApp();
 }
+
