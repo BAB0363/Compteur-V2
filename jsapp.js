@@ -52,7 +52,7 @@ const app = {
     bankBalance: 0,
     bankHistory: [],
     bankStats: { gains: 0, losses: 0 },
-    sessionFinance: { gains: 0, losses: 0 }, // Historique par session
+    sessionFinance: { gains: 0, losses: 0 }, 
     
     // Variables pour Sponsor et Régularité
     pendingSponsor: null,
@@ -128,9 +128,7 @@ const app = {
             
             this.updateBankUI();
             
-            if (window.ui) {
-                window.ui.showToast("💸 La Bourse de l'Asphalte a été remise à zéro !");
-            }
+            if (window.ui) window.ui.showToast("💸 La Bourse de l'Asphalte a été remise à zéro !");
         }
     },
 
@@ -233,28 +231,76 @@ const app = {
     },
 
     // ==========================================
-    // 🌿 BILAN CARBONE AU KILOMÈTRE (FIN DE SESSION)
+    // 🌿 BILAN CARBONE EN TEMPS RÉEL (JAUGE)
+    // ==========================================
+    updateCarbonGauge() {
+        if (!this.isCarRunning) return;
+        let items = this.carHistory.filter(h => !h.isEvent);
+        let count = items.length;
+        
+        let container = document.getElementById('carbon-gauge-container');
+        let fill = document.getElementById('carbon-gauge-fill');
+        let text = document.getElementById('carbon-gauge-text');
+        
+        if (count === 0) {
+            if (container) container.style.display = 'none';
+            return;
+        }
+        
+        if (container) container.style.display = 'block';
+
+        // 1 km minimum pour éviter l'erreur mathématique à l'arrêt
+        let dist = this.liveCarDistance < 1 ? 1 : this.liveCarDistance;
+        let totalRealCo2 = 0;
+        
+        items.forEach(item => {
+            totalRealCo2 += (this.carbonEmissions[item.type] || 120);
+        });
+        totalRealCo2 *= dist; 
+        
+        // Quota autorisé (150 g/km en moyenne par véhicule)
+        let quota = count * 150 * dist; 
+        
+        let pct = quota > 0 ? (totalRealCo2 / quota) * 100 : 0;
+        let visualPct = pct > 100 ? 100 : pct; 
+        
+        if (fill) {
+            fill.style.width = visualPct + '%';
+            if (totalRealCo2 > quota) {
+                fill.style.backgroundColor = '#e74c3c'; // Rouge = Déficit
+                container.style.borderColor = '#e74c3c';
+            } else if (totalRealCo2 > quota * 0.8) {
+                fill.style.backgroundColor = '#f39c12'; // Orange = Alerte limite
+                container.style.borderColor = '#f39c12';
+            } else {
+                fill.style.backgroundColor = '#27ae60'; // Vert = Bilan positif
+                container.style.borderColor = '#27ae60';
+            }
+        }
+        
+        if (text) {
+            text.innerText = `${Math.round(totalRealCo2)} g / ${Math.round(quota)} g autorisés`;
+            text.style.color = totalRealCo2 > quota ? '#e74c3c' : '#7f8c8d';
+        }
+    },
+
+    // ==========================================
+    // 🌿 BILAN CARBONE FIN DE SESSION (BOURSE)
     // ==========================================
     checkCarbonFootprint() {
         let items = this.carHistory.filter(h => !h.isEvent);
         let count = items.length;
         if (count === 0) return;
 
-        // On prend 1 km minimum pour éviter de multiplier par zéro si on est à l'arrêt
         let dist = this.liveCarDistance < 1 ? 1 : this.liveCarDistance;
-        
         let totalRealCo2 = 0;
-        items.forEach(item => {
-            totalRealCo2 += (this.carbonEmissions[item.type] || 120);
-        });
-        
-        totalRealCo2 *= dist; // En grammes totaux sur le trajet
+        items.forEach(item => { totalRealCo2 += (this.carbonEmissions[item.type] || 120); });
+        totalRealCo2 *= dist; 
 
-        // Quota autorisé (150 g/km en moyenne par véhicule croisé)
         let quota = count * 150 * dist; 
         
-        let diff = quota - totalRealCo2; // Positif si on a fait mieux (moins de CO2)
-        let euros = Math.round(diff / 100); // 1€ tous les 100g économisés ou pollués
+        let diff = quota - totalRealCo2; 
+        let euros = Math.round(diff / 100); 
 
         if (euros > 0) {
             this.addBankTransaction(euros, "Revente Crédits Carbone 🌿");
@@ -765,6 +811,7 @@ const app = {
         this.renderDashboard('trucks');
         this.updatePrediction('trucks');
         this.updatePrediction('cars');
+        this.updateCarbonGauge();
 
         if (document.getElementById('truck-stats-view') && document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
         if (document.getElementById('car-stats-view') && document.getElementById('car-stats-view').style.display !== 'none') this.renderAdvancedStats('cars');
@@ -874,24 +921,17 @@ const app = {
                         this.lastGlobalCarTick += add * 1000;
                     }
 
-                    // 💸 MÉCANIQUES FINANCIÈRES (Véhicules uniquement)
-                    
-                    // Génération des offres Sponsor
                     if (elapsed > 0 && elapsed % 60 === 0) {
                         this.generateSponsorOffer();
                     }
 
-                    // Taxe de péage (Jour/Nuit + Inflation toutes les 15 min)
-                    if (elapsed > 0 && elapsed % 300 === 0) { // Toutes les 5 minutes
+                    if (elapsed > 0 && elapsed % 300 === 0) { 
                         let currentHour = new Date().getHours();
-                        let isNight = (currentHour >= 21 || currentHour < 6); // De 21h à 5h59
-                        
+                        let isNight = (currentHour >= 21 || currentHour < 6);
                         let baseToll = isNight ? 20 : 10;
                         let stepToll = isNight ? 20 : 10;
                         let maxToll = isNight ? 200 : 100;
-                        
-                        let inflationMultiplier = Math.floor(elapsed / 900); // Augmente toutes les 15 min (900s)
-                        
+                        let inflationMultiplier = Math.floor(elapsed / 900);
                         let currentToll = baseToll + (inflationMultiplier * stepToll);
                         if (currentToll > maxToll) currentToll = maxToll;
                         
@@ -902,7 +942,6 @@ const app = {
                         }
                     }
 
-                    // Agios (5% de la dette toutes les minutes)
                     if (elapsed > 0 && elapsed % 60 === 0 && this.bankBalance < 0) {
                         let agios = Math.abs(this.bankBalance) * 0.05;
                         this.addBankTransaction(-agios, "Agios (5%)");
@@ -911,6 +950,8 @@ const app = {
                             window.ui.playGamiSound('crash');
                         }
                     }
+
+                    this.updateCarbonGauge();
                 }
                 this.updateChronoDisp(type); 
                 this.renderLiveStats(type);
@@ -985,27 +1026,24 @@ const app = {
                     }
                 }
 
-                // 💸 GESTION FINANCIÈRE ET POIDS (Compteur Véhicules)
                 if (!isTruck) {
                     let baseVal = this.bankValues[key1] || 1;
                     let vehWeight = this.vehicleWeights[key1] || 0;
                     let nowTs = Date.now();
 
-                    // GESTION USURE ROUTES (T.U.R.) 🚧
                     this.sessionPaveWeight = (this.sessionPaveWeight || 0) + vehWeight;
-                    if (this.sessionPaveWeight >= 80000) { // Dès qu'on dépasse 80 tonnes cumulées
+                    if (this.sessionPaveWeight >= 80000) { 
                         this.addBankTransaction(-50, "Taxe d'Usure des Routes (T.U.R) 🚧");
                         if(window.ui) {
                             window.ui.showToast("🚧 La route fissure ! Taxe d'Usure (T.U.R) : -50 €", "anomaly");
                             window.ui.playGamiSound('crash');
                         }
-                        this.sessionPaveWeight = 0; // On reset pour la prochaine dégradation
+                        this.sessionPaveWeight = 0; 
                     }
 
-                    // PRIME POIDS PLUME 🪶
                     if (vehWeight < 500) {
                         this.consecutiveLightVehicles = (this.consecutiveLightVehicles || 0) + 1;
-                        if (this.consecutiveLightVehicles >= 4) { // 4 véhicules légers de suite
+                        if (this.consecutiveLightVehicles >= 4) {
                             this.addBankTransaction(30, "Prime Poids Plume 🪶");
                             if(window.ui) {
                                 window.ui.showToast("🪶 Prime Poids Plume ! Trafic ultra-léger : +30 €");
@@ -1014,29 +1052,27 @@ const app = {
                             this.consecutiveLightVehicles = 0;
                         }
                     } else {
-                        this.consecutiveLightVehicles = 0; // Cassé par un véhicule lourd
+                        this.consecutiveLightVehicles = 0; 
                     }
                     
-                    // Prime de Régularité (Prop 17)
                     if (this.lastCountTime > 0) {
                         let diffSec = (nowTs - this.lastCountTime) / 1000;
                         if (diffSec >= 5 && diffSec <= 30) {
                             this.regularityChain++;
-                            if (this.regularityChain >= 10) { // 10 réguliers = Bonus
+                            if (this.regularityChain >= 10) {
                                 this.addBankTransaction(100, "Prime de Régularité (Flux parfait)");
                                 if(window.ui) {
                                     window.ui.showToast("🌊 Bonus de Flux ! Régularité parfaite : +100 €");
                                     window.ui.playGamiSound('cash');
                                 }
-                                this.regularityChain = 0; // On reset
+                                this.regularityChain = 0; 
                             }
                         } else {
-                            this.regularityChain = 0; // Chaine brisée
+                            this.regularityChain = 0; 
                         }
                     }
                     this.lastCountTime = nowTs;
 
-                    // Krach Boursier : Vérification des 4 derniers ajouts
                     let consecutive = 0;
                     let justHistory = history.filter(h => !h.isEvent);
                     for (let i = justHistory.length - 1; i >= Math.max(0, justHistory.length - 4); i--) {
@@ -1045,27 +1081,23 @@ const app = {
                     }
 
                     if (consecutive >= 4) {
-                        // Le 5ème identique passe en négatif (Frais de stockage)
                         baseVal = -Math.abs(baseVal * 2);
                         if(window.ui) {
                             window.ui.showToast(`📉 Krach Boursier ! Le marché sature pour ${key1} !`, "anomaly");
                             window.ui.playGamiSound('crash');
                         }
                     } else if (isExact) {
-                        // Bonus IA Clairvoyance
                         baseVal *= 3;
                     }
 
-                    // Saisie de l'Huissier
                     if (this.bankBalance < 0 && baseVal > 0) {
-                        baseVal = Math.round(baseVal * 0.2); // 80% saisi
+                        baseVal = Math.round(baseVal * 0.2); 
                     }
 
                     this.addBankTransaction(baseVal, `Comptage ${key1}`);
                     this.showMoneyParticle(e, baseVal);
                     if (baseVal > 0 && window.ui && consecutive < 4) window.ui.playGamiSound('cash');
 
-                    // Mise à jour Sponsor
                     if (this.activeSponsor && key1 === this.activeSponsor.type) {
                         this.activeSponsor.current += 1;
                         this.updateSponsorUI();
@@ -1166,6 +1198,7 @@ const app = {
                 this.renderKmStats(); 
                 this.renderLiveStats(mode);
                 this.updatePrediction(mode);
+                if (!isTruck) this.updateCarbonGauge();
 
             } else if (amount < 0) {
                 if (!isTruck) {
@@ -1259,6 +1292,7 @@ const app = {
         this.renderKmStats(); 
         this.renderLiveStats(mode);
         this.updatePrediction(mode);
+        if (!isTruck) this.updateCarbonGauge();
         
         let statsView = document.getElementById(isTruck ? 'truck-stats-view' : 'car-stats-view');
         if (statsView && statsView.style.display !== 'none') this.renderAdvancedStats(mode);
@@ -1309,6 +1343,11 @@ const app = {
         if (isTruck) this.renderTrucks(); else this.renderCars();
         this.renderKmStats(); 
         this.renderLiveStats(type);
+
+        if (!isTruck) {
+            let container = document.getElementById('carbon-gauge-container');
+            if (container) container.style.display = 'none';
+        }
     },
 
     async stopSession(type) {
@@ -1327,7 +1366,7 @@ const app = {
         if (confirm("⏹️ Trajet terminé ! Veux-tu enregistrer cette session ?")) { 
             if (!isTruck) {
                 this.checkSponsorOnStop(); 
-                this.checkCarbonFootprint(); // Bilan Carbone final calculé ici !
+                this.checkCarbonFootprint(); 
             }
             
             if(window.ui) window.ui.showToast("⏳ Géocodage des adresses en cours...");
@@ -1385,6 +1424,11 @@ const app = {
 
         this.resetSessionData(type);
         if(window.ui) window.ui.showToast("💾 Session sauvegardée !");
+
+        // NOUVEAU : Ouverture automatique du récapitulatif détaillé !
+        setTimeout(() => {
+            this.showSessionDetails(type, newSession.id);
+        }, 500);
     },
 
     async resetProfileData() {

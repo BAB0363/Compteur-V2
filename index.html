@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Compteur Trafic</title>
-    <link rel="manifest" href="manifest.json?v=32">
+    <link rel="manifest" href="manifest.json?v=33">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css?v=32">
-    <link rel="stylesheet" href="gami.css?v=32">
+    <link rel="stylesheet" href="style.css?v=33">
+    <link rel="stylesheet" href="gami.css?v=33">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
@@ -175,11 +175,19 @@
                 <div id="bar-motos"></div>
                 <div id="bar-velos"></div>
             </div>
+            
             <div id="prediction-box-cars" class="prediction-box">
                 <div id="pred-main-cars" class="pred-main-result">🔮 Prédiction IA : <span class="text-purple">Analyse en cours...</span></div>
                 <div class="pred-gauge-bg"><div id="pred-gauge-cars" class="pred-gauge-fill"></div></div>
                 <div id="pred-podium-cars" class="pred-podium"></div>
             </div>
+
+            <div id="carbon-gauge-container" class="prediction-box" style="margin-top: 5px; padding: 5px; display: none; border-color: #27ae60;">
+                <div style="font-size: 0.85em; font-weight: bold; margin-bottom: 4px; color: var(--text-color);">🌿 Bilan Carbone (Session)</div>
+                <div class="pred-gauge-bg" style="margin-bottom: 2px;"><div id="carbon-gauge-fill" class="pred-gauge-fill" style="background-color: #27ae60; width: 0%;"></div></div>
+                <div id="carbon-gauge-text" style="font-size: 0.75em; color: #7f8c8d;">0 g / 0 g autorisés</div>
+            </div>
+
         </div>
         
         <div id="car-main-view">
@@ -436,14 +444,14 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     
-    <script type="module" src="jsml.js?v=32"></script>
-    <script type="module" src="jsgami.js?v=32"></script>
-    <script type="module" src="jsapp.js?v=32"></script>
+    <script type="module" src="jsml.js?v=33"></script>
+    <script type="module" src="jsgami.js?v=33"></script>
+    <script type="module" src="jsapp.js?v=33"></script>
     
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=32')
+          navigator.serviceWorker.register('./sw.js?v=33')
             .then(registration => {
               console.log('Service Worker Compteur enregistré !', registration.scope);
             })
