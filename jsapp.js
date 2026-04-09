@@ -40,10 +40,12 @@ const app = {
     bankBalance: 0,
     bankHistory: [],
     bankStats: { gains: 0, losses: 0 },
+    sessionFinance: { gains: 0, losses: 0 }, // Historique par session
     
     // Variables pour Sponsor et Régularité
     pendingSponsor: null,
     activeSponsor: null,
+    sponsorCooldownUntil: 0, // Temps avant la prochaine offre possible
     lastCountTime: 0,
     regularityChain: 0,
     // ==========================================
@@ -97,12 +99,36 @@ const app = {
         this.checkBankruptcy();
     },
 
+    resetBankData() {
+        if (confirm(`🚨 ATTENTION SYLVAIN ! Tu vas vider ton compte en banque et effacer tout l'historique financier de ce profil. Es-tu sûr de vouloir déclarer faillite pour repartir de zéro ?`)) {
+            this.bankBalance = 0;
+            this.bankHistory = [];
+            this.bankStats = { gains: 0, losses: 0 };
+            this.sessionFinance = { gains: 0, losses: 0 };
+            
+            localStorage.removeItem('bankState_' + this.currentUser);
+            localStorage.removeItem('bankHistory_' + this.currentUser);
+            localStorage.removeItem('bankStats_' + this.currentUser);
+            
+            this.updateBankUI();
+            
+            if (window.ui) {
+                window.ui.showToast("💸 La Bourse de l'Asphalte a été remise à zéro !");
+            }
+        }
+    },
+
     addBankTransaction(amount, reason) {
         if (amount === 0) return;
         this.bankBalance += amount;
         
-        if (amount > 0) this.bankStats.gains += amount;
-        else this.bankStats.losses += Math.abs(amount);
+        if (amount > 0) {
+            this.bankStats.gains += amount;
+            if (this.isCarRunning) this.sessionFinance.gains += amount;
+        } else {
+            this.bankStats.losses += Math.abs(amount);
+            if (this.isCarRunning) this.sessionFinance.losses += Math.abs(amount);
+        }
 
         let now = new Date();
         this.bankHistory.unshift({
@@ -195,6 +221,7 @@ const app = {
     // ==========================================
     generateSponsorOffer() {
         if (this.activeSponsor || !this.isCarRunning) return;
+        if (Date.now() < this.sponsorCooldownUntil) return; // En période de recherche (cooldown)
         if (Math.random() > 0.15) return; // Chance d'avoir une offre chaque minute (15%)
 
         let types = ["Utilitaires", "Camions", "Camping-cars", "Bus/Car"];
@@ -204,24 +231,35 @@ const app = {
         
         this.pendingSponsor = { type: t, target: target, advance: advance, penalty: advance * 2 };
         
-        document.getElementById('sponsor-title').innerText = `🤝 Offre Sponsor : ${t}`;
-        document.getElementById('sponsor-desc').innerText = `Compte ${target} ${t} d'ici la fin de session. Avance : +${advance}€. Pénalité si échec : -${advance*2}€ !`;
-        document.getElementById('btn-sign-sponsor').style.display = 'inline-block';
-        document.getElementById('sponsor-banner').classList.remove('sponsor-active');
-        document.getElementById('sponsor-progress').style.display = 'none';
+        // Affichage de la modale d'offre
+        let modalDesc = document.getElementById('sponsor-modal-desc');
+        if (modalDesc) {
+            modalDesc.innerHTML = `L'entreprise te propose une avance immédiate de <strong style="color:#27ae60;">+${advance}€</strong> pour compter <strong>${target} ${t === 'Camions' ? 'Poids Lourds' : t}</strong> avant la fin de ton trajet.<br><br><span style="color:#e74c3c; font-size:0.9em;">⚠️ Pénalité en cas d'échec : -${advance*2}€ !</span>`;
+        }
+        document.getElementById('sponsor-offer-modal').style.display = 'flex';
+        
+        if(window.ui) window.ui.playGamiSound('siren');
+    },
 
-        if(window.ui) window.ui.showToast(`💼 Nouvelle offre de Sponsoring disponible !`);
+    refuseSponsorOffer() {
+        this.pendingSponsor = null;
+        this.sponsorCooldownUntil = Date.now() + (2 * 60 * 1000); // Repart en recherche pour 2 minutes
+        if(window.ui) window.ui.showToast(`💼 Offre refusée. Recherche d'un nouveau sponsor en cours...`);
     },
 
     signSponsorContract() {
         if (!this.pendingSponsor) return;
+        document.getElementById('sponsor-offer-modal').style.display = 'none';
+
         this.activeSponsor = { ...this.pendingSponsor, current: 0 };
         this.pendingSponsor = null;
         
         this.addBankTransaction(this.activeSponsor.advance, `Avance Sponsor (${this.activeSponsor.type})`);
         if(window.ui) window.ui.playGamiSound('cash');
         
-        document.getElementById('btn-sign-sponsor').style.display = 'none';
+        document.getElementById('sponsor-title').innerText = `🤝 Contrat en cours : ${this.activeSponsor.target} ${this.activeSponsor.type}`;
+        document.getElementById('sponsor-desc').innerText = `Objectif à atteindre avant la fin de session.`;
+        document.getElementById('btn-validate-sponsor').style.display = 'none';
         document.getElementById('sponsor-banner').classList.add('sponsor-active');
         this.updateSponsorUI();
     },
@@ -229,14 +267,38 @@ const app = {
     updateSponsorUI() {
         if (!this.activeSponsor) return;
         let el = document.getElementById('sponsor-progress');
+        let btnValidate = document.getElementById('btn-validate-sponsor');
+        
         el.style.display = 'block';
         el.innerText = `Progression : ${this.activeSponsor.current} / ${this.activeSponsor.target}`;
+        
         if (this.activeSponsor.current >= this.activeSponsor.target) {
-            el.innerText = "✅ Contrat Rempli !";
+            el.innerText = "✅ Objectif atteint !";
             el.style.color = "#2ecc71";
+            if(btnValidate) btnValidate.style.display = 'block'; // Fait apparaître le bouton pour valider
         } else {
             el.style.color = "#fff";
+            if(btnValidate) btnValidate.style.display = 'none';
         }
+    },
+
+    validateSponsorContract() {
+        if (!this.activeSponsor || this.activeSponsor.current < this.activeSponsor.target) return;
+        
+        // Calcul du bonus (entre 5% et 25% de plus que l'avance)
+        let bonusMultiplier = 1.05 + (Math.random() * 0.20); 
+        let finalReward = Math.round(this.activeSponsor.advance * bonusMultiplier);
+        
+        this.addBankTransaction(finalReward, `Bonus Fin de Contrat Sponsor (${this.activeSponsor.type})`);
+        
+        if(window.ui) {
+            window.ui.showToast(`🎉 Contrat validé ! Bénéfice encaissé : +${finalReward} € !`);
+            window.ui.playGamiSound('cash');
+        }
+        
+        this.activeSponsor = null;
+        this.sponsorCooldownUntil = Date.now() + (3 * 60 * 1000); // Relance la recherche dans 3 minutes
+        this.resetSponsorUI();
     },
 
     checkSponsorOnStop() {
@@ -248,7 +310,8 @@ const app = {
                     window.ui.playGamiSound('crash');
                 }
             } else {
-                if(window.ui) window.ui.showToast(`🏆 Sponsor satisfait ! Aucun frais retenu.`);
+                // Si l'utilisateur arrête la session alors que le contrat est rempli mais non validé
+                this.validateSponsorContract(); 
             }
             this.activeSponsor = null;
             this.resetSponsorUI();
@@ -263,12 +326,13 @@ const app = {
         let elDesc = document.getElementById('sponsor-desc');
         let elProg = document.getElementById('sponsor-progress');
         let elBanner = document.getElementById('sponsor-banner');
+        let btnValidate = document.getElementById('btn-validate-sponsor');
+        
         if(elTitle) elTitle.innerText = `🤝 Aucun contrat en cours`;
         if(elDesc) elDesc.innerText = `Lance le chrono pour voir les offres de sponsoring !`;
         if(elProg) elProg.style.display = 'none';
         if(elBanner) elBanner.classList.remove('sponsor-active');
-        let btnSign = document.getElementById('btn-sign-sponsor');
-        if(btnSign) btnSign.style.display = 'none';
+        if(btnValidate) btnValidate.style.display = 'none';
     },
     // ==========================================
 
@@ -713,7 +777,7 @@ const app = {
             } else { 
                 this.carStartTime = startTime; this.storage.set('carStartTime', startTime); 
                 this.lastGlobalCarTick = startTime; 
-                this.lastCountTime = Date.now(); // Réinitialise le timer de régularité
+                this.lastCountTime = Date.now(); 
             }
             
             let interval = setInterval(() => { 
@@ -750,15 +814,23 @@ const app = {
                         this.generateSponsorOffer();
                     }
 
-                    // Taxe de péage AVEC INFLATION (Prop 9)
-                    if (elapsed > 0 && elapsed % 300 === 0) {
-                        let tollBase = 50;
-                        let inflationMultiplier = Math.floor(elapsed / 300); // 1, 2, 3...
-                        let currentToll = tollBase + (inflationMultiplier - 1) * 20; // 50€, 70€, 90€...
+                    // Taxe de péage (Jour/Nuit + Inflation toutes les 15 min)
+                    if (elapsed > 0 && elapsed % 300 === 0) { // Toutes les 5 minutes
+                        let currentHour = new Date().getHours();
+                        let isNight = (currentHour >= 21 || currentHour < 6); // De 21h à 5h59
                         
-                        this.addBankTransaction(-currentToll, "Taxe de péage (Inflation)");
+                        let baseToll = isNight ? 20 : 10;
+                        let stepToll = isNight ? 20 : 10;
+                        let maxToll = isNight ? 200 : 100;
+                        
+                        let inflationMultiplier = Math.floor(elapsed / 900); // Augmente toutes les 15 min (900s)
+                        
+                        let currentToll = baseToll + (inflationMultiplier * stepToll);
+                        if (currentToll > maxToll) currentToll = maxToll;
+                        
+                        this.addBankTransaction(-currentToll, "Péage" + (isNight ? " de nuit 🌙" : " ☀️"));
                         if(window.ui) {
-                            window.ui.showToast(`💸 Péage : - ${currentToll} € (L'inflation monte !)`, "anomaly");
+                            window.ui.showToast(`💸 Péage : - ${currentToll} €`, "anomaly");
                             window.ui.playGamiSound('siren');
                         }
                     }
@@ -899,7 +971,7 @@ const app = {
                     this.showMoneyParticle(e, baseVal);
                     if (baseVal > 0 && window.ui && consecutive < 4) window.ui.playGamiSound('cash');
 
-                    // Mise à jour Sponsor (Prop 16)
+                    // Mise à jour Sponsor
                     if (this.activeSponsor && key1 === this.activeSponsor.type) {
                         this.activeSponsor.current += 1;
                         this.updateSponsorUI();
@@ -1127,6 +1199,8 @@ const app = {
             this.lastCountTime = 0;
             this.activeSponsor = null;
             this.pendingSponsor = null;
+            this.sponsorCooldownUntil = 0; // Remise à zéro du cooldown sponsor
+            this.sessionFinance = { gains: 0, losses: 0 }; // Remise à zéro des finances de la session
             this.resetSponsorUI();
         }
         
@@ -1199,7 +1273,8 @@ const app = {
             distanceKm: parseFloat((isTruck ? this.liveTruckDistance : this.liveCarDistance).toFixed(2)), 
             history: history, 
             summary: JSON.parse(JSON.stringify(isTruck ? this.truckCounters : this.vehicleCounters)),
-            predictions: isTruck ? { ...this.sessionTruckPredictions } : { ...this.sessionCarPredictions }
+            predictions: isTruck ? { ...this.sessionTruckPredictions } : { ...this.sessionCarPredictions },
+            sessionFinance: isTruck ? null : { ...this.sessionFinance } // Sauvegarde de la finance
         };
 
         await this.idb.add(newSession);
@@ -1829,6 +1904,20 @@ const app = {
             predTxt = Math.round((session.predictions.success / session.predictions.total) * 100) + "% (" + session.predictions.success + "/" + session.predictions.total + ")";
         }
 
+        // Ajout du bilan financier
+        let financeHtml = '';
+        if (session.sessionFinance && type === 'cars') {
+            let balance = session.sessionFinance.gains - session.sessionFinance.losses;
+            let color = balance >= 0 ? '#27ae60' : '#e74c3c';
+            let sign = balance > 0 ? '+' : '';
+            financeHtml = `
+                <div style="border-top: 2px dashed var(--border-color); margin: 10px 0;"></div>
+                <div class="session-detail-row"><span class="session-detail-label">Bilan Financier Session</span><span class="session-detail-value" style="color:${color}; font-weight:bold;">${sign}${balance} €</span></div>
+                <div class="session-detail-row"><span class="session-detail-label" style="font-size:0.8em;">Gains totaux</span><span class="session-detail-value" style="color:#27ae60; font-size:0.8em;">+${session.sessionFinance.gains} €</span></div>
+                <div class="session-detail-row"><span class="session-detail-label" style="font-size:0.8em;">Pertes / Frais</span><span class="session-detail-value" style="color:#e74c3c; font-size:0.8em;">-${session.sessionFinance.losses} €</span></div>
+            `;
+        }
+
         let html = `
             <div class="session-detail-row"><span class="session-detail-label">Date</span><span class="session-detail-value">${session.date}</span></div>
             <div class="session-detail-row"><span class="session-detail-label" style="color:#27ae60;">🟢 Départ</span><span class="session-detail-value">${session.startAddress || "Inconnue"}</span></div>
@@ -1842,6 +1931,7 @@ const app = {
             <div class="session-detail-row"><span class="session-detail-label">Rythme</span><span class="session-detail-value">${speed} /h</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Moyenne</span><span class="session-detail-value">${avgKm} /km</span></div>
             <div class="session-detail-row"><span class="session-detail-label">Espacement Moyen</span><span class="session-detail-value">${espTemps} / ${espDist}</span></div>
+            ${financeHtml}
             <div style="border-top: 2px dashed var(--border-color); margin: 10px 0;"></div>
             <div class="session-detail-row"><span class="session-detail-label">🔮 Réussite Prédictions</span><span class="session-detail-value" style="color:#8e44ad; font-weight:bold;">${predTxt}</span></div>
         `;

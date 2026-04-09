@@ -50,47 +50,47 @@ export const ui = {
             gainNode.connect(this.audioCtx.destination);
             
             if (type === 'questDone') {
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(600, this.audioCtx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(1200, this.audioCtx.currentTime + 0.15);
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(600, this.audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(1200, this.audioCtx.currentTime + 0.15);
                 gainNode.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.3);
             } else if (type === 'levelUp') {
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(400, this.audioCtx.currentTime);
-                osc.frequency.setValueAtTime(600, this.audioCtx.currentTime + 0.1);
-                osc.frequency.setValueAtTime(800, this.audioCtx.currentTime + 0.2);
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(400, this.audioCtx.currentTime);
+                oscillator.frequency.setValueAtTime(600, this.audioCtx.currentTime + 0.1);
+                oscillator.frequency.setValueAtTime(800, this.audioCtx.currentTime + 0.2);
                 gainNode.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.4);
             } else if (type === 'cash') {
                 // Bruit de pièce / tiroir-caisse
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(1000, this.audioCtx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(2000, this.audioCtx.currentTime + 0.1);
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(1000, this.audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(2000, this.audioCtx.currentTime + 0.1);
                 gainNode.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.1);
             } else if (type === 'crash') {
                 // Bruit de chute / Krach Boursier
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(300, this.audioCtx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(50, this.audioCtx.currentTime + 0.5);
+                oscillator.type = 'sawtooth';
+                oscillator.frequency.setValueAtTime(300, this.audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(50, this.audioCtx.currentTime + 0.5);
                 gainNode.gain.setValueAtTime(0.4, this.audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.5);
             } else if (type === 'siren') {
                 // Alarme / Péage / Huissier
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(600, this.audioCtx.currentTime);
-                osc.frequency.linearRampToValueAtTime(800, this.audioCtx.currentTime + 0.2);
-                osc.frequency.linearRampToValueAtTime(600, this.audioCtx.currentTime + 0.4);
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(600, this.audioCtx.currentTime);
+                oscillator.frequency.linearRampToValueAtTime(800, this.audioCtx.currentTime + 0.2);
+                oscillator.frequency.linearRampToValueAtTime(600, this.audioCtx.currentTime + 0.4);
                 gainNode.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.5);
             }
 
-            osc.start();
+            oscillator.start();
             if (type === 'crash' || type === 'siren') {
-                osc.stop(this.audioCtx.currentTime + 0.5);
+                oscillator.stop(this.audioCtx.currentTime + 0.5);
             } else {
-                osc.stop(this.audioCtx.currentTime + 0.4);
+                oscillator.stop(this.audioCtx.currentTime + 0.4);
             }
         } catch(e) { 
             console.warn("Audio Gami non supporté"); 

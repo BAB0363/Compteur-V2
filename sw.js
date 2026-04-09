@@ -36,19 +36,31 @@ self.addEventListener('activate', event => {
       return Promise.all(
         cacheNames.map(cacheName => {
           if (cacheName !== CACHE_NAME) {
-            console.log('🧹 Suppression de l\'ancien cache :', cacheName);
+            console.log('🧹 Nettoyage de l\'ancien cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
     })
   );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request).then(response => {
-      return response || fetch(event.request);
+      return response || fetch(event.request).then(fetchResponse => {
+        return caches.open(CACHE_NAME).then(cache => {
+          if (event.request.method === 'GET' && !event.request.url.includes('google-analytics')) {
+             cache.put(event.request, fetchResponse.clone());
+          }
+          return fetchResponse;
+        });
+      });
+    }).catch(() => {
+      if (event.request.mode === 'navigate') {
+        return caches.match('./index.html');
+      }
     })
   );
 });

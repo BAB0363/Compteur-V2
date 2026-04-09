@@ -139,8 +139,8 @@
         <div id="sponsor-banner" class="sponsor-card no-print">
             <div id="sponsor-title">🤝 Aucun contrat en cours</div>
             <div id="sponsor-desc" style="font-size: 0.85em; font-weight: normal; margin-top: 5px;">Lance le chrono pour voir les offres de sponsoring !</div>
-            <button id="btn-sign-sponsor" class="btn-sponsor" style="display: none;" onclick="window.app.signSponsorContract()">Signer le contrat</button>
             <div id="sponsor-progress" style="display: none; margin-top: 10px; font-size: 1.1em; color: #2ecc71; font-weight: bold;"></div>
+            <button id="btn-validate-sponsor" class="btn-sponsor" style="display: none; background: #27ae60; width: 100%; margin-top: 10px;" onclick="window.app.validateSponsorContract()">💰 Valider et Encaisser !</button>
         </div>
 
         <div class="header-dashboard">
@@ -349,12 +349,28 @@
             </div>
             
             <div class="danger-buttons-col">
+                <button class="reset-btn btn-full btn-darkred mb-10" style="background-color: #8e44ad;" onclick="window.app.resetBankData()">
+                    💸 Réinitialiser la Bourse (Remise à zéro de l'argent)
+                </button>
                 <button class="reset-btn btn-full btn-orange mb-10" onclick="window.app.deleteSessionsByDateRange()">
                     🗑️ Supprimer la période sélectionnée
                 </button>
                 <button class="reset-btn btn-full btn-darkred" onclick="window.app.resetProfileData()">
                     🚨 Effacer TOUT le profil (Remise à zéro totale)
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="sponsor-offer-modal" class="modal-overlay" style="display:none; z-index: 10005;">
+        <div class="modal-content" style="text-align: center; border: 2px solid #f1c40f; background: var(--card-bg);">
+            <div class="modal-header-row" style="border-bottom: none; justify-content: center;">
+                <h3 class="modal-title" style="color:#f1c40f; font-size: 1.5em; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">🤝 Offre de Sponsoring !</h3>
+            </div>
+            <div id="sponsor-modal-desc" style="margin: 15px 0; font-size: 1.1em; color: var(--text-color); line-height: 1.4;"></div>
+            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
+                <button class="btn-sponsor" style="background: #e74c3c; flex: 1; padding: 12px; font-size: 1.1em;" onclick="document.getElementById('sponsor-offer-modal').style.display='none'; window.app.refuseSponsorOffer();">Refuser</button>
+                <button class="btn-sponsor" style="background: #27ae60; flex: 1; padding: 12px; font-size: 1.1em;" onclick="window.app.signSponsorContract()">Signer !</button>
             </div>
         </div>
     </div>
