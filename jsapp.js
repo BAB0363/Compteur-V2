@@ -22,7 +22,7 @@ const app = {
         "Vélos": 20
     },
 
-    // 💸 Dictionnaire des valeurs financières (Compteur Véhicules uniquement)
+    // 💸 Dictionnaire des valeurs financières (Compteur Véhicules)
     bankValues: {
         "Voitures": 1,
         "Vélos": 1,
@@ -34,7 +34,19 @@ const app = {
         "Engins agricoles": 200
     },
 
+    // ==========================================
+    // 🏦 VARIABLES DE LA BOURSE DE L'ASPHALTE
+    // ==========================================
     bankBalance: 0,
+    bankHistory: [],
+    bankStats: { gains: 0, losses: 0 },
+    
+    // Variables pour Sponsor et Régularité
+    pendingSponsor: null,
+    activeSponsor: null,
+    lastCountTime: 0,
+    regularityChain: 0,
+    // ==========================================
 
     formatWeight(kg) {
         if (!kg) return "0 kg";
@@ -62,18 +74,45 @@ const app = {
     },
 
     // ==========================================
-    // 🏦 SYSTÈME FINANCIER (La Bourse de l'Asphalte)
+    // 🏦 SYSTÈME FINANCIER COMPLET
     // ==========================================
     initBank() {
         let savedBank = localStorage.getItem('bankState_' + this.currentUser);
         this.bankBalance = savedBank ? parseFloat(savedBank) : 0;
+        
+        let savedHist = localStorage.getItem('bankHistory_' + this.currentUser);
+        this.bankHistory = savedHist ? JSON.parse(savedHist) : [];
+        
+        let savedStats = localStorage.getItem('bankStats_' + this.currentUser);
+        this.bankStats = savedStats ? JSON.parse(savedStats) : { gains: 0, losses: 0 };
+        
         this.updateBankUI();
     },
 
     saveBank() {
         localStorage.setItem('bankState_' + this.currentUser, this.bankBalance);
+        localStorage.setItem('bankHistory_' + this.currentUser, JSON.stringify(this.bankHistory));
+        localStorage.setItem('bankStats_' + this.currentUser, JSON.stringify(this.bankStats));
         this.updateBankUI();
         this.checkBankruptcy();
+    },
+
+    addBankTransaction(amount, reason) {
+        if (amount === 0) return;
+        this.bankBalance += amount;
+        
+        if (amount > 0) this.bankStats.gains += amount;
+        else this.bankStats.losses += Math.abs(amount);
+
+        let now = new Date();
+        this.bankHistory.unshift({
+            time: now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            amount: amount,
+            reason: reason
+        });
+
+        if (this.bankHistory.length > 50) this.bankHistory.pop();
+        this.saveBank();
     },
 
     updateBankUI() {
@@ -82,7 +121,6 @@ const app = {
         let banner = document.getElementById('huissier-banner');
         if (!badge || !display) return;
 
-        // La banque s'affiche toujours maintenant !
         badge.style.display = 'flex';
         display.innerText = Math.round(this.bankBalance) + ' €';
         
@@ -97,13 +135,42 @@ const app = {
         }
     },
 
+    openBankModal() {
+        let elGains = document.getElementById('bank-total-gains');
+        let elLosses = document.getElementById('bank-total-losses');
+        let elList = document.getElementById('bank-history-list');
+
+        if (elGains) elGains.innerText = Math.round(this.bankStats.gains) + ' €';
+        if (elLosses) elLosses.innerText = Math.round(this.bankStats.losses) + ' €';
+
+        if (elList) {
+            elList.innerHTML = '';
+            if (this.bankHistory.length === 0) {
+                elList.innerHTML = '<span style="color:#7f8c8d; font-size:0.9em;">Aucune transaction... commence à compter !</span>';
+            } else {
+                this.bankHistory.forEach(tx => {
+                    let color = tx.amount > 0 ? '#27ae60' : '#e74c3c';
+                    let sign = tx.amount > 0 ? '+' : '';
+                    elList.innerHTML += `
+                        <div class="session-detail-row">
+                            <span class="session-detail-label" style="font-size:0.85em;">${tx.time} - ${tx.reason}</span>
+                            <span class="session-detail-value" style="color:${color}; font-size:0.95em;">${sign}${Math.round(tx.amount)} €</span>
+                        </div>
+                    `;
+                });
+            }
+        }
+        document.getElementById('bank-modal').style.display = 'flex';
+    },
+
     checkBankruptcy() {
         if (this.bankBalance <= -10000) {
-            if(window.ui) window.ui.showToast("☠️ LIQUIDATION JUDICIAIRE ! La faillite est prononcée.", "anomaly");
-            this.bankBalance = 0;
-            this.saveBank();
+            if(window.ui) {
+                window.ui.showToast("☠️ LIQUIDATION JUDICIAIRE ! La faillite est prononcée.", "anomaly");
+                window.ui.playGamiSound('siren');
+            }
+            this.addBankTransaction(Math.abs(this.bankBalance), "Saisie Totale (Faillite)"); // Remise à zéro propre
             
-            // Remise à zéro du niveau Gami
             if (window.gami) {
                 window.gami.state.level = 1;
                 window.gami.state.xp = 0;
@@ -121,6 +188,87 @@ const app = {
         p.style.top = e.clientY + 'px';
         document.body.appendChild(p);
         setTimeout(() => p.remove(), 1000);
+    },
+
+    // ==========================================
+    // 🤝 GESTION DU CONTRAT SPONSOR
+    // ==========================================
+    generateSponsorOffer() {
+        if (this.activeSponsor || !this.isCarRunning) return;
+        if (Math.random() > 0.15) return; // Chance d'avoir une offre chaque minute (15%)
+
+        let types = ["Utilitaires", "Camions", "Camping-cars", "Bus/Car"];
+        let t = types[Math.floor(Math.random() * types.length)];
+        let target = Math.floor(Math.random() * 8) + 3; // Entre 3 et 10 véhicules
+        let advance = target * (this.bankValues[t] || 5) * 3; // Bonne avance pour appâter
+        
+        this.pendingSponsor = { type: t, target: target, advance: advance, penalty: advance * 2 };
+        
+        document.getElementById('sponsor-title').innerText = `🤝 Offre Sponsor : ${t}`;
+        document.getElementById('sponsor-desc').innerText = `Compte ${target} ${t} d'ici la fin de session. Avance : +${advance}€. Pénalité si échec : -${advance*2}€ !`;
+        document.getElementById('btn-sign-sponsor').style.display = 'inline-block';
+        document.getElementById('sponsor-banner').classList.remove('sponsor-active');
+        document.getElementById('sponsor-progress').style.display = 'none';
+
+        if(window.ui) window.ui.showToast(`💼 Nouvelle offre de Sponsoring disponible !`);
+    },
+
+    signSponsorContract() {
+        if (!this.pendingSponsor) return;
+        this.activeSponsor = { ...this.pendingSponsor, current: 0 };
+        this.pendingSponsor = null;
+        
+        this.addBankTransaction(this.activeSponsor.advance, `Avance Sponsor (${this.activeSponsor.type})`);
+        if(window.ui) window.ui.playGamiSound('cash');
+        
+        document.getElementById('btn-sign-sponsor').style.display = 'none';
+        document.getElementById('sponsor-banner').classList.add('sponsor-active');
+        this.updateSponsorUI();
+    },
+
+    updateSponsorUI() {
+        if (!this.activeSponsor) return;
+        let el = document.getElementById('sponsor-progress');
+        el.style.display = 'block';
+        el.innerText = `Progression : ${this.activeSponsor.current} / ${this.activeSponsor.target}`;
+        if (this.activeSponsor.current >= this.activeSponsor.target) {
+            el.innerText = "✅ Contrat Rempli !";
+            el.style.color = "#2ecc71";
+        } else {
+            el.style.color = "#fff";
+        }
+    },
+
+    checkSponsorOnStop() {
+        if (this.activeSponsor) {
+            if (this.activeSponsor.current < this.activeSponsor.target) {
+                this.addBankTransaction(-this.activeSponsor.penalty, `Rupture Contrat Sponsor (${this.activeSponsor.type})`);
+                if(window.ui) {
+                    window.ui.showToast(`📉 Contrat raté ! Pénalité : -${this.activeSponsor.penalty} €`, "anomaly");
+                    window.ui.playGamiSound('crash');
+                }
+            } else {
+                if(window.ui) window.ui.showToast(`🏆 Sponsor satisfait ! Aucun frais retenu.`);
+            }
+            this.activeSponsor = null;
+            this.resetSponsorUI();
+        } else if (this.pendingSponsor) {
+            this.pendingSponsor = null;
+            this.resetSponsorUI();
+        }
+    },
+
+    resetSponsorUI() {
+        let elTitle = document.getElementById('sponsor-title');
+        let elDesc = document.getElementById('sponsor-desc');
+        let elProg = document.getElementById('sponsor-progress');
+        let elBanner = document.getElementById('sponsor-banner');
+        if(elTitle) elTitle.innerText = `🤝 Aucun contrat en cours`;
+        if(elDesc) elDesc.innerText = `Lance le chrono pour voir les offres de sponsoring !`;
+        if(elProg) elProg.style.display = 'none';
+        if(elBanner) elBanner.classList.remove('sponsor-active');
+        let btnSign = document.getElementById('btn-sign-sponsor');
+        if(btnSign) btnSign.style.display = 'none';
     },
     // ==========================================
 
@@ -366,6 +514,8 @@ const app = {
         if(confirm(`⚠️ Supprimer définitivement le profil de ${this.currentUser} et TOUTES ses données locales ?`)) {
             this.storage.clearAll();
             localStorage.removeItem('bankState_' + this.currentUser);
+            localStorage.removeItem('bankHistory_' + this.currentUser);
+            localStorage.removeItem('bankStats_' + this.currentUser);
             this.usersList = this.usersList.filter(u => u !== this.currentUser);
             localStorage.setItem('usersList', JSON.stringify(this.usersList));
             this.changeUser(this.usersList[0]);
@@ -563,6 +713,7 @@ const app = {
             } else { 
                 this.carStartTime = startTime; this.storage.set('carStartTime', startTime); 
                 this.lastGlobalCarTick = startTime; 
+                this.lastCountTime = Date.now(); // Réinitialise le timer de régularité
             }
             
             let interval = setInterval(() => { 
@@ -592,19 +743,34 @@ const app = {
                         this.lastGlobalCarTick += add * 1000;
                     }
 
-                    // 💸 MÉCANIQUES FINANCIÈRES LIÉES AU TEMPS (Uniquement sur le compteur Véhicules)
-                    // Taxe de péage (50€ toutes les 5 minutes)
-                    if (elapsed > 0 && elapsed % 300 === 0) {
-                        this.bankBalance -= 50;
-                        if(window.ui) window.ui.showToast("💸 Taxe de péage : - 50 €", "anomaly");
-                        this.saveBank();
+                    // 💸 MÉCANIQUES FINANCIÈRES (Véhicules uniquement)
+                    
+                    // Génération des offres Sponsor
+                    if (elapsed > 0 && elapsed % 60 === 0) {
+                        this.generateSponsorOffer();
                     }
+
+                    // Taxe de péage AVEC INFLATION (Prop 9)
+                    if (elapsed > 0 && elapsed % 300 === 0) {
+                        let tollBase = 50;
+                        let inflationMultiplier = Math.floor(elapsed / 300); // 1, 2, 3...
+                        let currentToll = tollBase + (inflationMultiplier - 1) * 20; // 50€, 70€, 90€...
+                        
+                        this.addBankTransaction(-currentToll, "Taxe de péage (Inflation)");
+                        if(window.ui) {
+                            window.ui.showToast(`💸 Péage : - ${currentToll} € (L'inflation monte !)`, "anomaly");
+                            window.ui.playGamiSound('siren');
+                        }
+                    }
+
                     // Agios (5% de la dette toutes les minutes)
                     if (elapsed > 0 && elapsed % 60 === 0 && this.bankBalance < 0) {
                         let agios = Math.abs(this.bankBalance) * 0.05;
-                        this.bankBalance -= agios;
-                        if(window.ui) window.ui.showToast(`📉 Agios (5%) : - ${Math.round(agios)} €`, "anomaly");
-                        this.saveBank();
+                        this.addBankTransaction(-agios, "Agios (5%)");
+                        if(window.ui) {
+                            window.ui.showToast(`📉 Agios (5%) : - ${Math.round(agios)} €`, "anomaly");
+                            window.ui.playGamiSound('crash');
+                        }
                     }
                 }
                 this.updateChronoDisp(type); 
@@ -680,10 +846,30 @@ const app = {
                     }
                 }
 
-                // 💸 GESTION FINANCIÈRE (Uniquement sur le compteur Véhicules et si on ajoute)
+                // 💸 GESTION FINANCIÈRE (Compteur Véhicules)
                 if (!isTruck) {
                     let baseVal = this.bankValues[key1] || 1;
+                    let nowTs = Date.now();
                     
+                    // Prime de Régularité (Prop 17)
+                    if (this.lastCountTime > 0) {
+                        let diffSec = (nowTs - this.lastCountTime) / 1000;
+                        if (diffSec >= 5 && diffSec <= 30) {
+                            this.regularityChain++;
+                            if (this.regularityChain >= 10) { // 10 réguliers = Bonus
+                                this.addBankTransaction(100, "Prime de Régularité (Flux parfait)");
+                                if(window.ui) {
+                                    window.ui.showToast("🌊 Bonus de Flux ! Régularité parfaite : +100 €");
+                                    window.ui.playGamiSound('cash');
+                                }
+                                this.regularityChain = 0; // On reset
+                            }
+                        } else {
+                            this.regularityChain = 0; // Chaine brisée
+                        }
+                    }
+                    this.lastCountTime = nowTs;
+
                     // Krach Boursier : Vérification des 4 derniers ajouts
                     let consecutive = 0;
                     let justHistory = history.filter(h => !h.isEvent);
@@ -695,7 +881,10 @@ const app = {
                     if (consecutive >= 4) {
                         // Le 5ème identique passe en négatif (Frais de stockage)
                         baseVal = -Math.abs(baseVal * 2);
-                        if(window.ui) window.ui.showToast(`📉 Krach Boursier ! Le marché sature pour ${key1} !`, "anomaly");
+                        if(window.ui) {
+                            window.ui.showToast(`📉 Krach Boursier ! Le marché sature pour ${key1} !`, "anomaly");
+                            window.ui.playGamiSound('crash');
+                        }
                     } else if (isExact) {
                         // Bonus IA Clairvoyance
                         baseVal *= 3;
@@ -706,9 +895,15 @@ const app = {
                         baseVal = Math.round(baseVal * 0.2); // 80% saisi
                     }
 
-                    this.bankBalance += baseVal;
-                    this.saveBank();
+                    this.addBankTransaction(baseVal, `Comptage ${key1}`);
                     this.showMoneyParticle(e, baseVal);
+                    if (baseVal > 0 && window.ui && consecutive < 4) window.ui.playGamiSound('cash');
+
+                    // Mise à jour Sponsor (Prop 16)
+                    if (this.activeSponsor && key1 === this.activeSponsor.type) {
+                        this.activeSponsor.current += 1;
+                        this.updateSponsorUI();
+                    }
                 }
 
                 if (isTruck) { counters[key1][key2] += amount; globalCounters[key1][key2] += amount; }
@@ -740,9 +935,9 @@ const app = {
                             window.ui.triggerHapticFeedback('error');
                             // Amende IA en cas de grosse anomalie
                             if (!isTruck) {
-                                this.bankBalance -= 100;
-                                this.saveBank();
+                                this.addBankTransaction(-100, "Amende IA (Anomalie de comptage)");
                                 this.showMoneyParticle(e, -100);
+                                window.ui.playGamiSound('siren');
                             }
                         }
                         else window.ui.triggerHapticFeedback('success');
@@ -810,10 +1005,12 @@ const app = {
             } else if (amount < 0) {
                 // Pénalité d'annulation !
                 if (!isTruck) {
-                    let currentVal = this.bankBalance;
-                    this.bankBalance -= Math.max(5, Math.abs(currentVal * 0.1)); // 10% de pénalité ou 5€ min
-                    this.saveBank();
-                    if(window.ui) window.ui.showToast("📉 Frais d'annulation appliqués !", "anomaly");
+                    let penalty = Math.max(5, Math.abs(this.bankBalance * 0.1)); // 10% de pénalité ou 5€ min
+                    this.addBankTransaction(-penalty, "Frais d'annulation");
+                    if(window.ui) {
+                        window.ui.showToast("📉 Frais d'annulation appliqués !", "anomaly");
+                        window.ui.playGamiSound('crash');
+                    }
                 }
 
                 for (let i = history.length - 1; i >= 0; i--) {
@@ -846,6 +1043,12 @@ const app = {
             } else {
                 if (counters[vehKey] > 0) counters[vehKey]--;
                 if (globalCounters[vehKey] > 0) globalCounters[vehKey]--;
+                
+                // Si on supprime, on enlève un au sponsor si concerné
+                if (this.activeSponsor && vehKey === this.activeSponsor.type && this.activeSponsor.current > 0) {
+                    this.activeSponsor.current--;
+                    this.updateSponsorUI();
+                }
             }
 
             if (item.timestamp) {
@@ -919,6 +1122,12 @@ const app = {
             this.vehicleTypes.forEach(v => this.vehicleCounters[v] = 0); 
             this.carHistory = []; this.carSeconds = 0; this.carAccumulatedTime = 0; this.liveCarDistance = 0;
             this.sessionCarPredictions = { total: 0, success: 0 };
+            
+            this.regularityChain = 0;
+            this.lastCountTime = 0;
+            this.activeSponsor = null;
+            this.pendingSponsor = null;
+            this.resetSponsorUI();
         }
         
         this.storage.set(isTruck ? 'truckCounters' : 'vehicleCounters', isTruck ? this.truckCounters : this.vehicleCounters); 
@@ -947,6 +1156,8 @@ const app = {
         }
         
         if (confirm("⏹️ Trajet terminé ! Veux-tu enregistrer cette session ?")) { 
+            if (!isTruck) this.checkSponsorOnStop(); // Vérification du sponsor avant clôture !
+            
             if(window.ui) window.ui.showToast("⏳ Géocodage des adresses en cours...");
             await this.saveSession(type); 
         } 
@@ -1011,7 +1222,9 @@ const app = {
 
             this.storage.clearAll();
             localStorage.removeItem(`gami_state_${this.currentUser}`);
-            localStorage.removeItem(`bankState_${this.currentUser}`); // Reset de la banque !
+            localStorage.removeItem(`bankState_${this.currentUser}`);
+            localStorage.removeItem(`bankHistory_${this.currentUser}`);
+            localStorage.removeItem(`bankStats_${this.currentUser}`);
 
             try {
                 if (typeof tf !== 'undefined') {
@@ -1454,7 +1667,7 @@ const app = {
             aiInsightContainer.style.display = 'block';
         }
 
-        // NOUVEAU : Injection du Bulletin de Notes de l'IA
+        // Bulletin de Notes de l'IA
         let reportContainer = document.getElementById('ai-report-card-container');
         let reportContent = document.getElementById('ai-report-card-content');
         if (reportContainer && reportContent && window.ml) {

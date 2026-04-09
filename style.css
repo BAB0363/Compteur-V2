@@ -369,3 +369,49 @@ button:active { transform: scale(0.95); }
     30% { transform: translate(-50%, -80px) scale(1.2); opacity: 1; }
     100% { transform: translate(-50%, -120px) scale(1); opacity: 0; }
 }
+
+/* ==========================================
+   Ajustement Case Prédictions Camions
+   ========================================== */
+#prediction-box-trucks {
+    padding: 4px 8px;
+    margin-top: 4px;
+}
+#prediction-box-trucks .pred-main-result {
+    margin-bottom: 2px;
+    font-size: 0.9em;
+}
+#prediction-box-trucks .pred-gauge-bg {
+    margin-bottom: 4px;
+    height: 5px;
+}
+#prediction-box-trucks .pred-podium {
+    padding-top: 2px;
+    font-size: 0.75em;
+}
+
+/* ==========================================
+   Design Contrat Sponsor (Gamification)
+   ========================================== */
+.sponsor-card { 
+    background: linear-gradient(135deg, #f1c40f, #e67e22); 
+    color: #fff; 
+    padding: 15px; 
+    border-radius: 8px; 
+    text-align: center; 
+    margin-bottom: 15px; 
+    font-weight: bold; 
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2); 
+}
+.btn-sponsor { 
+    background: #2c3e50; 
+    color: white; 
+    padding: 10px 20px; 
+    border-radius: 20px; 
+    font-weight: bold; 
+    cursor: pointer; 
+    margin-top: 10px; 
+    transition: 0.2s;
+}
+.btn-sponsor:hover { background: #34495e; }
+.sponsor-active { border: 2px solid #2ecc71; background: rgba(46, 204, 113, 0.1); }

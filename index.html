@@ -53,7 +53,7 @@
             <div id="current-profile-display" class="profile-badge">
                 👤 <span id="display-user">Sylvain</span> <span class="badge-separator">|</span> <span id="display-mode">🚗 Voiture</span>
             </div>
-            <div id="bank-badge" class="profile-badge bank-positive" style="display: none;">
+            <div id="bank-badge" class="profile-badge bank-positive" style="display: none; cursor: pointer;" onclick="window.app.openBankModal()" title="Ouvrir la Bourse de l'Asphalte">
                 🏦 <span id="display-bank">0 €</span>
             </div>
         </div>
@@ -136,6 +136,13 @@
     <div id="section-cars" style="display: none;">
         <div id="huissier-banner" class="no-print" style="display:none; background: linear-gradient(90deg, #c0392b, #8e44ad); color: white; text-align: center; padding: 8px; font-size: 0.85em; font-weight: bold; margin-bottom: 10px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">⚖️ MAÎTRE ASPHALTE EST LÀ : Saisie de 80% sur vos gains !</div>
         
+        <div id="sponsor-banner" class="sponsor-card no-print">
+            <div id="sponsor-title">🤝 Aucun contrat en cours</div>
+            <div id="sponsor-desc" style="font-size: 0.85em; font-weight: normal; margin-top: 5px;">Lance le chrono pour voir les offres de sponsoring !</div>
+            <button id="btn-sign-sponsor" class="btn-sponsor" style="display: none;" onclick="window.app.signSponsorContract()">Signer le contrat</button>
+            <div id="sponsor-progress" style="display: none; margin-top: 10px; font-size: 1.1em; color: #2ecc71; font-weight: bold;"></div>
+        </div>
+
         <div class="header-dashboard">
             <div class="top-row no-print">
                 <div class="chrono-container">
@@ -390,6 +397,30 @@
                 </div>
             </div>
             
+        </div>
+    </div>
+
+    <div id="bank-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content">
+            <div class="modal-header-row">
+                <h3 class="modal-title" style="color:#27ae60;">🏦 La Bourse de l'Asphalte</h3>
+                <button onclick="document.getElementById('bank-modal').style.display='none'" class="btn-close-modal">X</button>
+            </div>
+            
+            <div class="km-stats-grid mb-15">
+                <div class="km-stat-card" style="border-color:#27ae60;">
+                    <span class="km-stat-title">Gains Totaux</span>
+                    <span id="bank-total-gains" class="km-stat-value text-success">0 €</span>
+                </div>
+                <div class="km-stat-card" style="border-color:#e74c3c;">
+                    <span class="km-stat-title">Pertes & Frais</span>
+                    <span id="bank-total-losses" class="km-stat-value text-danger">0 €</span>
+                </div>
+            </div>
+
+            <h4 class="modal-section-title">📜 Historique des transactions</h4>
+            <div id="bank-history-list" class="history-list" style="max-height: 300px; background: var(--bg-color); padding: 10px; border-radius: 8px;">
+                </div>
         </div>
     </div>
 

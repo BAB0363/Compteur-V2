@@ -57,7 +57,6 @@ export const gami = {
         return new Date(d.setDate(diff)).setHours(0,0,0,0);
     },
 
-    // NOUVEAU : Fonction de calcul des dates de la saison
     getSeasonDatesString() {
         let now = new Date();
         let year = now.getFullYear();
@@ -67,7 +66,7 @@ export const gami = {
         let endMonth = startMonth + 2;
         
         let startDate = new Date(year, startMonth, 1);
-        let endDate = new Date(year, endMonth + 1, 0); // Le jour 0 du mois suivant = dernier jour
+        let endDate = new Date(year, endMonth + 1, 0); 
         
         const format = (d) => d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
         return `(du ${format(startDate)} au ${format(endDate)})`;
@@ -168,7 +167,10 @@ export const gami = {
             leveledUp = true;
         }
 
-        if (leveledUp) this.showToast(`🎉 Niveau Supérieur ! Tu es niveau ${this.state.level} !`);
+        if (leveledUp) {
+            this.showToast(`🎉 Niveau Supérieur ! Tu es niveau ${this.state.level} !`);
+            if (window.ui) window.ui.playGamiSound('levelUp');
+        }
         this.saveState();
     },
 
@@ -193,6 +195,7 @@ export const gami = {
                     q.done = true;
                     this.addXp(q.xpReward);
                     this.showToast(`🎯 Quête validée : ${q.title} (+${q.xpReward} XP)`);
+                    if (window.ui) window.ui.playGamiSound('questDone');
                 }
                 return true;
             }
@@ -241,7 +244,7 @@ export const gami = {
         let elLabel = document.getElementById('gami-xp-label');
 
         if(elSeason) elSeason.innerText = this.state.seasonName || "Saison";
-        if(elDates) elDates.innerText = this.getSeasonDatesString(); // Injection dynamique des dates
+        if(elDates) elDates.innerText = this.getSeasonDatesString();
         if(elLvl) elLvl.innerText = this.state.level || 1;
         if(elBar) elBar.style.width = (((this.state.xp || 0) / this.xpPerLevel) * 100) + '%';
         if(elLabel) elLabel.innerText = `${this.state.xp || 0} / ${this.xpPerLevel} XP`;
