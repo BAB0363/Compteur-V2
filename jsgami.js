@@ -10,7 +10,13 @@ export const gami = {
         seasonQuests: [],
         lastDailyUpdate: 0,
         lastWeeklyUpdate: 0,
-        hasRerolledToday: false
+        hasRerolledToday: false,
+        // NOUVEAU : Arbre de Talents
+        unlockedTalents: {
+            oeilDeLynx: false,  // Niv 5
+            negociateur: false, // Niv 10
+            ecoConduite: false  // Niv 15
+        }
     },
     
     xpPerLevel: 1000,
@@ -29,8 +35,12 @@ export const gami = {
         if (!Array.isArray(this.state.dailyQuests)) this.state.dailyQuests = [];
         if (!Array.isArray(this.state.weeklyQuests)) this.state.weeklyQuests = [];
         if (!Array.isArray(this.state.seasonQuests)) this.state.seasonQuests = [];
+        if (!this.state.unlockedTalents) {
+            this.state.unlockedTalents = { oeilDeLynx: false, negociateur: false, ecoConduite: false };
+        }
 
         this.checkSeasonAndQuests();
+        this.checkTalents(); // Vérifie si on a les niveaux requis
         this.updateUI();
     },
 
@@ -155,6 +165,26 @@ export const gami = {
         this.showToast("🎲 Quête relancée !");
     },
 
+    checkTalents() {
+        let unlockedSomething = false;
+        if (this.state.level >= 5 && !this.state.unlockedTalents.oeilDeLynx) {
+            this.state.unlockedTalents.oeilDeLynx = true;
+            unlockedSomething = true;
+            this.showToast("👁️ Nouveau talent : Œil de Lynx ! (+10% gains IA)");
+        }
+        if (this.state.level >= 10 && !this.state.unlockedTalents.negociateur) {
+            this.state.unlockedTalents.negociateur = true;
+            unlockedSomething = true;
+            this.showToast("💼 Nouveau talent : Négociateur ! (+20% avances sponsors)");
+        }
+        if (this.state.level >= 15 && !this.state.unlockedTalents.ecoConduite) {
+            this.state.unlockedTalents.ecoConduite = true;
+            unlockedSomething = true;
+            this.showToast("🌿 Nouveau talent : Éco-Conduite ! (-15% taxes carbone)");
+        }
+        return unlockedSomething;
+    },
+
     addXp(amount) {
         if (this.state.level >= this.maxLevel) return; 
 
@@ -170,6 +200,7 @@ export const gami = {
         if (leveledUp) {
             this.showToast(`🎉 Niveau Supérieur ! Tu es niveau ${this.state.level} !`);
             if (window.ui) window.ui.playGamiSound('levelUp');
+            this.checkTalents(); // On check si on débloque un bonus
         }
         this.saveState();
     },
@@ -236,6 +267,25 @@ export const gami = {
         });
     },
 
+    renderTalents() {
+        let elOeil = document.getElementById('talent-oeil');
+        let elNego = document.getElementById('talent-nego');
+        let elEco = document.getElementById('talent-eco');
+
+        if(elOeil) {
+            if (this.state.unlockedTalents.oeilDeLynx) elOeil.className = "talent-item unlocked";
+            else elOeil.className = "talent-item locked";
+        }
+        if(elNego) {
+            if (this.state.unlockedTalents.negociateur) elNego.className = "talent-item unlocked";
+            else elNego.className = "talent-item locked";
+        }
+        if(elEco) {
+            if (this.state.unlockedTalents.ecoConduite) elEco.className = "talent-item unlocked";
+            else elEco.className = "talent-item locked";
+        }
+    },
+
     updateUI() {
         let elSeason = document.getElementById('gami-season-name');
         let elDates = document.getElementById('gami-season-dates');
@@ -249,6 +299,7 @@ export const gami = {
         if(elBar) elBar.style.width = (((this.state.xp || 0) / this.xpPerLevel) * 100) + '%';
         if(elLabel) elLabel.innerText = `${this.state.xp || 0} / ${this.xpPerLevel} XP`;
 
+        this.renderTalents(); // On actualise l'affichage de l'arbre
         this.renderQuests('gami-daily-container', this.state.dailyQuests, true);
         this.renderQuests('gami-weekly-container', this.state.weeklyQuests, false);
         this.renderQuests('gami-season-container', this.state.seasonQuests, false);

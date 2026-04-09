@@ -1,4 +1,4 @@
-// jsapp.js (Partie 1)
+// jsapp.js (Partie 1/3)
 import { ui } from './jsui.js';
 import { gps } from './jsgps.js';
 import { ml } from './jsml.js';
@@ -10,28 +10,16 @@ const app = {
     currentMode: localStorage.getItem('currentMode') || 'voiture',
     usersList: JSON.parse(localStorage.getItem('usersList')) || ['Sylvain'],
 
-    // ⚖️ Dictionnaire des poids
-    vehicleWeights: {
-        "Voitures": 1350,
-        "Utilitaires": 2150,
-        "Motos": 210,
-        "Camions": 18000,
-        "Camping-cars": 3150,
-        "Bus/Car": 14000,
-        "Engins agricoles": 6000,
-        "Vélos": 20
-    },
-
-    // 💨 Dictionnaire Carbone (Emissions CO2 en g/km)
-    carbonEmissions: {
-        "Vélos": 0,
-        "Motos": 100,
-        "Voitures": 120,
-        "Utilitaires": 200,
-        "Camping-cars": 250,
-        "Bus/Car": 800,
-        "Camions": 900,
-        "Engins agricoles": 1200
+    // ⚖️ NOUVEAU : Dictionnaire dynamique des Poids et CO2
+    vehicleSpecs: {
+        "Voitures": { wMin: 1100, wMax: 1900, cMin: 90, cMax: 180 },
+        "Utilitaires": { wMin: 1700, wMax: 3500, cMin: 160, cMax: 260 },
+        "Motos": { wMin: 150, wMax: 400, cMin: 60, cMax: 130 },
+        "Camions": { wMin: 12000, wMax: 44000, cMin: 600, cMax: 1300 },
+        "Camping-cars": { wMin: 2800, wMax: 4250, cMin: 190, cMax: 320 },
+        "Bus/Car": { wMin: 12000, wMax: 19000, cMin: 800, cMax: 1400 },
+        "Engins agricoles": { wMin: 4000, wMax: 15000, cMin: 1000, cMax: 2500 },
+        "Vélos": { wMin: 10, wMax: 28, cMin: 0, cMax: 0 }
     },
 
     // 💸 Dictionnaire des valeurs financières (Compteur Véhicules)
@@ -143,7 +131,7 @@ const app = {
     addBankTransaction(amount, reason) {
         if (amount === 0) return;
         this.bankBalance += amount;
-           if (amount > 0) {
+        if (amount > 0) {
             this.bankStats.gains += amount;
             if (this.isCarRunning) this.sessionFinance.gains += amount;
         } else {
@@ -238,7 +226,7 @@ const app = {
     },
 
     // ==========================================
-    // 🌿 BILAN CARBONE EN TEMPS RÉEL (Méthode Point d'Impact)
+    // 🌿 BILAN CARBONE EN TEMPS RÉEL
     // ==========================================
     updateCarbonGauge() {
         if (!this.isCarRunning) return;
@@ -260,9 +248,9 @@ const app = {
         let quota = 0;
         
         items.forEach(item => {
-            // Méthode du Point d'Impact : on ne calcule que sur la distance depuis l'apparition
             let distVehicule = Math.max(0.1, this.liveCarDistance - (item.distAtSighting || 0));
-            totalRealCo2 += (this.carbonEmissions[item.type] || 120) * distVehicule;
+            let co2 = item.co2 !== undefined ? item.co2 : (this.vehicleSpecs[item.type] ? (this.vehicleSpecs[item.type].cMin + this.vehicleSpecs[item.type].cMax) / 2 : 120);
+            totalRealCo2 += co2 * distVehicule;
             quota += 150 * distVehicule; 
         });
         
@@ -272,19 +260,18 @@ const app = {
         if (fill) {
             fill.style.width = visualPct + '%';
             if (totalRealCo2 > quota) {
-                fill.style.backgroundColor = '#e74c3c'; // Rouge = Déficit
+                fill.style.backgroundColor = '#e74c3c'; 
                 container.style.borderColor = '#e74c3c';
             } else if (totalRealCo2 > quota * 0.8) {
-                fill.style.backgroundColor = '#f39c12'; // Orange = Alerte limite
+                fill.style.backgroundColor = '#f39c12'; 
                 container.style.borderColor = '#f39c12';
             } else {
-                fill.style.backgroundColor = '#27ae60'; // Vert = Bilan positif
+                fill.style.backgroundColor = '#27ae60'; 
                 container.style.borderColor = '#27ae60';
             }
         }
         
         if (text) {
-            // Affichage avec formatage automatique
             text.innerText = `${this.formatCarbon(totalRealCo2)} / ${this.formatCarbon(quota)} autorisés`;
             text.style.color = totalRealCo2 > quota ? '#e74c3c' : '#7f8c8d';
         }
@@ -303,12 +290,19 @@ const app = {
 
         items.forEach(item => {
             let distVehicule = Math.max(0.1, this.liveCarDistance - (item.distAtSighting || 0));
-            totalRealCo2 += (this.carbonEmissions[item.type] || 120) * distVehicule;
+            let co2 = item.co2 !== undefined ? item.co2 : (this.vehicleSpecs[item.type] ? (this.vehicleSpecs[item.type].cMin + this.vehicleSpecs[item.type].cMax) / 2 : 120);
+            totalRealCo2 += co2 * distVehicule;
             quota += 150 * distVehicule;
         });
 
         let diff = quota - totalRealCo2; 
         let euros = Math.round(diff / 100); 
+
+        // 🌳 TALENT : Éco-Conduite
+        if (euros < 0 && window.gami && window.gami.state.unlockedTalents.ecoConduite) {
+            euros = Math.round(euros * 0.85); // Réduction de 15% de l'amende
+            if(window.ui) window.ui.showToast(`🌳 Talent Éco-Conduite : Taxe carbone réduite !`);
+        }
 
         if (euros > 0) {
             this.addBankTransaction(euros, "Revente Crédits Carbone 🌿");
@@ -324,7 +318,6 @@ const app = {
             }
         }
         
-        // On retourne la valeur pour l'inclure dans le bilan financier
         return euros;
     },
 
@@ -341,11 +334,16 @@ const app = {
         let target = Math.floor(Math.random() * 8) + 3; 
         let advance = target * (this.bankValues[t] || 5) * 3; 
         
+        // 💼 TALENT : Négociateur
+        if (window.gami && window.gami.state.unlockedTalents.negociateur) {
+            advance = Math.round(advance * 1.20); // +20% d'avance
+        }
+
         this.pendingSponsor = { type: t, target: target, advance: advance, penalty: advance * 2 };
         
         let modalDesc = document.getElementById('sponsor-desc');
         if (modalDesc) {
-            modalDesc.innerHTML = `L'entreprise te propose <strong style="color:#27ae60;">+${advance}€</strong> pour <strong>${target} ${t === 'Camions' ? 'Poids Lourds' : t}</strong>.<br><span style="color:#e74c3c; font-size:0.85em;">Pénalité échec : -${advance*2}€ !</span>`;
+            modalDesc.innerHTML = `L'entreprise te propose <strong style="color:#27ae60;">+${advance}€</strong> pour <strong>${target} ${t === 'Camions' ? 'Poids Lourds' : t}</strong>. <span style="color:#e74c3c; font-size:0.85em;">Pénalité échec : -${advance*2}€ !</span>`;
         }
         
         let actions = document.getElementById('sponsor-offer-actions');
@@ -459,10 +457,6 @@ const app = {
         if(actions) actions.style.display = 'none';
     },
 
-    // ==========================================
-    // SUITE DE jsapp.js (Partie 2)
-    // ==========================================
-
     getRoadType(speedKmh, mode) {
         if (speedKmh === 0) return "Inconnu";
         if (mode === 'voiture') {
@@ -475,6 +469,10 @@ const app = {
             return "Autoroute (>80 km/h)";
         }
     },
+
+/ ==========================================
+    // jsapp.js (Partie 2/3)
+    // ==========================================
 
     brands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
     vehicleTypes: ["Voitures", "Utilitaires", "Motos", "Camions", "Camping-cars", "Bus/Car", "Engins agricoles", "Vélos"],
@@ -1021,9 +1019,7 @@ const app = {
 
                 let isExact = false;
                 if (currPred && currPred.class) {
-                    ana.predictions.total++;
-                    sessionPreds.total++;
-                    
+                    ana.predictions.total++; sessionPreds.total++;
                     let actualClass = isTruck ? `${key1}_${key2}` : key1;
                     
                     if (!ana.predictionsByClass) ana.predictionsByClass = {};
@@ -1033,41 +1029,39 @@ const app = {
 
                     isExact = (currPred.class === actualClass);
                     if (isExact) {
-                        ana.predictions.success++;
-                        sessionPreds.success++;
+                        ana.predictions.success++; sessionPreds.success++;
                         ana.predictionsByClass[currPred.class].success++;
                         if(window.ui) window.ui.showToast("🔮 Prédiction exacte !");
                     }
                 }
 
+                // ⚖️ NOUVEAU : Génération Poids et CO2 Dynamique
+                let specs = this.vehicleSpecs[key1] || { wMin: 1500, wMax: 1500, cMin: 120, cMax: 120 };
+                if (isTruck) specs = this.vehicleSpecs["Camions"]; 
+                
+                let randWeight = Math.floor(Math.random() * (specs.wMax - specs.wMin + 1)) + specs.wMin;
+                let co2Ratio = specs.wMax === specs.wMin ? 0 : (randWeight - specs.wMin) / (specs.wMax - specs.wMin);
+                let randCo2 = Math.round(specs.cMin + co2Ratio * (specs.cMax - specs.cMin));
+
                 if (!isTruck) {
                     let baseVal = this.bankValues[key1] || 1;
-                    let vehWeight = this.vehicleWeights[key1] || 0;
                     let nowTs = Date.now();
 
-                    this.sessionPaveWeight = (this.sessionPaveWeight || 0) + vehWeight;
+                    this.sessionPaveWeight = (this.sessionPaveWeight || 0) + randWeight;
                     if (this.sessionPaveWeight >= 80000) { 
                         this.addBankTransaction(-50, "Taxe d'Usure des Routes (T.U.R) 🚧");
-                        if(window.ui) {
-                            window.ui.showToast("🚧 La route fissure ! Taxe d'Usure (T.U.R) : -50 €", "anomaly");
-                            window.ui.playGamiSound('crash');
-                        }
+                        if(window.ui) { window.ui.showToast("🚧 La route fissure ! Taxe d'Usure : -50 €", "anomaly"); window.ui.playGamiSound('crash'); }
                         this.sessionPaveWeight = 0; 
                     }
 
-                    if (vehWeight < 500) {
+                    if (randWeight < 500) {
                         this.consecutiveLightVehicles = (this.consecutiveLightVehicles || 0) + 1;
                         if (this.consecutiveLightVehicles >= 4) {
                             this.addBankTransaction(30, "Prime Poids Plume 🪶");
-                            if(window.ui) {
-                                window.ui.showToast("🪶 Prime Poids Plume ! Trafic ultra-léger : +30 €");
-                                window.ui.playGamiSound('cash');
-                            }
+                            if(window.ui) { window.ui.showToast("🪶 Prime Poids Plume ! Trafic ultra-léger : +30 €"); window.ui.playGamiSound('cash'); }
                             this.consecutiveLightVehicles = 0;
                         }
-                    } else {
-                        this.consecutiveLightVehicles = 0; 
-                    }
+                    } else { this.consecutiveLightVehicles = 0; }
                     
                     if (this.lastCountTime > 0) {
                         let diffSec = (nowTs - this.lastCountTime) / 1000;
@@ -1075,33 +1069,53 @@ const app = {
                             this.regularityChain++;
                             if (this.regularityChain >= 10) {
                                 this.addBankTransaction(100, "Prime de Régularité (Flux parfait)");
-                                if(window.ui) {
-                                    window.ui.showToast("🌊 Bonus de Flux ! Régularité parfaite : +100 €");
-                                    window.ui.playGamiSound('cash');
-                                }
+                                if(window.ui) { window.ui.showToast("🌊 Bonus de Flux ! Régularité parfaite : +100 €"); window.ui.playGamiSound('cash'); }
                                 this.regularityChain = 0; 
                             }
-                        } else {
-                            this.regularityChain = 0; 
-                        }
+                        } else { this.regularityChain = 0; }
                     }
                     this.lastCountTime = nowTs;
 
+                    // 💥 NOUVEAU SYSTÈME DE KRACH BOURSIER (Tolérant & Dynamique)
                     let consecutive = 0;
                     let justHistory = history.filter(h => !h.isEvent);
-                    for (let i = justHistory.length - 1; i >= Math.max(0, justHistory.length - 4); i--) {
-                        if (justHistory[i].type === key1) consecutive++;
-                        else break;
+                    let lastTs = nowTs;
+
+                    // Timer de 45 secondes pour réinitialiser la série
+                    for (let i = justHistory.length - 1; i >= 0; i--) {
+                        let h = justHistory[i];
+                        if (lastTs - h.timestamp > 45000) break; 
+                        
+                        if (h.type === key1) {
+                            consecutive++;
+                            lastTs = h.timestamp;
+                        } else { break; }
                     }
 
-                    if (consecutive >= 4) {
-                        baseVal = -Math.abs(baseVal * 2);
-                        if(window.ui) {
-                            window.ui.showToast(`📉 Krach Boursier ! Le marché sature pour ${key1} !`, "anomaly");
-                            window.ui.playGamiSound('crash');
-                        }
-                    } else if (isExact) {
+                    // Adaptation pour l'Autoroute
+                    let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
+                    let isHighway = speedKmh > 80;
+                    let threshold = isHighway ? 10 : 4; 
+
+                    // 👁️ TALENT : Oeil de Lynx (+10% si prédiction correcte)
+                    if (isExact) {
                         baseVal *= 3;
+                        if (window.gami && window.gami.state.unlockedTalents.oeilDeLynx) {
+                            baseVal = Math.round(baseVal * 1.10);
+                            if(window.ui) window.ui.showToast(`👁️ Talent Œil de Lynx : Bonus de prédiction boosté !`);
+                        }
+                    }
+
+                    // Paliers du Krach
+                    if (consecutive >= threshold + 2) { 
+                        baseVal = -Math.max(1, Math.round(Math.abs(baseVal) * 0.2)); 
+                        if(window.ui) { window.ui.showToast(`🚧 Frais de congestion ! Trop de ${key1} !`, "anomaly"); window.ui.playGamiSound('crash'); }
+                    } else if (consecutive === threshold + 1) { 
+                        baseVal = 0;
+                        if(window.ui) { window.ui.showToast(`⚠️ Marché saturé pour ${key1} (Gain 0€)`, "anomaly"); window.ui.playGamiSound('crash'); }
+                    } else if (consecutive === threshold) { 
+                        baseVal = Math.round(baseVal * 0.5);
+                        if(window.ui) { window.ui.showToast(`📉 Alerte : Le marché baisse pour ${key1} !`); }
                     }
 
                     if (this.bankBalance < 0 && baseVal > 0) {
@@ -1110,20 +1124,13 @@ const app = {
 
                     this.addBankTransaction(baseVal, `Comptage ${key1}`);
                     this.showMoneyParticle(e, baseVal);
-                    if (baseVal > 0 && window.ui && consecutive < 4) window.ui.playGamiSound('cash');
+                    if (baseVal > 0 && window.ui && consecutive < threshold) window.ui.playGamiSound('cash');
 
-                    // ==========================================
-                    // NOTIFICATION SPONSOR QUAND L'OBJECTIF EST ATTEINT
-                    // ==========================================
                     if (this.activeSponsor && key1 === this.activeSponsor.type) {
                         this.activeSponsor.current += 1;
                         this.updateSponsorUI();
-                        
                         if (this.activeSponsor.current === this.activeSponsor.target) {
-                            if (window.ui) {
-                                window.ui.showToast(`🎯 Contrat Rempli ! N'oublie pas d'encaisser tes gains !`, "rare-combo");
-                                window.ui.playGamiSound('siren');
-                            }
+                            if (window.ui) { window.ui.showToast(`🎯 Contrat Rempli ! Encaisser tes gains !`, "rare-combo"); window.ui.playGamiSound('siren'); }
                         }
                     }
                 }
@@ -1135,9 +1142,6 @@ const app = {
                 let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
                 let roadType = this.getRoadType(speedKmh, this.currentMode);
                 
-                // ==========================================
-                // AJOUT DE distAtSighting (PROPOSITION 1)
-                // ==========================================
                 let histItem = { 
                     lat: window.gps && window.gps.currentPos ? window.gps.currentPos.lat : null, 
                     lon: window.gps && window.gps.currentPos ? window.gps.currentPos.lon : null, 
@@ -1145,7 +1149,9 @@ const app = {
                     speed: speedKmh, road: roadType, 
                     chronoTime: this.formatTime(isTruck ? this.truckSeconds : this.carSeconds), 
                     timestamp: nowTs,
-                    distAtSighting: isTruck ? this.liveTruckDistance : this.liveCarDistance
+                    distAtSighting: isTruck ? this.liveTruckDistance : this.liveCarDistance,
+                    weight: randWeight, // Enregistrement du poids dynamique
+                    co2: randCo2        // Enregistrement du CO2 dynamique
                 };
                 
                 if (isTruck) { histItem.brand = key1; histItem.type = key2; }
@@ -1222,34 +1228,43 @@ const app = {
                     window.ui.showClickParticle(e, `+1`, isTruck ? '#27ae60' : '#e74c3c'); 
                 }
 
-                if (isTruck) this.renderTrucks(); else this.renderCars();
+                if (isTruck) {
+                    this.truckTotal += amount;
+                    this.globalTruckTotal += amount;
+                    this.renderTrucks();
+                } else {
+                    this.carTotal += amount;
+                    this.globalCarTotal += amount;
+                    this.renderCars();
+                }
+                
                 this.renderKmStats(); 
                 this.renderLiveStats(mode);
                 this.updatePrediction(mode);
                 if (!isTruck) this.updateCarbonGauge();
 
             } else if (amount < 0) {
-                if (!isTruck) {
-                    let penalty = Math.max(5, Math.abs(this.bankBalance * 0.1)); 
-                    this.addBankTransaction(-penalty, "Frais d'annulation");
-                    if(window.ui) {
-                        window.ui.showToast("📉 Frais d'annulation appliqués !", "anomaly");
-                        window.ui.playGamiSound('crash');
+                // 🔙 GESTION DES ANNULATIONS
+                let lastIndex = history.map(h => !h.isEvent && (isTruck ? (h.brand === key1 && h.type === key2) : (h.type === key1))).lastIndexOf(true);
+                
+                if (lastIndex !== -1) {
+                    if (!isTruck) {
+                        let penalty = Math.max(5, Math.abs(this.bankBalance * 0.1)); 
+                        this.addBankTransaction(-penalty, "Frais d'annulation");
+                        if(window.ui) {
+                            window.ui.showToast("📉 Frais d'annulation appliqués !", "anomaly");
+                            window.ui.playGamiSound('crash');
+                        }
                     }
-                }
-
-                for (let i = history.length - 1; i >= 0; i--) {
-                    if (!history[i].isEvent) {
-                        let match = isTruck ? (history[i].brand === key1 && history[i].type === key2) : (history[i].type === key1);
-                        if (match) { this.deleteHistoryItem(mode, i); return; }
-                    }
+                    this.deleteHistoryItem(mode, lastIndex); 
+                    return;
                 }
             }
         }
     },
 
     // ==========================================
-    // SUITE DE jsapp.js (Partie 3 - FIN)
+    // jsapp.js (Partie 3/3)
     // ==========================================
 
     deleteHistoryItem(mode, index) {
@@ -1398,7 +1413,6 @@ const app = {
         if (confirm("⏹️ Trajet terminé ! Veux-tu enregistrer cette session ?")) { 
             if (!isTruck) {
                 this.checkSponsorOnStop(); 
-                // On enregistre les euros générés (ou perdus) par le Carbone
                 this.sessionFinance.carbon = this.checkCarbonFootprint(); 
             }
             
@@ -1458,7 +1472,6 @@ const app = {
         this.resetSessionData(type);
         if(window.ui) window.ui.showToast("💾 Session sauvegardée !");
 
-        // NOUVEAU : Ouverture automatique du récapitulatif détaillé !
         setTimeout(() => {
             this.showSessionDetails(type, newSession.id);
         }, 500);
@@ -1488,6 +1501,10 @@ const app = {
             setTimeout(() => { location.reload(); }, 1500);
         }
     },
+
+    // ==========================================
+    // ⚖️ NOUVEAUX CALCULS DE POIDS DANS L'UI
+    // ==========================================
 
     renderTrucks() {
         const container = document.getElementById('truck-container'); if(!container) return;
@@ -1523,7 +1540,11 @@ const app = {
         let lnEl = document.getElementById('leader-name'); if(lnEl) lnEl.innerText = maxScore > 0 ? `${leader} (${maxScore})` : "Aucune";
         
         let truckWeightEl = document.getElementById('truck-weight');
-        if(truckWeightEl) truckWeightEl.innerText = this.formatWeight(grandTotal * 18000);
+        if(truckWeightEl) {
+            // Lecture des poids dynamiques (avec fallback si données anciennes)
+            let totalW = this.truckHistory.filter(h => !h.isEvent).reduce((sum, item) => sum + (item.weight || 18000), 0);
+            truckWeightEl.innerText = this.formatWeight(totalW);
+        }
         
         let pctFr = grandTotal === 0 ? 50 : Math.round((totalFr / grandTotal) * 100);
         let barFr = document.getElementById('bar-fr'); if(barFr) { barFr.style.width = pctFr + '%'; barFr.innerText = grandTotal > 0 ? `🇫🇷 ${pctFr}%` : ''; }
@@ -1534,16 +1555,22 @@ const app = {
         const container = document.getElementById('car-container'); if(!container) return;
         container.innerHTML = ''; 
         let grandTotal = 0; 
-        let totalWeightKg = 0; 
-
+        
         this.vehicleTypes.forEach(v => {
             let count = (this.vehicleCounters[v] || 0);
             grandTotal += count;
-            totalWeightKg += count * (this.vehicleWeights[v] || 0); 
         }); 
 
         let cgt = document.getElementById('car-grand-total'); if(cgt) cgt.innerText = grandTotal;
-        let cwEl = document.getElementById('car-weight'); if(cwEl) cwEl.innerText = this.formatWeight(totalWeightKg); 
+        let cwEl = document.getElementById('car-weight'); 
+        if(cwEl) {
+            // Lecture des poids dynamiques (avec fallback mathématique moyen si données anciennes)
+            let totalW = this.carHistory.filter(h => !h.isEvent).reduce((sum, item) => {
+                let fallback = this.vehicleSpecs[item.type] ? ((this.vehicleSpecs[item.type].wMin + this.vehicleSpecs[item.type].wMax) / 2) : 1350;
+                return sum + (item.weight || fallback);
+            }, 0);
+            cwEl.innerText = this.formatWeight(totalW); 
+        }
 
         const slugMap = { "Voitures": "voitures", "Utilitaires": "utilitaires", "Camions": "camions", "Engins agricoles": "engins", "Bus/Car": "bus", "Camping-cars": "camping", "Motos": "motos", "Vélos": "velos" };
         const nameMap = { "Camions": "Poids Lourds" }; 
@@ -1679,11 +1706,13 @@ const app = {
                 this.vehicleTypes.forEach(v => {
                     let c = (this.globalCarCounters[v] || 0);
                     count += c;
-                    weight += c * (this.vehicleWeights[v] || 0);
+                    let fallback = this.vehicleSpecs[v] ? ((this.vehicleSpecs[v].wMin + this.vehicleSpecs[v].wMax) / 2) : 1350;
+                    weight += c * fallback;
                 });
             } else {
                 title = `🚘 ${key === 'Camions' ? 'Poids Lourds' : key}`; count = this.globalCarCounters[key] || 0;
-                weight = count * (this.vehicleWeights[key === 'Poids Lourds' ? 'Camions' : key] || 0);
+                let fallback = this.vehicleSpecs[key === 'Poids Lourds' ? 'Camions' : key] ? ((this.vehicleSpecs[key === 'Poids Lourds' ? 'Camions' : key].wMin + this.vehicleSpecs[key === 'Poids Lourds' ? 'Camions' : key].wMax) / 2) : 1350;
+                weight = count * fallback;
             }
         }
 
@@ -1847,6 +1876,7 @@ const app = {
         let dayKeys = Object.keys(days);
         let monthKeys = Object.keys(months);
         let gTotal = 0, gTotalDist = 0, frTotal = 0, etrTotal = 0;
+        let dashTotalWeight = 0; // Calcul du poids global pour le dashboard
 
         allHistories.forEach(s => {
             if (!s.history || s.history.length === 0) return;
@@ -1865,8 +1895,13 @@ const app = {
                 counters[vehType] = (counters[vehType] || 0) + 1;
                 gTotal++;
 
+                // Ajout du poids dynamique (avec fallback)
                 if (type === 'trucks') {
+                    dashTotalWeight += (h.weight || 18000);
                     if (h.type === 'fr') frTotal++; else if (h.type === 'etr') etrTotal++;
+                } else {
+                    let fallback = this.vehicleSpecs[h.type] ? ((this.vehicleSpecs[h.type].wMin + this.vehicleSpecs[h.type].wMax) / 2) : 1350;
+                    dashTotalWeight += (h.weight || fallback);
                 }
 
                 if (h.timestamp) {
@@ -1895,14 +1930,6 @@ const app = {
             tTitle.style.color = type === 'trucks' ? "#e67e22" : "#3498db"; 
         }
 
-        let dashTotalWeight = 0;
-        if (type === 'trucks') {
-            dashTotalWeight = gTotal * 18000;
-        } else {
-            Object.keys(counters).forEach(k => {
-                dashTotalWeight += (counters[k] || 0) * (this.vehicleWeights[k] || 0);
-            });
-        }
         let dwEl = document.getElementById('dash-weight'); 
         if(dwEl) dwEl.innerText = this.formatWeight(dashTotalWeight);
 
@@ -2057,14 +2084,13 @@ const app = {
         let items = session.history ? session.history.filter(h => !h.isEvent) : [];
         let itemsCount = items.length;
         
-        let sessionWeight = 0;
-        if (type === 'trucks') {
-            sessionWeight = itemsCount * 18000;
-        } else if (session.summary) {
-            Object.keys(session.summary).forEach(v => {
-                sessionWeight += (session.summary[v] || 0) * (this.vehicleWeights[v] || 0);
-            });
-        }
+        // Poids dynamiques dans le récap de session
+        let sessionWeight = items.reduce((sum, item) => {
+            let fallback = 1350;
+            if (type === 'trucks') fallback = 18000;
+            else if (this.vehicleSpecs[item.type]) fallback = (this.vehicleSpecs[item.type].wMin + this.vehicleSpecs[item.type].wMax) / 2;
+            return sum + (item.weight || fallback);
+        }, 0);
         
         let freq = itemsCount > 0 && session.durationSec > 0 ? (itemsCount / (session.durationSec / 60)).toFixed(1) : '-';
         let speed = session.durationSec > 0 ? (itemsCount / (session.durationSec / 3600)).toFixed(1) : '-';
@@ -2079,9 +2105,6 @@ const app = {
             predTxt = Math.round((session.predictions.success / session.predictions.total) * 100) + "% (" + session.predictions.success + "/" + session.predictions.total + ")";
         }
 
-        // ==========================================
-        // AJOUT DU BILAN FINANCIER CARBONE
-        // ==========================================
         let financeHtml = '';
         if (session.sessionFinance && type === 'cars') {
             let balance = session.sessionFinance.gains - session.sessionFinance.losses;
@@ -2191,18 +2214,19 @@ const app = {
         let session = await this.idb.getById(sessionId);
         if(!session) return;
         
-        let count = session.history ? session.history.filter(h => !h.isEvent).length : 0;
-        let sessionWeight = 0;
-        if (type === 'trucks') {
-            sessionWeight = count * 18000;
-        } else if (session.summary) {
-            Object.keys(session.summary).forEach(v => {
-                sessionWeight += (session.summary[v] || 0) * (this.vehicleWeights[v] || 0);
-            });
-        }
+        let items = session.history ? session.history.filter(h => !h.isEvent) : [];
+        let count = items.length;
+        
+        let sessionWeight = items.reduce((sum, item) => {
+            let fallback = 1350;
+            if (type === 'trucks') fallback = 18000;
+            else if (this.vehicleSpecs[item.type]) fallback = (this.vehicleSpecs[item.type].wMin + this.vehicleSpecs[item.type].wMax) / 2;
+            return sum + (item.weight || fallback);
+        }, 0);
+        
         session.masseTotaleKg = sessionWeight;
 
-        let exportData = { appVersion: "Compteur Trafic v6.1", exportDate: new Date().toISOString(), sessionType: type, session: session };
+        let exportData = { appVersion: "Compteur Trafic v6.2", exportDate: new Date().toISOString(), sessionType: type, session: session };
         const dataStr = JSON.stringify(exportData, null, 2);
         let safeDate = session.date.replace(/[\/ :]/g, '_');
         await this.triggerDownloadOrShare(dataStr, `Compteur_Session_${type}_${safeDate}.txt`);
@@ -2213,7 +2237,8 @@ const app = {
         let carSessions = await this.idb.getAll('cars');
 
         let enrichSession = (s) => {
-            let count = s.history ? s.history.filter(h => !h.isEvent).length : 0;
+            let items = s.history ? s.history.filter(h => !h.isEvent) : [];
+            let count = items.length;
             let vehPerKm = s.distanceKm > 0 ? +(count / s.distanceKm).toFixed(2) : 0;
             let freqMin = (count > 0 && s.durationSec > 0) ? +(count / (s.durationSec / 60)).toFixed(2) : 0;
             let avgSpeed = s.durationSec > 0 ? +(s.distanceKm / (s.durationSec / 3600)).toFixed(1) : 0;
@@ -2221,15 +2246,12 @@ const app = {
             let rythmeH = s.durationSec > 0 ? +(count / (s.durationSec / 3600)).toFixed(1) : 0;
             
             let detailAuKm = {};
-            let sessionWeight = 0;
-            
-            if (s.sessionType === 'trucks') {
-                sessionWeight = count * 18000;
-            } else if (s.summary) {
-                Object.keys(s.summary).forEach(v => {
-                    sessionWeight += (s.summary[v] || 0) * (this.vehicleWeights[v] || 0);
-                });
-            }
+            let sessionWeight = items.reduce((sum, item) => {
+                let fallback = 1350;
+                if (s.sessionType === 'trucks') fallback = 18000;
+                else if (this.vehicleSpecs[item.type]) fallback = (this.vehicleSpecs[item.type].wMin + this.vehicleSpecs[item.type].wMax) / 2;
+                return sum + (item.weight || fallback);
+            }, 0);
 
             if (s.distanceKm > 0 && s.summary) {
                Object.keys(s.summary).forEach(k => {
@@ -2253,7 +2275,7 @@ const app = {
             analysesPermanentesVehicules: this.globalAnaCars
         };
 
-        let exportData = { appVersion: "Compteur Trafic v6.1", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
+        let exportData = { appVersion: "Compteur Trafic v6.2", exportDate: new Date().toISOString(), globalSummary: globalSummary, sessions: allSessions };
         const dataStr = JSON.stringify(exportData, null, 2);
         await this.triggerDownloadOrShare(dataStr, `Compteur_Export_${this.currentUser}_${new Date().toISOString().slice(0,10)}.txt`);
     },
