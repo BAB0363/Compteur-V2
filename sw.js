@@ -1,5 +1,5 @@
 // sw.js
-const CACHE_NAME = 'compteur-cache-v30'; 
+const CACHE_NAME = 'compteur-cache-v31'; 
 const urlsToCache = [
   './',
   './index.html',
@@ -24,7 +24,7 @@ self.addEventListener('install', event => {
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-        console.log('📦 Mise en cache des fichiers Compteur Trafic v30...');
+        console.log('📦 Mise en cache des fichiers Compteur Trafic v31...');
         return cache.addAll(urlsToCache);
     })
   );
@@ -36,14 +36,13 @@ self.addEventListener('activate', event => {
       return Promise.all(
         cacheNames.map(cacheName => {
           if (cacheName !== CACHE_NAME) {
-            console.log('🧹 Suppression de l\'ancien cache:', cacheName);
+            console.log('🧹 Suppression de l\'ancien cache :', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
     })
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
