@@ -1,4 +1,4 @@
-import { ui } from './jsui.js';
+import  { ui } from './jsui.js';
 import { gps } from './jsgps.js';
 import { ml } from './jsml.js';
 
@@ -9,7 +9,7 @@ const app = {
     currentMode: localStorage.getItem('currentMode') || 'voiture',
     usersList: JSON.parse(localStorage.getItem('usersList')) || ['Sylvain'],
 
-    // ⚖️ NOUVEAU : Dictionnaire dynamique des Poids et CO2
+    // ⚖️ Dictionnaire dynamique des Poids et CO2
     vehicleSpecs: {
         "Voitures": { wMin: 1100, wMax: 1900, cMin: 90, cMax: 180 },
         "Utilitaires": { wMin: 1700, wMax: 3500, cMin: 160, cMax: 260 },
@@ -34,12 +34,35 @@ const app = {
     },
 
     // ==========================================
+    // 🏢 VARIABLES DE L'ENTREPRISE (TYCOON)
+    // ==========================================
+    companyCatalog: {
+        buildings: {
+            terrain: { id: 'terrain', name: 'Terrain vague', price: 15000, slots: 3, icon: '🚧' },
+            depot: { id: 'depot', name: 'Dépôt Sécurisé', price: 120000, slots: 10, icon: '🏭' },
+            hub: { id: 'hub', name: 'Hub Logistique', price: 800000, slots: 999, icon: '🏢' } // 999 = illimité
+        },
+        fleet: {
+            vul: { id: 'vul', name: 'VUL d\'occasion', price: 15000, income: 0.50, icon: '🚐' },
+            porteur: { id: 'porteur', name: 'Petit Porteur 19t', price: 45000, income: 1.50, icon: '🚚' },
+            tracteur: { id: 'tracteur', name: 'Tracteur Routier', price: 110000, income: 4.00, icon: '🚛' },
+            frigo: { id: 'frigo', name: 'Ens. Frigorifique', price: 170000, income: 6.00, icon: '❄️' },
+            convoi: { id: 'convoi', name: 'Convoi Exceptionnel', price: 350000, income: 12.00, icon: '⚠️' }
+        }
+    },
+    companyState: {
+        buildings: { terrain: 0, depot: 0, hub: 0 },
+        fleet: { vul: 0, porteur: 0, tracteur: 0, frigo: 0, convoi: 0 },
+        pendingIncome: 0
+    },
+
+    // ==========================================
     // 🏦 VARIABLES DE LA BOURSE DE L'ASPHALTE
     // ==========================================
     bankBalance: 0,
     bankHistory: [],
     bankStats: { gains: 0, losses: 0 },
-    sessionFinance: { gains: 0, losses: 0, carbon: 0 }, 
+    sessionFinance: { gains: 0, losses: 0, carbon: 0, details: {} }, 
     
     pendingSponsor: null,
     activeSponsor: null,
@@ -49,7 +72,6 @@ const app = {
 
     sessionPaveWeight: 0,
     consecutiveLightVehicles: 0,
-    // ==========================================
 
     formatWeight(kg) {
         if (!kg) return "0 kg";
@@ -83,41 +105,270 @@ const app = {
         }
     },
 
-    initBank() {
+    async initBank() {
+        let userData = null;
+        if (this.idb && this.idb.db) {
+            userData = await this.idb.getUserData(this.currentUser);
+        }
+        
+        let needsMigration = false;
+        let defaultCompany = { buildings: { terrain: 0, depot: 0, hub: 0 }, fleet: { vul: 0, porteur: 0, tracteur: 0, frigo: 0, convoi: 0 }, pendingIncome: 0 };
+
+        if (userData) {
+            this.bankBalance = userData.bankBalance || 0;
+            this.bankHistory = userData.bankHistory || [];
+            this.bankStats = userData.bankStats || { gains: 0, losses: 0 };
+            
+            this.companyState = JSON.parse(JSON.stringify(defaultCompany));
+            if (userData.companyState) {
+                if (userData.companyState.buildings) this.companyState.buildings = { ...defaultCompany.buildings, ...userData.companyState.buildings };
+                if (userData.companyState.fleet) this.companyState.fleet = { ...defaultCompany.fleet, ...userData.companyState.fleet };
+                this.companyState.pendingIncome = userData.companyState.pendingIncome || 0;
+            }
+            
+            if (window.gami && userData.gamiState) {
+                window.gami.state = userData.gamiState;
+            }
+        } else {
+            this.companyState = JSON.parse(JSON.stringify(defaultCompany));
+        }
+
         let savedBank = localStorage.getItem('bankState_' + this.currentUser);
-        this.bankBalance = savedBank ? parseFloat(savedBank) : 0;
-        
-        let savedHist = localStorage.getItem('bankHistory_' + this.currentUser);
-        this.bankHistory = savedHist ? JSON.parse(savedHist) : [];
-        
-        let savedStats = localStorage.getItem('bankStats_' + this.currentUser);
-        this.bankStats = savedStats ? JSON.parse(savedStats) : { gains: 0, losses: 0 };
-        
+        if (savedBank !== null) {
+            this.bankBalance = parseFloat(savedBank);
+            this.bankHistory = JSON.parse(localStorage.getItem('bankHistory_' + this.currentUser) || "[]");
+            this.bankStats = JSON.parse(localStorage.getItem('bankStats_' + this.currentUser) || '{"gains":0,"losses":0}');
+            
+            let savedComp = localStorage.getItem('companyState_' + this.currentUser);
+            if (savedComp) {
+                let parsed = JSON.parse(savedComp);
+                if (parsed.buildings) this.companyState.buildings = { ...defaultCompany.buildings, ...parsed.buildings };
+                if (parsed.fleet) this.companyState.fleet = { ...defaultCompany.fleet, ...parsed.fleet };
+                this.companyState.pendingIncome = parsed.pendingIncome || 0;
+            }
+            
+            let savedGami = localStorage.getItem('gami_state_' + this.currentUser);
+            if (savedGami && window.gami) window.gami.state = JSON.parse(savedGami);
+
+            needsMigration = true;
+        }
+
+        if (needsMigration) {
+            await this.saveUserData();
+            localStorage.removeItem('bankState_' + this.currentUser);
+            localStorage.removeItem('bankHistory_' + this.currentUser);
+            localStorage.removeItem('bankStats_' + this.currentUser);
+            localStorage.removeItem('companyState_' + this.currentUser);
+            localStorage.removeItem('gami_state_' + this.currentUser);
+        }
+
+        this.companyState.pendingIncome = 0; 
         this.updateBankUI();
+        this.renderCompanyUI();
     },
 
-    saveBank() {
-        localStorage.setItem('bankState_' + this.currentUser, this.bankBalance);
-        localStorage.setItem('bankHistory_' + this.currentUser, JSON.stringify(this.bankHistory));
-        localStorage.setItem('bankStats_' + this.currentUser, JSON.stringify(this.bankStats));
-        this.updateBankUI();
-        this.checkBankruptcy();
+    async saveUserData() {
+        let data = {
+            bankBalance: this.bankBalance,
+            bankHistory: this.bankHistory,
+            bankStats: this.bankStats,
+            companyState: this.companyState,
+            gamiState: window.gami ? window.gami.state : null
+        };
+        if (this.idb && this.idb.db) {
+            await this.idb.saveUserData(this.currentUser, data);
+        }
     },
 
-    resetBankData() {
-        if (confirm(`🚨 ATTENTION SYLVAIN ! Tu vas vider ton compte en banque et effacer tout l'historique financier de ce profil. Es-tu sûr de vouloir déclarer faillite pour repartir de zéro ?`)) {
+    getCompanyStats() {
+        if (!this.companyState) this.companyState = { buildings: { terrain: 0, depot: 0, hub: 0 }, fleet: { vul: 0, porteur: 0, tracteur: 0, frigo: 0, convoi: 0 }, pendingIncome: 0 };
+        if (!this.companyState.buildings) this.companyState.buildings = { terrain: 0, depot: 0, hub: 0 };
+        if (!this.companyState.fleet) this.companyState.fleet = { vul: 0, porteur: 0, tracteur: 0, frigo: 0, convoi: 0 };
+
+        let maxSlots = (this.companyState.buildings.terrain * 3) + (this.companyState.buildings.depot * 10) + (this.companyState.buildings.hub * 999);
+        let usedSlots = Object.values(this.companyState.fleet).reduce((a, b) => a + b, 0);
+        let incomePerMin = 0;
+        Object.keys(this.companyState.fleet).forEach(k => {
+            incomePerMin += this.companyState.fleet[k] * this.companyCatalog.fleet[k].income;
+        });
+        if (this.companyState.buildings.hub > 0) {
+            incomePerMin *= 1.10;
+        }
+        // 📢 PUBLICITÉ TYCOON : +5% par camion possédé dans la flotte
+        let totalTrucks = Object.values(this.companyState.fleet).reduce((a, b) => a + b, 0);
+        if (totalTrucks > 0) {
+            incomePerMin *= (1 + totalTrucks * 0.05);
+        }
+        return { maxSlots, usedSlots, incomePerMin };
+    },
+
+    buyCompanyItem(category, id) {
+        let item = this.companyCatalog[category][id];
+        if (!item) return;
+        
+        if (this.bankBalance < item.price) {
+            if(window.ui) window.ui.showToast("❌ Fonds insuffisants pour cet investissement !");
+            return;
+        }
+        
+        if (category === 'fleet') {
+            let stats = this.getCompanyStats();
+            if (stats.usedSlots >= stats.maxSlots) {
+                if(window.ui) window.ui.showToast("🅿️ Plus de place de parking ! Achète des infrastructures d'abord.");
+                return;
+            }
+        }
+
+        if(confirm(`Investir ${item.price.toLocaleString('fr-FR')} € dans : ${item.name} ?`)) {
+            this.addBankTransaction(-item.price, `Achat Actif : ${item.name}`);
+            if(window.gami) window.gami.updateProgress('tycoon_buy', 1); // 🎯 QUÊTE TYCOON
+            this.companyState[category][id] = (this.companyState[category][id] || 0) + 1;
+            this.saveUserData();
+            this.renderCompanyUI();
+            
+            if(window.ui) {
+                window.ui.playGamiSound('cash');
+                window.ui.showToast(`🏢 Achat réussi : ${item.name} !`);
+            }
+        }
+    },
+
+    async renderCompanyUI() {
+        let stats = this.getCompanyStats();
+        
+        let elSlotsUsed = document.getElementById('company-slots-used');
+        let elSlotsMax = document.getElementById('company-slots-max');
+        let elRate = document.getElementById('company-rate-display');
+        let elPending = document.getElementById('company-pending-income');
+
+        if(elSlotsUsed) elSlotsUsed.innerText = stats.usedSlots;
+        if(elSlotsMax) elSlotsMax.innerText = stats.maxSlots === 0 ? "0" : (stats.maxSlots >= 999 ? "∞" : stats.maxSlots);
+        if(elRate) elRate.innerText = `Rythme actuel : + ${stats.incomePerMin.toFixed(2)} € / min`;
+        if(elPending) elPending.innerText = this.companyState.pendingIncome.toFixed(2) + ' €';
+
+        let buildList = document.getElementById('company-buildings-list');
+        if(buildList) {
+            buildList.innerHTML = '';
+            Object.keys(this.companyCatalog.buildings).forEach(k => {
+                let item = this.companyCatalog.buildings[k];
+                let count = this.companyState.buildings[k] || 0;
+                let canBuy = this.bankBalance >= item.price;
+                
+                buildList.innerHTML += `
+                    <div class="tycoon-card ${count > 0 ? 'owned' : ''}">
+                        ${count > 0 ? `<div class="tycoon-owned-badge">${count}x</div>` : ''}
+                        <div class="tycoon-title">${item.icon} ${item.name}</div>
+                        <div class="tycoon-revenue">Places : +${item.slots >= 999 ? 'Illimitées' : item.slots}</div>
+                        <div class="tycoon-price">${item.price.toLocaleString('fr-FR')} €</div>
+                        <button class="btn-buy" ${!canBuy ? 'disabled' : ''} onclick="window.app.buyCompanyItem('buildings', '${k}')">Acheter</button>
+                    </div>
+                `;
+            });
+        }
+
+        let fleetList = document.getElementById('company-fleet-list');
+        if(fleetList) {
+            fleetList.innerHTML = '';
+            Object.keys(this.companyCatalog.fleet).forEach(k => {
+                let item = this.companyCatalog.fleet[k];
+                let count = this.companyState.fleet[k] || 0;
+                let canBuy = this.bankBalance >= item.price && stats.usedSlots < stats.maxSlots;
+                let btnTxt = stats.usedSlots >= stats.maxSlots && stats.maxSlots > 0 ? "Parking plein" : "Acheter";
+
+                fleetList.innerHTML += `
+                    <div class="tycoon-card ${count > 0 ? 'owned' : ''}">
+                        ${count > 0 ? `<div class="tycoon-owned-badge">${count}x</div>` : ''}
+                        <div class="tycoon-title">${item.icon} ${item.name}</div>
+                        <div class="tycoon-revenue">Revenu net : +${item.income.toFixed(2)} €/min</div>
+                        <div class="tycoon-price">${item.price.toLocaleString('fr-FR')} €</div>
+                        <button class="btn-buy" ${!canBuy ? 'disabled' : ''} onclick="window.app.buyCompanyItem('fleet', '${k}')">${btnTxt}</button>
+                    </div>
+                `;
+            });
+        }
+
+        let histContainer = document.getElementById('company-financial-history');
+        if (histContainer && this.idb && this.idb.db) {
+            let carSessions = await this.idb.getAll('cars');
+            carSessions.sort((a,b) => b.id - a.id);
+            
+            let html = '';
+            let financialSessions = carSessions.filter(s => s.sessionFinance && (s.sessionFinance.gains > 0 || s.sessionFinance.losses > 0 || s.sessionFinance.carbon !== 0));
+
+            if(financialSessions.length === 0) {
+                html = '<span style="color:#7f8c8d; font-size:0.9em; padding: 10px; display: block; text-align: center;">Aucun ticket de caisse généré. Fais un trajet ! 🚗💨</span>';
+            } else {
+                financialSessions.slice(0, 15).forEach(s => {
+                    let sf = s.sessionFinance || { gains: 0, losses: 0, carbon: 0 };
+                    let gains = sf.gains || 0;
+                    let losses = sf.losses || 0;
+                    let carb = sf.carbon || 0;
+                    let bal = gains - losses + carb; 
+                    
+                    let color = bal >= 0 ? '#27ae60' : '#e74c3c';
+                    let sign = bal > 0 ? '+' : '';
+                    
+                    let htmlDetailVehicules = '';
+                    if (s.summary) {
+                        Object.keys(s.summary).forEach(type => {
+                            let count = s.summary[type];
+                            if (count > 0) {
+                                let icon = type === "Voitures" ? "🚗" : type === "Utilitaires" ? "🚐" : type === "Camions" ? "🚛" : type === "Engins agricoles" ? "🚜" : type === "Bus/Car" ? "🚌" : type === "Camping-cars" ? "🏕️" : type === "Motos" ? "🏍️" : type === "Vélos" ? "🚲" : "🚘";
+                                htmlDetailVehicules += `<div style="display:flex; justify-content: space-between; font-size:0.8em; margin-bottom:2px; color: var(--text-color);">
+                                    <span>${icon} ${type === "Camions" ? "Poids Lourds" : type} (x${count})</span>
+                                </div>`;
+                            }
+                        });
+                    }
+
+                    html += `
+                    <div class="tycoon-card clickable" style="cursor:pointer; padding: 12px; border-left: 4px solid ${color}; margin-bottom:10px;" onclick="window.app.showSessionDetails('cars', '${s.id}')">
+                        <div style="display:flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 5px; margin-bottom: 8px;">
+                            <strong style="font-size:0.9em;">🧾 SESSION ${s.date.split(' ')[0]}</strong>
+                            <strong style="color:${color};">${sign}${bal} €</strong>
+                        </div>
+                        
+                        <div style="margin-bottom: 8px;">
+                            <strong style="font-size:0.75em; color:#7f8c8d; display:block; margin-bottom:4px; text-transform:uppercase;">Détail du comptage :</strong>
+                            ${htmlDetailVehicules}
+                        </div>
+
+                        <div style="border-top: 1px solid rgba(0,0,0,0.05); padding-top: 5px; font-size:0.8em;">
+                            <div style="display:flex; justify-content: space-between; margin-bottom:2px;">
+                                <span style="color:#7f8c8d;">📈 Gains & Bonus</span>
+                                <span style="color:#27ae60; font-weight:bold;">+${gains}€</span>
+                            </div>
+                            <div style="display:flex; justify-content: space-between; margin-bottom:2px;">
+                                <span style="color:#7f8c8d;">💸 Péages & Amendes</span>
+                                <span style="color:#e74c3c; font-weight:bold;">-${losses}€</span>
+                            </div>
+                            <div style="display:flex; justify-content: space-between;">
+                                <span style="color:#7f8c8d;">🌿 Bilan Carbone</span>
+                                <span style="color:${carb >= 0 ? '#27ae60' : '#e74c3c'}; font-weight:bold;">${carb > 0 ? '+' : ''}${carb}€</span>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+            }
+            histContainer.innerHTML = html;
+        }
+    }, 
+
+    async resetBankData() {
+        if (confirm(`🚨 ATTENTION SYLVAIN ! Tu vas vider ton compte en banque, ton historique financier ET revendre toute ton entreprise pour zéro euro ! Es-tu sûr de vouloir déclarer faillite ?`)) {
             this.bankBalance = 0;
             this.bankHistory = [];
             this.bankStats = { gains: 0, losses: 0 };
             this.sessionFinance = { gains: 0, losses: 0, carbon: 0 };
             
-            localStorage.removeItem('bankState_' + this.currentUser);
-            localStorage.removeItem('bankHistory_' + this.currentUser);
-            localStorage.removeItem('bankStats_' + this.currentUser);
+            this.companyState = { buildings: { terrain: 0, depot: 0, hub: 0 }, fleet: { vul: 0, porteur: 0, tracteur: 0, frigo: 0, convoi: 0 }, pendingIncome: 0 };
+            
+            await this.saveUserData();
             
             this.updateBankUI();
+            this.renderCompanyUI();
             
-            if (window.ui) window.ui.showToast("💸 La Bourse de l'Asphalte a été remise à zéro !");
+            if (window.ui) window.ui.showToast("💸 La Bourse et l'Entreprise ont été remises à zéro !");
         }
     },
 
@@ -140,26 +391,35 @@ const app = {
         });
 
         if (this.bankHistory.length > 50) this.bankHistory.pop();
-        this.saveBank();
+        this.saveUserData(); 
+        this.updateBankUI(); 
+        
+        if(window.ui && window.ui.activeTab === 'company') {
+            this.renderCompanyUI();
+        }
     },
 
     updateBankUI() {
         let badge = document.getElementById('bank-badge');
         let display = document.getElementById('display-bank');
         let banner = document.getElementById('huissier-banner');
+        let sTitle = document.getElementById('sponsor-title');
+
         if (!badge || !display) return;
 
         badge.style.display = 'flex';
-        display.innerText = Math.round(this.bankBalance) + ' €';
+        display.innerText = Math.round(this.bankBalance).toLocaleString('fr-FR') + ' €';
         
         if (this.bankBalance < 0) {
             badge.classList.remove('bank-positive');
             badge.classList.add('bank-negative');
             if (banner) banner.style.display = 'block';
+            if (sTitle && this.activeSponsor) sTitle.style.color = '#e74c3c';
         } else {
             badge.classList.remove('bank-negative');
             badge.classList.add('bank-positive');
             if (banner) banner.style.display = 'none';
+            if (sTitle && this.activeSponsor) sTitle.style.color = '#f1c40f';
         }
     },
 
@@ -191,7 +451,7 @@ const app = {
         document.getElementById('bank-modal').style.display = 'flex';
     },
 
-    checkBankruptcy() {
+    async checkBankruptcy() {
         if (this.bankBalance <= -10000) {
             if(window.ui) {
                 window.ui.showToast("☠️ LIQUIDATION JUDICIAIRE ! La faillite est prononcée.", "anomaly");
@@ -199,6 +459,9 @@ const app = {
             }
             this.addBankTransaction(Math.abs(this.bankBalance), "Saisie Totale (Faillite)"); 
             
+            this.companyState = { buildings: { terrain: 0, depot: 0, hub: 0 }, fleet: { vul: 0, porteur: 0, tracteur: 0, frigo: 0, convoi: 0 }, pendingIncome: 0 };
+            await this.saveUserData(); 
+
             if (window.gami) {
                 window.gami.state.level = 1;
                 window.gami.state.xp = 0;
@@ -219,30 +482,34 @@ const app = {
     },
 
     updateCarbonGauge() {
-        if (!this.isCarRunning) return;
-        let items = this.carHistory.filter(h => !h.isEvent);
-        let count = items.length;
-        
+        if (!this.isCarRunning) {
+            let container = document.getElementById('carbon-gauge-container');
+            if (container) container.style.display = 'none';
+            return;
+        }
+
         let container = document.getElementById('carbon-gauge-container');
         let fill = document.getElementById('carbon-gauge-fill');
         let text = document.getElementById('carbon-gauge-text');
         
-        if (count === 0) {
-            if (container) container.style.display = 'none';
-            return;
-        }
-        
         if (container) container.style.display = 'block';
 
+        let items = this.carHistory.filter(h => !h.isEvent);
         let totalRealCo2 = 0;
         let quota = 0;
+        let bikeBonus = 0; 
         
         items.forEach(item => {
             let distVehicule = Math.max(0.1, this.liveCarDistance - (item.distAtSighting || 0));
-            let co2 = item.co2 !== undefined ? item.co2 : (this.vehicleSpecs[item.type] ? (this.vehicleSpecs[item.type].cMin + this.vehicleSpecs[item.type].cMax) / 2 : 120);
+            let categoryAverage = this.vehicleSpecs[item.type] ? (this.vehicleSpecs[item.type].cMin + this.vehicleSpecs[item.type].cMax) / 2 : 120;
+            let co2 = item.co2 !== undefined ? item.co2 : categoryAverage;
             totalRealCo2 += co2 * distVehicule;
-            quota += 150 * distVehicule; 
+            quota += categoryAverage * distVehicule; 
+            
+            if (item.type === "Vélos" && item.bikeBonus) bikeBonus += item.bikeBonus;
         });
+        
+        quota += bikeBonus; 
         
         let pct = quota > 0 ? (totalRealCo2 / quota) * 100 : 0;
         let visualPct = pct > 100 ? 100 : pct; 
@@ -274,25 +541,31 @@ const app = {
 
         let totalRealCo2 = 0;
         let quota = 0;
+        let bikeBonus = 0; 
 
         items.forEach(item => {
             let distVehicule = Math.max(0.1, this.liveCarDistance - (item.distAtSighting || 0));
-            let co2 = item.co2 !== undefined ? item.co2 : (this.vehicleSpecs[item.type] ? (this.vehicleSpecs[item.type].cMin + this.vehicleSpecs[item.type].cMax) / 2 : 120);
+            let categoryAverage = this.vehicleSpecs[item.type] ? (this.vehicleSpecs[item.type].cMin + this.vehicleSpecs[item.type].cMax) / 2 : 120;
+            let co2 = item.co2 !== undefined ? item.co2 : categoryAverage;
             totalRealCo2 += co2 * distVehicule;
-            quota += 150 * distVehicule;
+            quota += categoryAverage * distVehicule;
+            
+            if (item.type === "Vélos" && item.bikeBonus) bikeBonus += item.bikeBonus;
         });
 
+        quota += bikeBonus; 
+        
         let diff = quota - totalRealCo2; 
         let euros = Math.round(diff / 100); 
 
-        // 🌳 TALENT : Éco-Conduite
         if (euros < 0 && window.gami && window.gami.state.unlockedTalents.ecoConduite) {
-            euros = Math.round(euros * 0.85); // Réduction de 15% de l'amende
+            euros = Math.round(euros * 0.85); 
             if(window.ui) window.ui.showToast(`🌳 Talent Éco-Conduite : Taxe carbone réduite !`);
         }
 
         if (euros > 0) {
             this.addBankTransaction(euros, "Revente Crédits Carbone 🌿");
+            if(window.gami) window.gami.updateProgress('carbone_cash', euros); // 🎯 QUÊTE CARBONE
             if(window.ui) { window.ui.showToast(`🌿 Trafic Écolo ! Crédits revendus : +${euros} €`); window.ui.playGamiSound('cash'); }
         } else if (euros < 0) {
             this.addBankTransaction(euros, "Taxe Carbone Globale 💨");
@@ -312,9 +585,8 @@ const app = {
         let target = Math.floor(Math.random() * 8) + 3; 
         let advance = target * (this.bankValues[t] || 5) * 3; 
         
-        // 💼 TALENT : Négociateur
         if (window.gami && window.gami.state.unlockedTalents.negociateur) {
-            advance = Math.round(advance * 1.20); // +20% d'avance
+            advance = Math.round(advance * 1.20); 
         }
 
         this.pendingSponsor = { type: t, target: target, advance: advance, penalty: advance * 2 };
@@ -383,6 +655,7 @@ const app = {
         let finalReward = Math.round(this.activeSponsor.advance * bonusMultiplier);
         
         this.addBankTransaction(finalReward, `Bonus Fin de Contrat Sponsor (${this.activeSponsor.type})`);
+        if(window.gami) window.gami.updateProgress('sponsor', 1); // 🎯 QUÊTE SPONSOR
         if(window.ui) { window.ui.showToast(`🎉 Contrat validé ! Bénéfice encaissé : +${finalReward} € !`); window.ui.playGamiSound('cash'); }
         
         this.activeSponsor = null;
@@ -415,7 +688,7 @@ const app = {
         let actions = document.getElementById('sponsor-offer-actions');
         
         if(elTitle) elTitle.innerText = `🤝 Aucun contrat`;
-        if(elDesc) elDesc.innerText = `Lance le chrono...`;
+        if(elDesc) elDesc.innerText = this.isCarRunning ? `Recherche de sponsor en cours... 👀` : `Lance le chrono...`;
         if(elProg) elProg.style.display = 'none';
         if(elBanner) elBanner.classList.remove('sponsor-active');
         if(btnValidate) btnValidate.style.display = 'none';
@@ -434,10 +707,6 @@ const app = {
             return "Autoroute (>80 km/h)";
         }
     },
-
-// ==========================================
-    // jsapp.js (PARTIE 2 / 4)
-    // ==========================================
 
     brands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
     vehicleTypes: ["Voitures", "Utilitaires", "Motos", "Camions", "Camping-cars", "Bus/Car", "Engins agricoles", "Vélos"],
@@ -470,20 +739,40 @@ const app = {
     activeDashboardType: 'trucks',
     currentPredictionTruck: null, 
     currentPredictionCar: null,
+    predictionIntervals: { trucks: null, cars: null },
 
     idb: {
         db: null,
         async init() {
             return new Promise((resolve, reject) => {
-                const req = indexedDB.open("CompteurTraficDB", 1);
+                const req = indexedDB.open("CompteurTraficDB", 2); 
                 req.onupgradeneeded = e => {
                     let db = e.target.result;
                     if (!db.objectStoreNames.contains('sessions')) {
                         db.createObjectStore('sessions', { keyPath: 'id' });
                     }
+                    if (!db.objectStoreNames.contains('userData')) {
+                        db.createObjectStore('userData', { keyPath: 'id' });
+                    }
                 };
                 req.onsuccess = e => { this.db = e.target.result; resolve(); };
                 req.onerror = e => reject("Erreur IDB");
+            });
+        },
+        async getUserData(userId) {
+            return new Promise(resolve => {
+                let tx = this.db.transaction('userData', 'readonly');
+                let req = tx.objectStore('userData').get(userId);
+                req.onsuccess = e => resolve(e.target.result);
+                req.onerror = () => resolve(null);
+            });
+        },
+        async saveUserData(userId, data) {
+            return new Promise(resolve => {
+                let tx = this.db.transaction('userData', 'readwrite');
+                data.id = userId; 
+                tx.objectStore('userData').put(data);
+                tx.oncomplete = () => resolve();
             });
         },
         async getAllRaw() {
@@ -670,6 +959,7 @@ const app = {
             localStorage.removeItem('bankState_' + this.currentUser);
             localStorage.removeItem('bankHistory_' + this.currentUser);
             localStorage.removeItem('bankStats_' + this.currentUser);
+            localStorage.removeItem('companyState_' + this.currentUser);
             this.usersList = this.usersList.filter(u => u !== this.currentUser);
             localStorage.setItem('usersList', JSON.stringify(this.usersList));
             this.changeUser(this.usersList[0]);
@@ -701,7 +991,7 @@ const app = {
         if (window.ml) await window.ml.init();
 
         this.storage.init();
-        this.initBank();
+        await this.initBank();
 
         let userSel = document.getElementById('user-selector');
         if(userSel) {
@@ -786,8 +1076,10 @@ const app = {
         this.renderLiveStats('trucks'); this.renderLiveStats('cars');
         
         this.renderDashboard('trucks');
+        
         this.updatePrediction('trucks');
-        this.updatePrediction('cars');
+        this.updatePrediction('cars'); 
+        
         this.updateCarbonGauge();
 
         if (document.getElementById('truck-stats-view') && document.getElementById('truck-stats-view').style.display !== 'none') this.renderAdvancedStats('trucks');
@@ -827,6 +1119,21 @@ const app = {
 
         if(elTime) elTime.innerText = `⏱️ ${this.formatTime(sec)}`; 
         if(elDist) elDist.innerText = `📍 ${dist.toFixed(2)} km`; 
+    },
+
+    triggerCompanyRandomEvents() {
+        let stats = this.getCompanyStats();
+        if (stats.usedSlots > 0 && Math.random() < 0.20) { 
+            if (Math.random() > 0.5) {
+                let bonus = Math.round(stats.incomePerMin * 5); 
+                this.addBankTransaction(bonus, "🏢 Fret exceptionnel (Entreprise)");
+                if(window.ui) { window.ui.showToast(`🏢 Ton entreprise a décroché un fret express : +${bonus} € !`); window.ui.playGamiSound('cash'); }
+            } else {
+                let malus = Math.round(stats.incomePerMin * 3); 
+                this.addBankTransaction(-malus, "🏢 Réparation d'urgence (Entreprise)");
+                if(window.ui) { window.ui.showToast(`⚠️ Crevaison sur un de tes camions d'entreprise ! Frais : -${malus} €`, 'anomaly'); window.ui.playGamiSound('crash'); }
+            }
+        }
     },
 
     toggleChrono(type) {
@@ -869,12 +1176,19 @@ const app = {
                 this.carStartTime = startTime; this.storage.set('carStartTime', startTime); 
                 this.lastGlobalCarTick = startTime; 
                 this.lastCountTime = Date.now(); 
+
+                let sponsorDesc = document.getElementById('sponsor-desc');
+                if (sponsorDesc && !this.activeSponsor && !this.pendingSponsor) {
+                    sponsorDesc.innerText = "Recherche de sponsor en cours... 👀";
+                }
             }
             
             let interval = setInterval(() => { 
                 let now = Date.now();
+                let elapsed = 0;
+                
                 if(isTruck) {
-                    let elapsed = Math.floor((now - this.truckStartTime) / 1000);
+                    elapsed = Math.floor((now - this.truckStartTime) / 1000);
                     this.truckSeconds = this.truckAccumulatedTime + elapsed; 
                     this.storage.set('truckChronoSec', this.truckSeconds); 
                     
@@ -886,7 +1200,7 @@ const app = {
                         this.lastGlobalTruckTick += add * 1000;
                     }
                 } else {
-                    let elapsed = Math.floor((now - this.carStartTime) / 1000);
+                    elapsed = Math.floor((now - this.carStartTime) / 1000);
                     this.carSeconds = this.carAccumulatedTime + elapsed; 
                     this.storage.set('carChronoSec', this.carSeconds); 
                     
@@ -905,21 +1219,25 @@ const app = {
                     if (elapsed > 0 && elapsed % 300 === 0) { 
                         let currentHour = new Date().getHours();
                         let isNight = (currentHour >= 21 || currentHour < 6);
-                        let baseToll = isNight ? 20 : 10;
-                        let stepToll = isNight ? 20 : 10;
-                        let maxToll = isNight ? 200 : 100;
+                        let isRushHour = (currentHour >= 7 && currentHour < 9) || (currentHour >= 17 && currentHour < 19);
+            
+                        let baseToll = isRushHour ? 20 : (isNight ? 5 : 10);
+                        let stepToll = isRushHour ? 20 : (isNight ? 5 : 10);
+                        let maxToll = isRushHour ? 200 : (isNight ? 50 : 100);
+            
                         let inflationMultiplier = Math.floor(elapsed / 900);
                         let currentToll = baseToll + (inflationMultiplier * stepToll);
                         if (currentToll > maxToll) currentToll = maxToll;
-                        
-                        this.addBankTransaction(-currentToll, "Péage" + (isNight ? " de nuit 🌙" : " ☀️"));
+            
+                        let tollName = "Péage" + (isRushHour ? " (Heure de pointe) 🚗🚗🚗" : (isNight ? " de nuit 🌙" : " ☀️"));
+                        this.addBankTransaction(-currentToll, tollName);
                         if(window.ui) {
-                            window.ui.showToast(`💸 Péage : - ${currentToll} €`, "anomaly");
+                            window.ui.showToast(`💸 ${tollName} : - ${currentToll} €`, "anomaly");
                             window.ui.playGamiSound('siren');
                         }
                     }
 
-                    if (elapsed > 0 && elapsed % 60 === 0 && this.bankBalance < 0) {
+                    if (elapsed > 0 && elapsed % 600 === 0 && this.bankBalance < 0) {
                         let agios = Math.abs(this.bankBalance) * 0.05;
                         this.addBankTransaction(-agios, "Agios (5%)");
                         if(window.ui) {
@@ -930,11 +1248,28 @@ const app = {
 
                     this.updateCarbonGauge();
                 }
+
+                let cStats = this.getCompanyStats();
+                if (cStats.incomePerMin > 0) {
+                    this.companyState.pendingIncome += (cStats.incomePerMin / 60); 
+                    let displayPending = document.getElementById('company-pending-income');
+                    if (displayPending) displayPending.innerText = this.companyState.pendingIncome.toFixed(2) + ' €';
+                }
+
+                if (elapsed > 0 && elapsed % 300 === 0) {
+                    this.triggerCompanyRandomEvents();
+                }
+
                 this.updateChronoDisp(type); 
                 this.renderLiveStats(type);
             }, 1000); 
             
             if(isTruck) this.truckInterval = interval; else this.carInterval = interval;
+            
+            if (this.predictionIntervals[type]) clearInterval(this.predictionIntervals[type]);
+            this.predictionIntervals[type] = setInterval(() => {
+                this.updatePrediction(type);
+            }, 8000);
             
         } else { 
             btn.innerText = "▶️ Start"; btn.classList.remove('running'); 
@@ -945,18 +1280,23 @@ const app = {
                 this.globalAnaTrucks.lastVehicles = []; 
                 this.storage.set('globalAnaTrucks', this.globalAnaTrucks);
             } else {
+                let sponsorDesc = document.getElementById('sponsor-desc');
+                if (sponsorDesc && !this.activeSponsor && !this.pendingSponsor) {
+                    sponsorDesc.innerText = "Chrono en pause ⏸️";
+                }
+
                 clearInterval(this.carInterval); 
                 this.carAccumulatedTime = this.carSeconds;
                 this.storage.set('carAccumulatedTime', this.carAccumulatedTime);
                 this.globalAnaCars.lastVehicles = []; 
                 this.storage.set('globalAnaCars', this.globalAnaCars);
             }
+            
+            if (this.predictionIntervals && this.predictionIntervals[type]) {
+                clearInterval(this.predictionIntervals[type]);
+            }
         }
     },
-
-// ==========================================
-    // jsapp.js (PARTIE 3 / 4)
-    // ==========================================
 
     updateCounter(mode, key1, key2, amount, e) {
         let isTruck = mode === 'trucks';
@@ -984,9 +1324,11 @@ const app = {
             if (window.ui) window.ui.playBeep(amount > 0);
             
             if (amount > 0) {
-                if (window.gami) window.gami.notifyVehicleAdded(key1, key2);
+                // L'ancien notifyVehicleAdded a été retiré, on enverra tout à la fin !
 
                 let isExact = false;
+                let gegeMultiplier = 1; // 🧠 NOUVEAU : Multiplicateur IA
+
                 if (currPred && currPred.class) {
                     ana.predictions.total++; sessionPreds.total++;
                     let actualClass = isTruck ? `${key1}_${key2}` : key1;
@@ -997,27 +1339,73 @@ const app = {
                     ana.predictionsByClass[currPred.class].total++;
 
                     isExact = (currPred.class === actualClass);
+                    
+                    // 🎯 SYSTÈME DE CONFIANCE GÉGÉ
+                    let conf = currPred.confidence || 50; 
+
                     if (isExact) {
                         ana.predictions.success++; sessionPreds.success++;
                         ana.predictionsByClass[currPred.class].success++;
-                        if(window.ui) window.ui.showToast("🔮 Prédiction exacte !");
+                        
+                        if (conf < 40) gegeMultiplier = 5;      // Jauge Rouge
+                        else if (conf <= 70) gegeMultiplier = 3; // Jauge Orange
+                        else gegeMultiplier = 2;                 // Jauge Verte
+                        
+                        if(window.ui) window.ui.showToast(`🎯 Prédiction exacte (${conf}%) ! Gains x${gegeMultiplier} !`, 'success');
+                    } else {
+                        // 📉 MALUS INATTENTION (si IA était sûre > 70%)
+                        if (conf > 70) {
+                            this.addBankTransaction(-20, "Malus Gégé : Inattention");
+                            if(window.ui) window.ui.showToast(`📉 Inattention ! Gégé était sûr (${conf}%), Amende : -20 € !`, 'anomaly');
+                        }
                     }
+                    
+                    // Reset prédiction pour éviter la triche
+                    if (isTruck) this.currentPredictionTruck = null;
+                    else this.currentPredictionCar = null;
                 }
 
-                // ⚖️ NOUVEAU : Génération Poids et CO2 Dynamique
                 let specs = this.vehicleSpecs[key1] || { wMin: 1500, wMax: 1500, cMin: 120, cMax: 120 };
                 if (isTruck) specs = this.vehicleSpecs["Camions"]; 
                 
                 let randWeight = Math.floor(Math.random() * (specs.wMax - specs.wMin + 1)) + specs.wMin;
                 let co2Ratio = specs.wMax === specs.wMin ? 0 : (randWeight - specs.wMin) / (specs.wMax - specs.wMin);
                 let randCo2 = Math.round(specs.cMin + co2Ratio * (specs.cMax - specs.cMin));
+                
+                let bikeBonus = 0; // 🚲 NOUVEAU
 
                 if (!isTruck) {
                     let baseVal = this.bankValues[key1] || 1;
+                    
+                    // 🚲 NOUVEAU : Calcul du bonus carbone pour les Vélos
+                    if (key1 === "Vélos") {
+                        bikeBonus = Math.floor(Math.random() * 1751); // Entre 0 et 1750g
+                        randCo2 = 0; // Force le CO2 du vélo à 0
+                        if(window.ui) window.ui.showToast(`🚲 Bonus Écolo : +${bikeBonus}g au quota !`, 'success');
+                    }
+
+                    let currentHour = new Date().getHours();
+                    let isNight = (currentHour >= 21 || currentHour < 6);
+                    let isRushHour = (currentHour >= 7 && currentHour < 9) || (currentHour >= 17 && currentHour < 19);
+            
+                    if (isNight) {
+                        if (key1 === "Camions" || key1 === "Utilitaires") {
+                            baseVal = Math.round(baseVal * 0.5); 
+                        } else {
+                            baseVal = Math.round(baseVal * 5); 
+                        }
+                    } else if (isRushHour) {
+                        if (key1 === "Voitures" || key1 === "Utilitaires") {
+                            baseVal = Math.round(baseVal * 0.5); 
+                        } else if (key1 === "Motos" || key1 === "Vélos") {
+                            baseVal = Math.round(baseVal * 2); 
+                        }
+                    }
+
                     let nowTs = Date.now();
 
                     this.sessionPaveWeight = (this.sessionPaveWeight || 0) + randWeight;
-                    if (this.sessionPaveWeight >= 80000) { 
+                    if (this.sessionPaveWeight >= 100000) { // T.U.R. 100t : seuil relevé à 100 tonnes
                         this.addBankTransaction(-50, "Taxe d'Usure des Routes (T.U.R) 🚧");
                         if(window.ui) { window.ui.showToast("🚧 La route fissure ! Taxe d'Usure : -50 €", "anomaly"); window.ui.playGamiSound('crash'); }
                         this.sessionPaveWeight = 0; 
@@ -1045,12 +1433,10 @@ const app = {
                     }
                     this.lastCountTime = nowTs;
 
-                    // 💥 NOUVEAU SYSTÈME DE KRACH BOURSIER (Tolérant & Dynamique)
                     let consecutive = 0;
                     let justHistory = history.filter(h => !h.isEvent);
                     let lastTs = nowTs;
 
-                    // Timer de 45 secondes pour réinitialiser la série
                     for (let i = justHistory.length - 1; i >= 0; i--) {
                         let h = justHistory[i];
                         if (lastTs - h.timestamp > 45000) break; 
@@ -1061,39 +1447,106 @@ const app = {
                         } else { break; }
                     }
 
-                    // Adaptation pour l'Autoroute
                     let speedKmh = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
                     let isHighway = speedKmh > 80;
                     let threshold = isHighway ? 10 : 4; 
 
-                    // 👁️ TALENT : Oeil de Lynx (+10% si prédiction correcte)
                     if (isExact) {
-                        baseVal *= 3;
+                        // 🧠 NOUVEAU : Application du multiplicateur de Gégé (x5, x3, x2)
+                        baseVal *= gegeMultiplier;
+                        
                         if (window.gami && window.gami.state.unlockedTalents && window.gami.state.unlockedTalents.oeilDeLynx) {
                             baseVal = Math.round(baseVal * 1.10);
                             if(window.ui) window.ui.showToast(`👁️ Talent Œil de Lynx : Bonus de prédiction boosté !`);
                         }
                     }
 
-                    // Paliers du Krach
                     if (consecutive >= threshold + 2) { 
                         baseVal = -Math.max(1, Math.round(Math.abs(baseVal) * 0.2)); 
-                        if(window.ui) { window.ui.showToast(`🚧 Frais de congestion ! Trop de ${key1} !`, "anomaly"); window.ui.playGamiSound('crash'); }
+                        // Notification une seule fois, puis arrière-plan silencieux
+                        if (!this._congestNotified || this._congestNotified[key1] !== 'frais') {
+                            if (!this._congestNotified) this._congestNotified = {};
+                            this._congestNotified[key1] = 'frais';
+                            if(window.ui) { window.ui.showToast(`🚧 Frais de congestion ! Trop de ${key1} !`, "anomaly"); window.ui.playGamiSound('crash'); }
+                        }
                     } else if (consecutive === threshold + 1) { 
                         baseVal = 0;
-                        if(window.ui) { window.ui.showToast(`⚠️ Marché saturé pour ${key1} (Gain 0€)`, "anomaly"); window.ui.playGamiSound('crash'); }
+                        if (!this._congestNotified || this._congestNotified[key1] !== 'sature') {
+                            if (!this._congestNotified) this._congestNotified = {};
+                            this._congestNotified[key1] = 'sature';
+                            if(window.ui) { window.ui.showToast(`⚠️ Marché saturé pour ${key1} (Gain 0€)`, "anomaly"); window.ui.playGamiSound('crash'); }
+                        }
                     } else if (consecutive === threshold) { 
                         baseVal = Math.round(baseVal * 0.5);
-                        if(window.ui) { window.ui.showToast(`📉 Alerte : Le marché baisse pour ${key1} !`); }
+                        if (!this._congestNotified || this._congestNotified[key1] !== 'baisse') {
+                            if (!this._congestNotified) this._congestNotified = {};
+                            this._congestNotified[key1] = 'baisse';
+                            if(window.ui) { window.ui.showToast(`📉 Alerte : Le marché baisse pour ${key1} !`); }
+                        }
+                    } else {
+                        // La série est brisée : on réinitialise la notification pour ce type
+                        if (this._congestNotified) this._congestNotified[key1] = null;
                     }
 
                     if (this.bankBalance < 0 && baseVal > 0) {
                         baseVal = Math.round(baseVal * 0.2); 
                     }
 
-                    this.addBankTransaction(baseVal, `Comptage ${key1}`);
+                    // 🌅 PRIME DE L'AUBE : Gains x2 entre 5h et 7h du matin
+                    let currentHourForDawn = new Date().getHours();
+                    if (baseVal > 0 && currentHourForDawn >= 5 && currentHourForDawn < 7) {
+                        baseVal = baseVal * 2;
+                        if(window.ui) window.ui.showToast(`🌅 Prime de l'Aube ! Gains doublés !`, 'success');
+                    }
+
+                    // ⛰️ BONUS D'ALTITUDE : +10% au-dessus de 800m
+                    let altForBonus = window.gps && window.gps.currentPos ? (window.gps.currentPos.alt || 0) : 0;
+                    if (baseVal > 0 && altForBonus > 800) {
+                        let altBonus = Math.round(baseVal * 0.10);
+                        baseVal += altBonus;
+                        if(window.ui) window.ui.showToast(`⛰️ Bonus d'Altitude (+10%) : +${altBonus} €`);
+                    }
+
+                    this.addBankTransaction(baseVal, `Comptage ${key1}${isExact ? ' (x' + gegeMultiplier + ' IA)' : ''}`);
+
+                    // 🌈 COMBO ARC-EN-CIEL : +200€ si 5 catégories différentes enchaînées
+                    if (!isTruck) {
+                        let recentCats = history.filter(h => !h.isEvent).slice(-5).map(h => h.type);
+                        if (recentCats.length === 5 && new Set(recentCats).size === 5) {
+                            this.addBankTransaction(200, "🌈 Combo Arc-en-ciel (5 catégories !)");
+                            if(window.ui) { window.ui.showToast("🌈 COMBO ARC-EN-CIEL ! 5 catégories d'affilée : +200 € !", 'rare-combo'); window.ui.playGamiSound('cash'); }
+                        }
+                    }
+
+                    // 🚛 CONVOI EXCEPTIONNEL : +50€ si 3 camions en moins de 15 secondes
+                    if (!isTruck && key1 === "Camions") {
+                        if (!this._convoiTimes) this._convoiTimes = [];
+                        this._convoiTimes.push(Date.now());
+                        this._convoiTimes = this._convoiTimes.filter(t => Date.now() - t <= 15000);
+                        if (this._convoiTimes.length >= 3) {
+                            this.addBankTransaction(50, "🚛 Convoi Exceptionnel (3 camions en 15s)");
+                            if(window.ui) { window.ui.showToast("🚛 CONVOI EXCEPTIONNEL ! 3 camions en 15s : +50 € !", 'success'); window.ui.playGamiSound('cash'); }
+                            this._convoiTimes = []; // reset pour éviter cumul
+                        }
+                    }
                     this.showMoneyParticle(e, baseVal);
                     if (baseVal > 0 && window.ui && consecutive < threshold) window.ui.playGamiSound('cash');
+
+                    // 🎯 NOUVEAU : Envoi massif d'informations à Gégé pour les Quêtes du Passe Routier
+                    if (window.gami) {
+                        let isNight = (new Date().getHours() >= 21 || new Date().getHours() < 6);
+                        let alt = window.gps && window.gps.currentPos ? window.gps.currentPos.alt : 0;
+                        
+                        let extraData = { 
+                            weight: randWeight, 
+                            isNight: isNight, 
+                            alt: alt, 
+                            regularity: this.regularityChain,
+                            isExact: isExact,
+                            iaCash: isExact ? baseVal : 0
+                        };
+                        window.gami.notifyVehicleAdded(key1, key2, extraData);
+                    }
 
                     if (this.activeSponsor && key1 === this.activeSponsor.type) {
                         this.activeSponsor.current += 1;
@@ -1119,13 +1572,20 @@ const app = {
                     chronoTime: this.formatTime(isTruck ? this.truckSeconds : this.carSeconds), 
                     timestamp: nowTs,
                     distAtSighting: isTruck ? this.liveTruckDistance : this.liveCarDistance,
-                    weight: randWeight, // Enregistrement du poids dynamique
-                    co2: randCo2        // Enregistrement du CO2 dynamique
+                    weight: randWeight, 
+                    co2: randCo2,
+                    bikeBonus: bikeBonus // 🚲 NOUVEAU : Sauvegarde du bonus vélo
                 };
                 
                 if (isTruck) { histItem.brand = key1; histItem.type = key2; }
                 else { histItem.type = key1; }
                 history.push(histItem);
+
+                let justVehiclesCount = history.filter(h => !h.isEvent).length;
+                if (justVehiclesCount > 0 && justVehiclesCount % 50 === 0) {
+                    if(window.ui) window.ui.showToast(`🧠 Palier de ${justVehiclesCount} ! Gégé apprend en direct...`);
+                    if(window.ml) window.ml.trainModel(mode);
+                }
 
                 if (window.ml) {
                     let recentHist = history.filter(h => !h.isEvent);
@@ -1134,9 +1594,8 @@ const app = {
                         window.ui.showToast(anomaly.msg, anomaly.type);
                         if (anomaly.type === 'anomaly') {
                             window.ui.triggerHapticFeedback('error');
+                            // 🛑 SUPPRESSION AMENDE IA 100€ : on ne garde que l'alarme visuelle et sonore
                             if (!isTruck) {
-                                this.addBankTransaction(-100, "Amende IA (Anomalie de comptage)");
-                                this.showMoneyParticle(e, -100);
                                 window.ui.playGamiSound('siren');
                             }
                         }
@@ -1213,7 +1672,6 @@ const app = {
                 if (!isTruck) this.updateCarbonGauge();
 
             } else if (amount < 0) {
-                // 🔙 GESTION DES ANNULATIONS
                 let lastIndex = history.map(h => !h.isEvent && (isTruck ? (h.brand === key1 && h.type === key2) : (h.type === key1))).lastIndexOf(true);
                 
                 if (lastIndex !== -1) {
@@ -1337,7 +1795,7 @@ const app = {
             this.activeSponsor = null;
             this.pendingSponsor = null;
             this.sponsorCooldownUntil = 0; 
-            this.sessionFinance = { gains: 0, losses: 0, carbon: 0 }; 
+            this.sessionFinance = { gains: 0, losses: 0, carbon: 0, details: {} }; 
             
             this.sessionPaveWeight = 0;
             this.consecutiveLightVehicles = 0;
@@ -1370,6 +1828,20 @@ const app = {
 
         if (isRunning) this.toggleChrono(type); 
         
+        // 🏢 ENCAISSEMENT DES REVENUS DE L'ENTREPRISE A L'ARRET
+        if (this.companyState.pendingIncome > 0) {
+            let earned = Math.round(this.companyState.pendingIncome);
+            if (earned > 0) {
+                this.addBankTransaction(earned, "🏢 Bénéfices de l'Entreprise (Session)");
+                if (window.ui) {
+                    window.ui.playGamiSound('cash');
+                    window.ui.showToast(`🏢 L'entreprise a généré +${earned} € pendant la session !`);
+                }
+            }
+            this.companyState.pendingIncome = 0;
+            await this.saveUserData();
+        }
+
         if (seconds === 0 && history.length === 0) { 
             this.resetSessionData(type); 
             return; 
@@ -1453,6 +1925,7 @@ const app = {
             localStorage.removeItem(`bankState_${this.currentUser}`);
             localStorage.removeItem(`bankHistory_${this.currentUser}`);
             localStorage.removeItem(`bankStats_${this.currentUser}`);
+            localStorage.removeItem(`companyState_${this.currentUser}`); 
 
             try {
                 if (typeof tf !== 'undefined') {
@@ -1466,10 +1939,6 @@ const app = {
             setTimeout(() => { location.reload(); }, 1500);
         }
     },
-
-    // ==========================================
-    // jsapp.js (PARTIE 4 / 4)
-    // ==========================================
 
     renderTrucks() {
         const container = document.getElementById('truck-container'); if(!container) return;
@@ -1537,15 +2006,18 @@ const app = {
 
         const slugMap = { "Voitures": "voitures", "Utilitaires": "utilitaires", "Camions": "camions", "Engins agricoles": "engins", "Bus/Car": "bus", "Camping-cars": "camping", "Motos": "motos", "Vélos": "velos" };
         const nameMap = { "Camions": "Poids Lourds" }; 
+        const icons = { Voitures: "🚗", Utilitaires: "🚐", Camions: "🚛", "Engins agricoles": "🚜", "Bus/Car": "🚌", "Camping-cars": "🏕️", Motos: "🏍️", Vélos: "🚲" };
 
         this.vehicleTypes.forEach(v => {
             let pct = grandTotal === 0 ? (100 / this.vehicleTypes.length) : Math.round(((this.vehicleCounters[v]||0) / grandTotal) * 100); 
             let slug = slugMap[v];
             let bar = document.getElementById(`bar-${slug}`);
-            if (bar) { bar.style.width = pct + '%'; bar.innerText = (grandTotal > 0 && this.vehicleCounters[v] > 0) ? `${pct}%` : ''; }
+            if (bar) { 
+                bar.style.width = pct + '%'; 
+                bar.innerText = (grandTotal > 0 && this.vehicleCounters[v] > 0) ? `${icons[v]} ${pct}%` : ''; 
+            }
         });
 
-        const icons = { Voitures: "🚗", Utilitaires: "🚐", Camions: "🚛", "Engins agricoles": "🚜", "Bus/Car": "🚌", "Camping-cars": "🏕️", Motos: "🏍️", Vélos: "🚲" };
         this.vehicleTypes.forEach(v => {
             let score = this.vehicleCounters[v] || 0;
             let displayName = nameMap[v] || v;
@@ -1806,16 +2278,162 @@ const app = {
         await this.renderDashboard(this.activeDashboardType || 'trucks');
     },
 
+    async renderEnvDashboard() {
+        let filter = this.currentDashboardFilter || 'all';
+        let sessions = await this.idb.getAll('cars'); 
+        let liveHistory = this.carHistory;
+        
+        let allHistories = [];
+        let now = new Date();
+        
+        if (liveHistory && liveHistory.length > 0) allHistories.push({ history: liveHistory });
+        sessions.forEach(s => allHistories.push(s)); 
+
+        let totalCo2 = 0;
+        let totalQuota = 0;
+        let co2ByType = {};
+        let evolutionData = [];
+        let evolutionLabels = [];
+
+        let sortedSessions = [...sessions].sort((a,b) => parseInt(a.id) - parseInt(b.id));
+
+        allHistories.forEach(s => {
+            if (!s.history || s.history.length === 0) return;
+            let firstItem = s.history.find(h => h.timestamp);
+            if (!firstItem) return;
+            let sDate = new Date(firstItem.timestamp);
+            
+            if (filter === 'month' && (sDate.getMonth() !== now.getMonth() || sDate.getFullYear() !== now.getFullYear())) return;
+            if (filter === 'week' && (now.getTime() - sDate.getTime() > 7 * 24 * 60 * 60 * 1000)) return;
+
+            let sHist = s.history.filter(h => !h.isEvent);
+
+            sHist.forEach((h, i) => {
+                let distVehicule = 0;
+                if (s.distanceKm > 0) {
+                    distVehicule = s.distanceKm / sHist.length;
+                } else if (this.liveCarDistance > 0 && !s.id) {
+                    distVehicule = this.liveCarDistance / sHist.length;
+                } else {
+                    distVehicule = 0.5;
+                }
+
+                let categoryAverage = this.vehicleSpecs[h.type] ? (this.vehicleSpecs[h.type].cMin + this.vehicleSpecs[h.type].cMax) / 2 : 120;
+                let co2 = h.co2 !== undefined ? h.co2 : categoryAverage;
+                
+                let emitted = co2 * distVehicule;
+                let allowed = categoryAverage * distVehicule;
+
+                totalCo2 += emitted;
+                totalQuota += allowed;
+                co2ByType[h.type] = (co2ByType[h.type] || 0) + emitted;
+            });
+        });
+
+        let last10Sessions = sortedSessions.slice(-10);
+        last10Sessions.forEach((s, idx) => {
+            let sHist = s.history ? s.history.filter(h => !h.isEvent) : [];
+            let sCo2 = 0;
+            let sQuota = 0;
+            sHist.forEach(h => {
+                let distVehicule = (s.distanceKm || 0) / (sHist.length || 1);
+                let categoryAverage = this.vehicleSpecs[h.type] ? (this.vehicleSpecs[h.type].cMin + this.vehicleSpecs[h.type].cMax) / 2 : 120;
+                let co2 = h.co2 !== undefined ? h.co2 : categoryAverage;
+                sCo2 += co2 * distVehicule;
+                sQuota += categoryAverage * distVehicule;
+            });
+            let ratio = sQuota > 0 ? (sCo2 / sQuota) * 100 : 0;
+            evolutionLabels.push(`Sess. ${idx + 1}`);
+            evolutionData.push(Math.round(ratio));
+        });
+
+        let elCo2 = document.getElementById('dash-env-co2');
+        let elQuota = document.getElementById('dash-env-quota');
+        let elDiff = document.getElementById('dash-env-diff');
+
+        if (elCo2) elCo2.innerText = this.formatCarbon(totalCo2);
+        if (elQuota) elQuota.innerText = this.formatCarbon(totalQuota);
+
+        if (elDiff) {
+            if (totalCo2 > totalQuota) {
+                elDiff.innerHTML = `⚠️ Dépassement de <span style="color:#e74c3c">${this.formatCarbon(totalCo2 - totalQuota)}</span>`;
+                if(elCo2) elCo2.style.color = '#e74c3c';
+            } else {
+                elDiff.innerHTML = `✅ Économie de <span style="color:#27ae60">${this.formatCarbon(totalQuota - totalCo2)}</span>`;
+                if(elCo2) elCo2.style.color = '#27ae60';
+            }
+        }
+
+        const isDark = document.body.classList.contains('dark-mode');
+        const textColor = isDark ? '#d2dae2' : '#2c3e50';
+
+        let ctxPie = document.getElementById('envCo2PieChart');
+        if (ctxPie) {
+            if (this.envCo2PieChart) this.envCo2PieChart.destroy();
+            let labels = Object.keys(co2ByType);
+            let data = Object.values(co2ByType).map(v => Math.round(v/1000));
+            
+            this.envCo2PieChart = new Chart(ctxPie, {
+                type: 'doughnut',
+                data: { labels: labels, datasets: [{ data: data, backgroundColor: ['#3498db', '#e67e22', '#2ecc71', '#9b59b6', '#f1c40f', '#e74c3c', '#1abc9c', '#34495e'], borderWidth: 1, borderColor: isDark ? '#2f3640' : '#fff' }] },
+                options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
+            });
+        }
+
+        let ctxEvo = document.getElementById('envCo2EvolutionChart');
+        if (ctxEvo) {
+            if (this.envCo2EvolutionChart) this.envCo2EvolutionChart.destroy();
+            
+            this.envCo2EvolutionChart = new Chart(ctxEvo, {
+                type: 'line',
+                data: { 
+                    labels: evolutionLabels, 
+                    datasets: [
+                        { label: '% du Quota (100% = Limite)', data: evolutionData, borderColor: '#27ae60', backgroundColor: 'rgba(39, 174, 96, 0.2)', fill: true, tension: 0.4, pointBackgroundColor: '#27ae60' }
+                    ] 
+                },
+                options: { 
+                    maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: { display: false }
+                    }, 
+                    scales: { y: { beginAtZero: true, suggestedMax: 150, ticks: { color: textColor, callback: function(val) { return val + '%'; } } }, x: { ticks: { color: textColor } } } 
+                }
+            });
+        }
+    },
+
     async renderDashboard(type) {
         this.activeDashboardType = type;
         
         let btn1 = document.getElementById('btn-ana-trucks');
         let btn2 = document.getElementById('btn-ana-cars');
-        if(btn1 && btn2) {
+        let btnEnv = document.getElementById('btn-ana-env');
+        
+        if(btn1 && btn2 && btnEnv) {
+            btn1.className = type === 'trucks' ? 'active btn-ana-trucks' : 'btn-ana-trucks';
+            btn2.className = type === 'cars' ? 'active btn-ana-cars' : 'btn-ana-cars';
+            btnEnv.className = type === 'env' ? 'active btn-ana-env' : 'btn-ana-env';
+            
             btn1.style.backgroundColor = type === 'trucks' ? '#e67e22' : 'var(--btn-bg)';
             btn1.style.color = type === 'trucks' ? 'white' : 'var(--btn-text)';
             btn2.style.backgroundColor = type === 'cars' ? '#e67e22' : 'var(--btn-bg)';
             btn2.style.color = type === 'cars' ? 'white' : 'var(--btn-text)';
+            btnEnv.style.backgroundColor = type === 'env' ? '#27ae60' : 'var(--btn-bg)';
+            btnEnv.style.color = type === 'env' ? 'white' : 'var(--btn-text)';
+        }
+
+        let stdContainer = document.getElementById('dash-standard-container');
+        let envContainer = document.getElementById('dash-env-container');
+
+        if (type === 'env') {
+            if (stdContainer) stdContainer.style.display = 'none';
+            if (envContainer) envContainer.style.display = 'block';
+            await this.renderEnvDashboard();
+            return;
+        } else {
+            if (stdContainer) stdContainer.style.display = 'block';
+            if (envContainer) envContainer.style.display = 'none';
         }
 
         let filter = this.currentDashboardFilter || 'all';
@@ -1950,6 +2568,53 @@ const app = {
                     options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: textColor } } } }
                 });
             }
+        }
+
+        // 📊 NOUVEAU GRAPHIQUE 24H (Empilé par catégorie)
+        let ctx24h = document.getElementById('dashboard24hChart');
+        if (ctx24h) {
+            if (this.dashboard24hChart) this.dashboard24hChart.destroy();
+            
+            let labels24h = [];
+            for (let i = 0; i < 24; i++) labels24h.push(`${i}h`);
+            
+            let datasets24h = [];
+            let colors24h = ['#3498db', '#e67e22', '#2ecc71', '#9b59b6', '#f1c40f', '#e74c3c', '#1abc9c', '#34495e'];
+            let cIdx = 0;
+            
+            // Trouver les catégories les plus fréquentes pour ne pas surcharger
+            let topCategories = Object.keys(anaData.byVeh).sort((a,b) => {
+                let sumA = Object.values(anaData.byVeh[a].hours).reduce((x,y)=>x+y,0);
+                let sumB = Object.values(anaData.byVeh[b].hours).reduce((x,y)=>x+y,0);
+                return sumB - sumA;
+            }).slice(0, 8);
+
+            topCategories.forEach(veh => {
+                let dataPoint = [];
+                for (let i = 0; i < 24; i++) {
+                    dataPoint.push(anaData.byVeh[veh].hours[`${i}h`] || 0);
+                }
+                datasets24h.push({
+                    label: veh.replace('_fr','🇫🇷').replace('_etr','🇪🇺'),
+                    data: dataPoint,
+                    backgroundColor: colors24h[cIdx % colors24h.length]
+                });
+                cIdx++;
+            });
+
+            this.dashboard24hChart = new Chart(ctx24h, {
+                type: 'bar',
+                data: { labels: labels24h, datasets: datasets24h },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, color: textColor, font: { size: 10 } } } },
+                    scales: {
+                        x: { stacked: true, ticks: { color: textColor } },
+                        y: { stacked: true, ticks: { color: textColor } }
+                    }
+                }
+            });
         }
 
         let ctxAi = document.getElementById('aiEvolutionChart');
@@ -2254,7 +2919,7 @@ const app = {
                     if (data.globalSummary?.analysesPermanentesVehicules) this.storage.set('globalAnaCars', data.globalSummary.analysesPermanentesVehicules);
                     if (data.globalSummary?.bankBalance) {
                         this.bankBalance = parseFloat(data.globalSummary.bankBalance);
-                        this.saveBank();
+                        await this.saveUserData();
                     }
                     
                     alert("✅ Historique et analyses importés avec succès ! Redémarrage..."); location.reload();
@@ -2393,10 +3058,11 @@ const app = {
         }
     },
 
-    renderPredictionUI(type, top3, method) {
+        renderPredictionUI(type, top3, method) {
         let elMain = document.getElementById(type === 'trucks' ? 'pred-main-trucks' : 'pred-main-cars');
         let elGauge = document.getElementById(type === 'trucks' ? 'pred-gauge-trucks' : 'pred-gauge-cars');
         let elPodium = document.getElementById(type === 'trucks' ? 'pred-podium-trucks' : 'pred-podium-cars');
+        let elJournal = document.getElementById(type === 'trucks' ? 'pred-journal-trucks' : 'pred-journal-cars'); 
 
         if (!elMain || !elGauge || !elPodium || !top3 || top3.length === 0) return;
 
@@ -2421,11 +3087,37 @@ const app = {
         elPodium.innerHTML = podiumHtml;
 
         if (type === 'trucks') {
-            this.currentPredictionTruck = { class: best.candidate };
+            this.currentPredictionTruck = { class: best.candidate, confidence: best.confidence };
         } else {
-            this.currentPredictionCar = { class: best.candidate };
+            this.currentPredictionCar = { class: best.candidate, confidence: best.confidence };
         }
-    },
+
+        if (elJournal) {
+            let hist = type === 'trucks' ? this.truckHistory.filter(h=>!h.isEvent) : this.carHistory.filter(h=>!h.isEvent);
+            let speed = window.gps ? window.gps.getSlidingSpeedKmh() : 0;
+            let alt = window.gps && window.gps.currentPos && window.gps.currentPos.alt ? window.gps.currentPos.alt : 0;
+            
+            let seqText = "📊 Init.";
+            if (hist.length >= 2) {
+                let l1 = type === 'trucks' ? hist[hist.length-1].brand.split(' ')[0] : (hist[hist.length-1].type === 'Camions' ? 'PL' : hist[hist.length-1].type.substring(0,4));
+                let l2 = type === 'trucks' ? hist[hist.length-2].brand.split(' ')[0] : (hist[hist.length-2].type === 'Camions' ? 'PL' : hist[hist.length-2].type.substring(0,4));
+                seqText = `🔁 [${l2}➡️${l1}]`;
+            } else if (hist.length === 1) {
+                let l1 = type === 'trucks' ? hist[0].brand.split(' ')[0] : (hist[0].type === 'Camions' ? 'PL' : hist[0].type.substring(0,4));
+                seqText = `🔁 [${l1}]`;
+            }
+
+            let envText = speed > 80 ? `🛣️ >80km/h` : (speed > 40 ? `🚗 >40km/h` : `🏙️ <40km/h`);
+            if (alt > 400) envText += ` (⛰️ ${Math.round(alt)}m)`;
+
+            let tenMinsAgo = Date.now() - 600000;
+            let count10m = hist.filter(item => item.timestamp >= tenMinsAgo).length;
+            let trendText = count10m > 15 ? `🔥 Pic` : (count10m > 5 ? `🌊 Régulier` : `⏳ Calme`);
+
+            elJournal.innerHTML = `🔍 <strong>Facteurs IA :</strong> ${seqText} | ${envText} | ${trendText}`;
+        }
+
+   }, 
 
     async updatePrediction(type) {
         let elMain = document.getElementById(type === 'trucks' ? 'pred-main-trucks' : 'pred-main-cars');

@@ -3,6 +3,7 @@ export const ml = {
     modelTrucks: null,
     modelCars: null,
     isTraining: false,
+    worker: null,
 
     // Dictionnaires pour convertir les textes en nombres pour l'IA
     roadMap: { 
@@ -17,7 +18,6 @@ export const ml = {
     truckBrands: ["Renault Trucks", "Mercedes-Benz", "Volvo Trucks", "Scania", "DAF", "MAN", "Iveco", "Ford Trucks"],
     carTypes: ["Voitures", "Utilitaires", "Motos", "Camions", "Camping-cars", "Bus/Car", "Engins agricoles", "Vélos"],
 
-    // NOUVEAU : Classes combinées pour les camions (Marque + Nationalité)
     getTruckClasses() {
         let classes = [];
         this.truckBrands.forEach(b => { 
@@ -32,8 +32,28 @@ export const ml = {
             console.warn("TensorFlow.js n'est pas chargé.");
             return;
         }
+        this.initWorker();
         await this.loadModels();
         this.updateUIStatus();
+    },
+
+    initWorker() {
+        if (window.Worker) {
+            this.worker = new Worker('jsml-worker.js');
+            this.worker.onmessage = async (e) => {
+                const { success, type } = e.data;
+                this.isTraining = false;
+                
+                let uiProgress = document.getElementById('ai-training-progress');
+                if (uiProgress) uiProgress.style.display = 'none';
+
+                if (success) {
+                    await this.loadModels();
+                    this.updateUIStatus();
+                    if(window.ui) window.ui.showToast(`✨ L'IA a fini d'apprendre en arrière-plan !`);
+                }
+            };
+        }
     },
 
     async loadModels() {
@@ -60,14 +80,12 @@ export const ml = {
         }
     },
 
-    // Générateur de conseils personnalisés (Insights) pour le Dashboard
     generateInsights(type, anaData) {
         if (!anaData || !anaData.hours) return "Besoin de plus de données pour te donner un conseil... ⏳";
         
         let maxCount = 0;
         let peakHour = "";
         
-        // Trouve l'heure avec le plus gros volume
         for (let [hour, count] of Object.entries(anaData.hours)) {
             if (count > maxCount) {
                 maxCount = count;
@@ -97,7 +115,6 @@ export const ml = {
         return insight;
     },
 
-    // NOUVEAU : Génération du HTML pour le Bulletin de Notes
     generateReportCard(type, anaData) {
         if (!anaData || !anaData.predictionsByClass || Object.keys(anaData.predictionsByClass).length === 0) {
             return `<div style="grid-column: 1 / -1; text-align:center; color:#7f8c8d;">Pas encore assez de prédictions vérifiées pour établir un bulletin. Continue à compter ! 📝</div>`;
@@ -105,7 +122,7 @@ export const ml = {
 
         let stats = [];
         for (let [className, data] of Object.entries(anaData.predictionsByClass)) {
-            if (data.total >= 5) { // On filtre pour n'afficher que les stats significatives
+            if (data.total >= 5) {
                 stats.push({ 
                     name: className, 
                     accuracy: Math.round((data.success / data.total) * 100), 
@@ -122,7 +139,6 @@ export const ml = {
         let best = stats[0];
         let worst = stats[stats.length - 1];
 
-        // Formatage sympa du nom pour l'affichage
         let formatName = (n) => {
             if (n === 'Camions') return 'Poids Lourds';
             return n.replace('_fr', ' 🇫🇷').replace('_etr', ' 🌍');
@@ -143,84 +159,74 @@ export const ml = {
         return html;
     },
 
-    // Détecteur d'anomalies en temps réel
     checkAnomaly(type, vehKey, speedKmh, recentHistory) {
-        let isHighway = speedKmh >= 90; 
+        let isHighway = type === 'cars' ? speedKmh >= 100 : speedKmh >= 80; 
         
-        // 1. Incohérence Vitesse / Type de Véhicule
         if (type === 'cars' && isHighway) {
             if (vehKey === 'Vélos') {
-                return { type: 'anomaly', msg: "🚨 Un vélo sur voie rapide à plus de 90 km/h, Sylvain ?! Tu es sûr ?" };
+                return { type: 'anomaly', msg: "🚨 Un vélo sur voie rapide à plus de 100 km/h, Sylvain ?! Tu es sûr ?" };
             }
             if (vehKey === 'Engins agricoles') {
                 return { type: 'anomaly', msg: "🚜 Attention anomalie : Un tracteur sur l'autoroute !" };
             }
         }
 
-        // 2. Combo Ultra Rare
-        if (recentHistory && recentHistory.length >= 3) {
-            let v1 = type === 'trucks' ? recentHistory[recentHistory.length - 3].brand : recentHistory[recentHistory.length - 3].type;
-            let v2 = type === 'trucks' ? recentHistory[recentHistory.length - 2].brand : recentHistory[recentHistory.length - 2].type;
-            let v3 = vehKey;
-            
-            if (v1 === v2 && v2 === v3) {
-                if (type === 'trucks' || (v1 !== 'Voitures' && v1 !== 'Utilitaires')) {
-                    return { type: 'rare-combo', msg: `🎰 JACKPOT ! 3x ${v1} d'affilée !` };
-                }
-            }
-        }
-        
         return null;
     },
 
     async forceTraining() {
-        if (this.isTraining) {
-            if(window.ui) window.ui.showToast("⏳ Un entraînement est déjà en cours...");
+        if (this.isTraining || !this.worker) {
+            if(window.ui) window.ui.showToast("⏳ Un entraînement est déjà en cours ou le Worker n'est pas prêt.");
             return;
         }
         
-        this.isTraining = true;
         let uiProgress = document.getElementById('ai-training-progress');
         if (uiProgress) uiProgress.style.display = 'block';
 
-        if(window.ui) window.ui.showToast("🧠 Début de l'entraînement de l'IA (Nouvelle architecture)...");
+        if(window.ui) window.ui.showToast("🧠 Début de l'entraînement de l'IA (Nouvelle architecture 10 neurones)...");
 
-        await this.trainModel('trucks');
-        await this.trainModel('cars');
-
-        this.isTraining = false;
-        if (uiProgress) uiProgress.style.display = 'none';
-        this.updateUIStatus();
-
-        if(window.ui) window.ui.showToast("✨ Entraînement terminé avec succès !");
+        this.trainModel('trucks');
+        setTimeout(() => this.trainModel('cars'), 500); 
     },
 
-    // NOUVEAU : Extraction de 8 features (avec jour exact et mémoire)
     extractFeatures(h, recentHistory, labelsList, type) {
         let d = new Date(h.timestamp);
         let hour = d.getHours() / 24.0; 
-        let dayOfWeek = d.getDay() / 6.0; // 0 = Dimanche, 6 = Samedi (Normalisé entre 0 et 1)
+        let dayOfWeek = d.getDay() / 6.0; 
         let speed = Math.min((h.speed || 0) / 130.0, 1.0); 
         let alt = Math.min((h.alt || 0) / 2000.0, 1.0); 
         let road = (this.roadMap[h.road || "Inconnu"] || 0) / 3.0; 
 
-        // Fonction pour récupérer l'index normalisé d'un véhicule précédent
         let getPrevIndex = (offset) => {
-            if (!recentHistory || recentHistory.length < offset) return 0; // 0 si aucun véhicule précédent
+            if (!recentHistory || recentHistory.length < offset) return 0;
             let prevItem = recentHistory[recentHistory.length - offset];
             let labelText = type === 'trucks' ? (prevItem.brand + '_' + prevItem.type) : prevItem.type;
             let idx = labelsList.indexOf(labelText);
             return idx !== -1 ? (idx + 1) / (labelsList.length + 1) : 0;
         };
 
-        let prev1 = getPrevIndex(1); // Le véhicule juste avant (N-1)
-        let prev2 = getPrevIndex(2); // (N-2)
-        let prev3 = getPrevIndex(3); // (N-3)
+        let prev1 = getPrevIndex(1);
+        let prev2 = getPrevIndex(2);
+        let prev3 = getPrevIndex(3);
 
-        return [hour, dayOfWeek, speed, alt, road, prev1, prev2, prev3];
+        let tenMinsAgo = h.timestamp - 600000;
+        let count10m = recentHistory.filter(item => item.timestamp >= tenMinsAgo).length;
+        let tendance = Math.min(count10m / 200.0, 1.0); 
+
+        let rythmeH = 0;
+        if (recentHistory.length > 1) {
+            let firstTs = recentHistory[0].timestamp;
+            let durationSec = (h.timestamp - firstTs) / 1000;
+            if (durationSec > 0) rythmeH = (recentHistory.length / (durationSec / 3600));
+        }
+        let rythmeNorm = Math.min(rythmeH / 1200.0, 1.0); 
+
+        return [hour, dayOfWeek, speed, alt, road, prev1, prev2, prev3, rythmeNorm, tendance];
     },
 
     async trainModel(type) {
+        if (this.isTraining || !this.worker) return false;
+        
         let sessions = await window.app.idb.getAll(type);
         let liveHistory = type === 'trucks' ? window.app.truckHistory : window.app.carHistory;
         
@@ -238,15 +244,13 @@ export const ml = {
         let features = [];
         let labels = [];
 
-        // On boucle sur l'historique pour préparer les données
         for (let i = 0; i < allItems.length; i++) {
             let h = allItems[i];
             let labelText = type === 'trucks' ? (h.brand + '_' + h.type) : h.type;
             let labelIndex = labelsList.indexOf(labelText);
             
             if (labelIndex !== -1 && h.timestamp) {
-                // On recrée un historique fictif pour l'instant T (mémoire à court terme)
-                let pastHistory = allItems.slice(Math.max(0, i - 3), i);
+                let pastHistory = allItems.slice(Math.max(0, i - 15), i); 
                 features.push(this.extractFeatures(h, pastHistory, labelsList, type));
                 labels.push(labelIndex);
             }
@@ -254,35 +258,17 @@ export const ml = {
 
         if (features.length === 0) return false;
 
-        const xs = tf.tensor2d(features);
-        const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), numClasses);
-
-        const model = tf.sequential();
-        // NOUVEAU : La couche d'entrée passe à 8 neurones (inputShape: [8])
-        model.add(tf.layers.dense({ units: 24, activation: 'relu', inputShape: [8] }));
-        model.add(tf.layers.dense({ units: 24, activation: 'relu' }));
-        model.add(tf.layers.dense({ units: numClasses, activation: 'softmax' }));
-
-        model.compile({ optimizer: 'adam', loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
-
-        // Entraînement !
-        await model.fit(xs, ys, {
-            epochs: 50,
-            shuffle: true
+        this.isTraining = true;
+        this.worker.postMessage({
+            type: type,
+            features: features,
+            labels: labels,
+            numClasses: numClasses
         });
-
-        await model.save(`indexeddb://model-${type}`);
-        
-        if (type === 'trucks') this.modelTrucks = model;
-        else this.modelCars = model;
-
-        xs.dispose();
-        ys.dispose();
 
         return true;
     },
 
-    // NOUVEAU : Prédiction du Top 3
     async predictNext(type) {
         let model = type === 'trucks' ? this.modelTrucks : this.modelCars;
         if (!model) return null;
@@ -293,7 +279,7 @@ export const ml = {
         let currentRoad = window.app.getRoadType(currentSpeedKmh, window.app.currentMode);
         
         let liveHistory = type === 'trucks' ? window.app.truckHistory : window.app.carHistory;
-        let recentHist = liveHistory.filter(h => !h.isEvent).slice(-3);
+        let recentHist = liveHistory.filter(h => !h.isEvent);
         
         let mockEvent = {
             timestamp: Date.now(),
@@ -319,10 +305,8 @@ export const ml = {
             });
         }
         
-        // On trie pour avoir le score le plus élevé en premier
         results.sort((a, b) => b.confidence - a.confidence);
 
-        // On renvoie les 3 meilleurs !
         return { top3: results.slice(0, 3) };
     }
 };

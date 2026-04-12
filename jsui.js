@@ -63,21 +63,18 @@ export const ui = {
                 gainNode.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.4);
             } else if (type === 'cash') {
-                // Bruit de pièce / tiroir-caisse
                 oscillator.type = 'sine';
                 oscillator.frequency.setValueAtTime(1000, this.audioCtx.currentTime);
                 oscillator.frequency.exponentialRampToValueAtTime(2000, this.audioCtx.currentTime + 0.1);
                 gainNode.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.1);
             } else if (type === 'crash') {
-                // Bruit de chute / Krach Boursier
                 oscillator.type = 'sawtooth';
                 oscillator.frequency.setValueAtTime(300, this.audioCtx.currentTime);
                 oscillator.frequency.exponentialRampToValueAtTime(50, this.audioCtx.currentTime + 0.5);
                 gainNode.gain.setValueAtTime(0.4, this.audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.5);
             } else if (type === 'siren') {
-                // Alarme / Péage / Huissier
                 oscillator.type = 'square';
                 oscillator.frequency.setValueAtTime(600, this.audioCtx.currentTime);
                 oscillator.frequency.linearRampToValueAtTime(800, this.audioCtx.currentTime + 0.2);
@@ -160,7 +157,7 @@ export const ui = {
         if (type === 'anomaly') toast.classList.add('anomaly');
         if (type === 'rare-combo') toast.classList.add('rare-combo');
         
-        toast.innerHTML = msg; // innerHTML pour supporter le gras/emojis
+        toast.innerHTML = msg; 
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 4000);
     },
@@ -208,7 +205,7 @@ export const ui = {
 
     switchTab(tab) {
         this.activeTab = tab;
-        ['trucks', 'cars', 'dashboard', 'settings'].forEach(t => {
+        ['trucks', 'cars', 'dashboard', 'company', 'settings'].forEach(t => {
             let sec = document.getElementById(`section-${t}`);
             let btn = document.getElementById(`tab-${t}`);
             if(sec) sec.style.display = tab === t ? 'block' : 'none';
@@ -216,6 +213,7 @@ export const ui = {
         });
         
         if(tab === 'dashboard' && window.app) window.app.renderDashboard('trucks');
+        if(tab === 'company' && window.app) window.app.renderCompanyUI(); 
     },
 
     toggleTruckStats() {
@@ -247,6 +245,13 @@ export const ui = {
         } else { 
             s.style.display = 'none'; m.style.display = 'block'; 
             btn.innerText = "🗺️ Carte & Actuel"; btn.classList.remove('active'); 
+        }
+    },
+
+    openGuideModal() {
+        let modal = document.getElementById('guide-modal');
+        if (modal) {
+            modal.style.display = 'flex';
         }
     }
 };

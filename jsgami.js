@@ -10,8 +10,6 @@ export const gami = {
         seasonQuests: [],
         lastDailyUpdate: 0,
         lastWeeklyUpdate: 0,
-        hasRerolledToday: false,
-        // NOUVEAU : Arbre de Talents
         unlockedTalents: {
             oeilDeLynx: false,  // Niv 5
             negociateur: false, // Niv 10
@@ -29,6 +27,11 @@ export const gami = {
         4: "🍂 Saison 4 : Les Rois de l'Automne"
     },
 
+    // 🎲 Fonction utilitaire de Gégé pour le hasard
+    getRandomInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1) + min);
+    },
+
     init() {
         this.loadState();
         
@@ -40,7 +43,7 @@ export const gami = {
         }
 
         this.checkSeasonAndQuests();
-        this.checkTalents(); // Vérifie si on a les niveaux requis
+        this.checkTalents(); 
         this.updateUI();
     },
 
@@ -55,9 +58,13 @@ export const gami = {
         }
     },
 
-    saveState() {
-        let user = window.app && window.app.currentUser ? window.app.currentUser : "Default";
-        localStorage.setItem(`gami_state_${user}`, JSON.stringify(this.state));
+    async saveState() {
+        if (window.app && typeof window.app.saveUserData === 'function') {
+            await window.app.saveUserData();
+        } else {
+            let user = window.app && window.app.currentUser ? window.app.currentUser : "Default";
+            localStorage.setItem(`gami_state_${user}`, JSON.stringify(this.state));
+        }
         try { this.updateUI(); } catch(e) {} 
     },
 
@@ -106,7 +113,6 @@ export const gami = {
         if (!this.state.lastDailyUpdate || this.state.lastDailyUpdate < today || this.state.dailyQuests.length === 0) {
             this.state.dailyQuests = this.generateDailyQuests();
             this.state.lastDailyUpdate = today;
-            this.state.hasRerolledToday = false;
         }
 
         let thisMonday = this.getMonday(now);
@@ -124,45 +130,56 @@ export const gami = {
 
     generateDailyQuests() {
         const types = [
-            { id: "tot", title: "L'Échauffement", desc: "Compter 50 véhicules.", target: 50, type: "total", xpReward: 200 },
-            { id: "cam_fr", title: "Le Patriote", desc: "Compter 20 camions français.", target: 20, type: "camion_fr", xpReward: 200 },
-            { id: "cam_etr", title: "L'International", desc: "Compter 20 camions étrangers.", target: 20, type: "camion_etr", xpReward: 200 },
-            { id: "uti", title: "Les Artisans", desc: "Compter 30 Utilitaires.", target: 30, type: "utilitaire", xpReward: 200 },
-            { id: "pl", title: "Les Rois", desc: "Compter 25 Poids Lourds.", target: 25, type: "poids_lourds", xpReward: 200 }
+            { id: "d_tot", title: "Le Marathonien", desc: "Compter des véhicules.", min: 150, max: 300, type: "total", xpReward: 300 },
+            { id: "d_fr", title: "Flot National", desc: "Trouver des camions français.", min: 60, max: 120, type: "camion_fr", xpReward: 300 },
+            { id: "d_etr", title: "Transit Europe", desc: "Trouver des camions étrangers.", min: 60, max: 120, type: "camion_etr", xpReward: 300 },
+            { id: "d_uti", title: "Logistique Urbaine", desc: "Compter des Utilitaires.", min: 80, max: 150, type: "utilitaire", xpReward: 300 },
+            { id: "d_ia", title: "L'Œil d'Acier", desc: "Valider des prédictions IA exactes.", min: 15, max: 25, type: "ia_exact", xpReward: 400 },
+            { id: "d_flux", title: "Flux Tendu", desc: "Atteindre une chaîne de régularité.", target: 30, type: "regularite", xpReward: 400 }
         ];
-        return types.sort(() => 0.5 - Math.random()).slice(0, 3).map(q => ({ ...q, progress: 0, done: false }));
+        
+        return types.sort(() => 0.5 - Math.random()).slice(0, 3).map(q => {
+            let finalTarget = q.target ? q.target : this.getRandomInt(q.min, q.max);
+            return { 
+                id: q.id, title: q.title, desc: q.desc.replace('.', ` (${finalTarget}).`), target: finalTarget, type: q.type, xpReward: q.xpReward, progress: 0, done: false 
+            };
+        });
     },
 
     generateWeeklyQuests() {
         const types = [
-            { id: "w_trans", title: "Le Transporteur", desc: "Compter 400 Camions cette semaine.", target: 400, type: "poids_lourds", xpReward: 1000 },
-            { id: "w_inter", title: "Le Douanier", desc: "Compter 200 camions étrangers.", target: 200, type: "camion_etr", xpReward: 1000 },
-            { id: "w_all", title: "Gros Trafic", desc: "Compter 1000 véhicules au total.", target: 1000, type: "total", xpReward: 1000 }
+            { id: "w_tot", title: "Avenue du Monde", desc: "Compter des véhicules.", min: 3000, max: 5000, type: "total", xpReward: 1500 },
+            { id: "w_dist", title: "Tour de France", desc: "Parcourir des kilomètres.", min: 500, max: 800, type: "distance", xpReward: 1500 },
+            { id: "w_ia_cash", title: "Jackpot IA", desc: "Gagner de l'argent via les bonus IA (€).", min: 1000, max: 2500, type: "ia_cash", xpReward: 1500 },
+            { id: "w_sponsor", title: "Flotte Majeure", desc: "Valider des contrats Sponsors.", min: 25, max: 40, type: "sponsor", xpReward: 1500 },
+            { id: "w_poids", title: "Colosse aux pieds d'argile", desc: "Déplacer du tonnage (en tonnes).", min: 10000, max: 15000, type: "tonnage", xpReward: 1500 },
+            { id: "w_velo", title: "Peloton Vert", desc: "Identifier des Vélos.", min: 250, max: 400, type: "velo", xpReward: 1500 }
         ];
-        return types.sort(() => 0.5 - Math.random()).slice(0, 2).map(q => ({ ...q, progress: 0, done: false }));
+        
+        return types.sort(() => 0.5 - Math.random()).slice(0, 2).map(q => {
+            let finalTarget = this.getRandomInt(q.min, q.max);
+            return { 
+                id: q.id, title: q.title, desc: q.desc.replace('.', ` (${finalTarget}).`), target: finalTarget, type: q.type, xpReward: q.xpReward, progress: 0, done: false 
+            };
+        });
     },
 
     generateSeasonQuests() {
-        return [
-            { id: "s_cent", title: "Le Centurion", desc: "Compter 10 000 véhicules au total.", target: 10000, type: "total", xpReward: 5000, progress: 0, done: false },
-            { id: "s_cam", title: "Le Titan", desc: "Compter 3 000 Camions.", target: 3000, type: "poids_lourds", xpReward: 5000, progress: 0, done: false }
+        const types = [
+            { id: "s_tot", title: "Le Maître du Monde", desc: "Atteindre un total de véhicules.", min: 50000, max: 100000, type: "total", xpReward: 7500 },
+            { id: "s_tycoon", title: "L'Empire du Trafic", desc: "Acheter des actifs (Flotte/Bâtiments).", min: 50, max: 100, type: "tycoon_buy", xpReward: 7500 },
+            { id: "s_alt", title: "Aigle des Sommets", desc: "Compter des véhicules à >500m d'altitude.", target: 5000, type: "altitude", xpReward: 7500 },
+            { id: "s_ia", title: "L'Oracle Suprême", desc: "Réussir des prédictions IA exactes.", target: 10000, type: "ia_exact", xpReward: 7500 },
+            { id: "s_eco", title: "Écolo-Millionnaire", desc: "Encaisser de la revente carbone (€).", target: 5000, type: "carbone_cash", xpReward: 7500 },
+            { id: "s_nuit", title: "Vampire de l'Asphalte", desc: "Compter des véhicules de nuit (21h-6h).", target: 10000, type: "nuit", xpReward: 7500 }
         ];
-    },
 
-    rerollQuest(questIndex) {
-        if (this.state.hasRerolledToday) {
-            this.showToast("❌ Tu as déjà relancé une quête aujourd'hui !");
-            return;
-        }
-        let pool = [
-            { id: "r1", title: "Coup de Chance", desc: "Compter 10 Motos.", target: 10, type: "moto", xpReward: 200 },
-            { id: "r2", title: "Le Campeur", desc: "Compter 5 Camping-cars.", target: 5, type: "camping", xpReward: 200 }
-        ];
-        let newQuest = pool[Math.floor(Math.random() * pool.length)];
-        this.state.dailyQuests[questIndex] = { ...newQuest, progress: 0, done: false };
-        this.state.hasRerolledToday = true;
-        this.saveState();
-        this.showToast("🎲 Quête relancée !");
+        return types.sort(() => 0.5 - Math.random()).slice(0, 2).map(q => {
+            let finalTarget = q.target ? q.target : this.getRandomInt(q.min, q.max);
+            return { 
+                id: q.id, title: q.title, desc: q.desc.replace('.', ` (${finalTarget}).`), target: finalTarget, type: q.type, xpReward: q.xpReward, progress: 0, done: false 
+            };
+        });
     },
 
     checkTalents() {
@@ -200,27 +217,25 @@ export const gami = {
         if (leveledUp) {
             this.showToast(`🎉 Niveau Supérieur ! Tu es niveau ${this.state.level} !`);
             if (window.ui) window.ui.playGamiSound('levelUp');
-            this.checkTalents(); // On check si on débloque un bonus
+            this.checkTalents(); 
         }
         this.saveState();
     },
 
-    notifyVehicleAdded(typeVehicule, nationalite = null) {
+    // 🎯 NOUVEAU : Fonction universelle pour mettre à jour n'importe quel type de quête
+    updateProgress(type, amount = 1, isAbsolute = false) {
         let changed = false;
 
         const checkAndUpdate = (q) => {
             if (!q || q.done) return false;
-            let match = false;
-            if (q.type === "total") match = true;
-            if (q.type === "camion_fr" && nationalite === "fr") match = true;
-            if (q.type === "camion_etr" && nationalite === "etr") match = true;
-            if (q.type === "utilitaire" && typeVehicule === "Utilitaires") match = true;
-            if (q.type === "poids_lourds" && typeVehicule === "Camions") match = true;
-            if (q.type === "moto" && typeVehicule === "Motos") match = true;
-            if (q.type === "camping" && typeVehicule === "Camping-cars") match = true;
+            if (q.type === type) {
+                // Si isAbsolute = true (ex: pour la régularité, on remplace si c'est plus grand)
+                if (isAbsolute) {
+                    if (amount > q.progress) q.progress = Math.round(amount);
+                } else {
+                    q.progress += Math.round(amount);
+                }
 
-            if (match) {
-                q.progress++;
                 if (q.progress >= q.target) {
                     q.progress = q.target;
                     q.done = true;
@@ -240,6 +255,32 @@ export const gami = {
         if (changed) this.saveState();
     },
 
+    notifyVehicleAdded(typeVehicule, nationalite = null, extraData = {}) {
+        this.updateProgress("total", 1);
+        
+        if (typeVehicule === "Camions") {
+            this.updateProgress("poids_lourds", 1);
+            if (nationalite === "fr") this.updateProgress("camion_fr", 1);
+            if (nationalite === "etr") this.updateProgress("camion_etr", 1);
+        }
+        if (typeVehicule === "Utilitaires") this.updateProgress("utilitaire", 1);
+        if (typeVehicule === "Vélos") this.updateProgress("velo", 1);
+
+        // Données annexes récupérées depuis jsapp.js
+        if (extraData.weight) this.updateProgress("tonnage", extraData.weight / 1000); // Poids en tonnes
+        if (extraData.isNight) this.updateProgress("nuit", 1);
+        if (extraData.alt && extraData.alt > 500) this.updateProgress("altitude", 1);
+        
+        if (extraData.isExact) {
+            this.updateProgress("ia_exact", 1);
+            if (extraData.iaCash > 0) this.updateProgress("ia_cash", extraData.iaCash);
+        }
+
+        if (extraData.regularity) {
+            this.updateProgress("regularite", extraData.regularity, true); // True = Valeur absolue max
+        }
+    },
+
     renderQuests(containerId, questsArray, isDaily) {
         let el = document.getElementById(containerId);
         if(!el) return;
@@ -250,9 +291,8 @@ export const gami = {
             return;
         }
 
-        questsArray.forEach((q, index) => {
+        questsArray.forEach((q) => {
             let isDone = q.done ? "gami-quest-done" : "";
-            let rerollBtn = (isDaily && !q.done && !this.state.hasRerolledToday) ? `<button class="gami-btn-reroll" onclick="window.gami.rerollQuest(${index})" title="Relancer cette quête">🎲</button>` : '';
             
             el.innerHTML += `
                 <div class="gami-quest-card ${isDone}">
@@ -261,7 +301,6 @@ export const gami = {
                         <div class="gami-quest-desc">${q.desc}</div>
                         <div class="gami-quest-progress">${q.progress} / ${q.target}</div>
                     </div>
-                    ${rerollBtn}
                 </div>
             `;
         });
@@ -299,7 +338,7 @@ export const gami = {
         if(elBar) elBar.style.width = (((this.state.xp || 0) / this.xpPerLevel) * 100) + '%';
         if(elLabel) elLabel.innerText = `${this.state.xp || 0} / ${this.xpPerLevel} XP`;
 
-        this.renderTalents(); // On actualise l'affichage de l'arbre
+        this.renderTalents(); 
         this.renderQuests('gami-daily-container', this.state.dailyQuests, true);
         this.renderQuests('gami-weekly-container', this.state.weeklyQuests, false);
         this.renderQuests('gami-season-container', this.state.seasonQuests, false);
